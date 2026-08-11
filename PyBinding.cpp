@@ -15,10 +15,12 @@ static py::dict device_tree_to_dict(const DeviceTree& tree)
         py::dict dev;
         dev["name"] = device.name;
         dev["type"] = device.type;
+        dev["parent"] = device.parent;
         dev["bdf"] = device.bdf;
         dev["vendor_id"] = device.vendor_id;
         dev["device_id"] = device.device_id;
         dev["locator"] = device.locator;
+        dev["children"] = device.children;
         devices.append(dev);
     }
 
@@ -72,10 +74,12 @@ PYBIND11_MODULE(tpu_hal, m)
         .def(py::init<>())
         .def_readwrite("name", &DeviceDiscoveryInfo::name)
         .def_readwrite("type", &DeviceDiscoveryInfo::type)
+        .def_readwrite("parent", &DeviceDiscoveryInfo::parent)
         .def_readwrite("bdf", &DeviceDiscoveryInfo::bdf)
         .def_readwrite("vendor_id", &DeviceDiscoveryInfo::vendor_id)
         .def_readwrite("device_id", &DeviceDiscoveryInfo::device_id)
-        .def_readwrite("locator", &DeviceDiscoveryInfo::locator);
+        .def_readwrite("locator", &DeviceDiscoveryInfo::locator)
+        .def_readwrite("children", &DeviceDiscoveryInfo::children);
 
     py::class_<TopologyEdge>(m, "TopologyEdge")
         .def(py::init<>())
@@ -108,10 +112,13 @@ PYBIND11_MODULE(tpu_hal, m)
         });
 
     py::class_<TPUDevice, BaseDevice>(m, "TPUDevice")
-        .def(py::init<const std::string&, const DeviceContext&>(),
-             py::arg("logical_name"),
-             py::arg("ctx"))
+        .def("tpu_index", &TPUDevice::tpu_index)
         .def("print_tree", &TPUDevice::print_tree);
+
+    py::class_<PMUModule, BaseDevice>(m, "PMUModule");
+    py::class_<ISIModule, BaseDevice>(m, "ISIModule")
+        .def("link_id", &ISIModule::link_id);
+    py::class_<DDPModule, BaseDevice>(m, "DDPModule");
 
     py::class_<DeviceManager>(m, "DeviceManager")
         .def(py::init<>())
@@ -119,19 +126,19 @@ PYBIND11_MODULE(tpu_hal, m)
             return device_tree_to_dict(manager.discover());
         })
         .def("discover_tree", &DeviceManager::discover)
-        .def("get_device",
-             &DeviceManager::get_device,
-             py::arg("logical_name"),
+        .def("get_target",
+             &DeviceManager::get_target,
+             py::arg("target_name"),
              py::return_value_policy::reference_internal)
-        .def("get_device_names", &DeviceManager::get_device_names)
+        .def("get_target_names", &DeviceManager::get_target_names)
         .def("run_atomic_test",
              [](DeviceManager& manager,
-                const std::string& logical_name,
+                const std::string& target_name,
                 const std::string& test_name,
                 const TestArgs& args) {
-                 return manager.run_atomic_test(logical_name, test_name, args);
+                 return manager.run_atomic_test(target_name, test_name, args);
              },
-             py::arg("logical_name"),
+             py::arg("target_name"),
              py::arg("test_name"),
              py::arg("args") = TestArgs{},
              py::call_guard<py::gil_scoped_release>())

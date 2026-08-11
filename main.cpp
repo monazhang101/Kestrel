@@ -17,10 +17,12 @@ static void print_test_result(const TestResult& result)
 
 static void print_discovery_summary(const DeviceTree& tree)
 {
-    std::cout << "=== Discovered Devices ===" << std::endl;
+    std::cout << "=== Discovered Targets ===" << std::endl;
 
     for (const auto& device : tree.devices) {
         std::cout << device.name
+                  << " type=" << device.type
+                  << " parent=" << device.parent
                   << " bdf=" << device.bdf
                   << " vid=0x" << std::hex << device.vendor_id
                   << " did=0x" << device.device_id
@@ -31,6 +33,9 @@ static void print_discovery_summary(const DeviceTree& tree)
 int main()
 {
     DeviceManager device_manager;
+
+    // Pseudocode: discover scans PCI devices, applies BDF/VID/DID policy,
+    // mmaps BAR space, creates TPUDevice objects, and registers child targets.
     DeviceTree tree = device_manager.discover();
 
     print_discovery_summary(tree);
@@ -46,20 +51,37 @@ int main()
         "TPU_0", "identify"));
 
     print_test_result(device_manager.run_atomic_test(
-        "TPU_0", "pcie_link_status_check", {
-            {"depth", "all"},
-        }));
+        "TPU_0", "pcie_enum_check"));
 
     print_test_result(device_manager.run_atomic_test(
-        "TPU_0", "isi_link_up", {
-            {"links", "all"},
+        "TPU_0", "pcie_link_status_check", {
+            {"depth", "all"},
+            {"expected_speed", "gen5"},
+            {"expected_width", "x16"},
         }));
 
     print_test_result(device_manager.run_atomic_test(
         "TPU_0", "pcie_dma_data_transfer", {
             {"direction", "h2d"},
             {"size_bytes", "4096"},
+            {"pattern", "incremental"},
         }));
+
+    print_test_result(device_manager.run_atomic_test(
+        "TPU_0", "soc_gpio_read", {
+            {"pin", "3"},
+        }));
+
+    print_test_result(device_manager.run_atomic_test(
+        "PMU_0", "pmu_reg_read", {
+            {"offset", "0x40"},
+        }));
+
+    print_test_result(device_manager.run_atomic_test(
+        "ISI_0_1", "isi_linkup"));
+
+    print_test_result(device_manager.run_atomic_test(
+        "DDP_0", "ddp_dvsec_verify"));
 
     print_test_result(device_manager.run_atomic_test(
         "TPU_1", "pcie_dma_data_transfer", {
@@ -67,16 +89,11 @@ int main()
             {"size_bytes", "1048576"},
         }));
 
+    // Error scenario: target exists, but this atomic test is not registered there.
     print_test_result(device_manager.run_atomic_test(
-        "TPU_1", "pmu_read_sensor", {
-            {"sensor", "voltage"},
-        }));
+        "PMU_1", "pcie_dma_data_transfer"));
 
-    // Error scenario: unknown atomic test name.
-    print_test_result(device_manager.run_atomic_test(
-        "TPU_1", "unknown_test"));
-
-    // Error scenario: unknown device target.
+    // Error scenario: unknown target name.
     print_test_result(device_manager.run_atomic_test(
         "TPU_9", "identify"));
 
