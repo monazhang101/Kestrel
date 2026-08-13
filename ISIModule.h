@@ -3,6 +3,7 @@
 #include "BaseDevice.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 
 class ISIModule : public BaseDevice {
@@ -37,7 +38,8 @@ public:
               const DeviceContext& ctx,
               uint32_t link_id,
               uint64_t reg_offset,
-              uint64_t reg_size);
+              uint64_t reg_size,
+              std::shared_ptr<CmdQueueMgm> hqc_queue_mgm);
 
     uint32_t link_id() const { return link_id_; }
     uint64_t reg_offset() const { return reg_offset_; }

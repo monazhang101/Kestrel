@@ -3,6 +3,7 @@
 #include "BaseDevice.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 
 class PCIeModule : public BaseDevice {
@@ -35,7 +36,8 @@ public:
     PCIeModule(const std::string& name,
                const DeviceContext& ctx,
                uint64_t reg_offset,
-               uint64_t reg_size);
+               uint64_t reg_size,
+               std::shared_ptr<CmdQueueMgm> hqc_queue_mgm);
 
     uint64_t reg_offset() const { return reg_offset_; }
     uint64_t reg_size() const { return reg_size_; }

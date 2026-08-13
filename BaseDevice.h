@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -19,6 +20,8 @@ struct DeviceContext {
     uint64_t bar_size = 0;
 };
 
+class CmdQueueMgm;
+
 using AtomicTestFunc = std::function<TestResult(TestInfo& ti)>;
 
 class BaseDevice {
@@ -28,6 +31,7 @@ private:
 protected:
     std::string name_;
     DeviceContext ctx_;
+    std::shared_ptr<CmdQueueMgm> cmd_queue_mgm_;
     std::unordered_map<std::string, AtomicTestFunc> registered_tests_;
 
     void _add_test(const std::string& test_name, AtomicTestFunc func)
@@ -36,8 +40,10 @@ protected:
     }
 
 public:
-    BaseDevice(const std::string& name, const DeviceContext& ctx)
-        : name_(name), ctx_(ctx)
+    BaseDevice(const std::string& name,
+               const DeviceContext& ctx,
+               std::shared_ptr<CmdQueueMgm> cmd_queue_mgm = nullptr)
+        : name_(name), ctx_(ctx), cmd_queue_mgm_(std::move(cmd_queue_mgm))
     {
     }
 
@@ -82,6 +88,8 @@ public:
     const std::string& get_name() const { return name_; }
 
     void* get_bar_base_addr() const { return ctx_.mapped_bar_base; }
+
+    std::shared_ptr<CmdQueueMgm> cmd_queue_mgm() const { return cmd_queue_mgm_; }
 
     DeviceContext& get_context() { return ctx_; }
 

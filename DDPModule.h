@@ -36,7 +36,8 @@ public:
               const DeviceContext& ctx,
               uint32_t ddp_id,
               uint64_t reg_offset,
-              uint64_t reg_size);
+              uint64_t reg_size,
+              std::shared_ptr<CmdQueueMgm> hqc_queue_mgm);
 
     uint32_t ddp_id() const { return ddp_id_; }
     DMCModule* dmc(size_t index) const;

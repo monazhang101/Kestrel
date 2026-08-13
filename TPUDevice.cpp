@@ -1,5 +1,6 @@
 #include "TPUDevice.h"
 
+#include "CmdQueueMgm.h"
 #include "Common.h"
 
 #include <iostream>
@@ -14,11 +15,15 @@ TPUDevice::TPUDevice(const std::string& logical_name,
     _add_test("soc_gpio_read", [this](TestInfo& ti) { return SocGpioRead(ti); });
     _add_test("soc_gpio_write", [this](TestInfo& ti) { return SocGpioWrite(ti); });
 
+    cmd_queue_mgm_ = std::make_shared<CmdQueueMgm>(
+        logical_name + ".HQC", CmdQueuePath::HQC, ctx_.mapped_bar_base);
+    // TODO: auto ipc_queue_mgm = std::make_shared<CmdQueueMgm>(logical_name + ".IPC", CmdQueuePath::IPC);
+
     pcie_ = std::make_unique<PCIeModule>(
-        logical_name + ".PCIE_0", ctx_, PCIE_REG_OFFSET, PCIE_REG_SIZE);
+        logical_name + ".PCIE_0", ctx_, PCIE_REG_OFFSET, PCIE_REG_SIZE, cmd_queue_mgm_);
 
     pmu_ = std::make_unique<PMUModule>(
-        logical_name + ".PMU_0", ctx_, PMU_REG_OFFSET, PMU_REG_SIZE);
+        logical_name + ".PMU_0", ctx_, PMU_REG_OFFSET, PMU_REG_SIZE, cmd_queue_mgm_);
 
     for (size_t i = 0; i < DDP_COUNT; ++i) {
         ddp_modules_.push_back(std::make_unique<DDPModule>(
@@ -26,7 +31,8 @@ TPUDevice::TPUDevice(const std::string& logical_name,
             ctx_,
             static_cast<uint32_t>(i),
             DDP_REG_OFFSET + i * DDP_REG_SIZE,
-            DDP_REG_SIZE));
+            DDP_REG_SIZE,
+            cmd_queue_mgm_));
     }
 
     for (size_t i = 0; i < ISI_COUNT; ++i) {
@@ -35,7 +41,8 @@ TPUDevice::TPUDevice(const std::string& logical_name,
             ctx_,
             static_cast<uint32_t>(i),
             ISI_REG_OFFSET + i * ISI_REG_SIZE,
-            ISI_REG_SIZE));
+            ISI_REG_SIZE,
+            cmd_queue_mgm_));
     }
 }
 

@@ -7,8 +7,9 @@ DMCModule::DMCModule(const std::string& name,
                      uint32_t ddp_id,
                      uint32_t controller_id,
                      uint64_t reg_offset,
-                     uint64_t reg_size)
-    : BaseDevice(name, ctx),
+                     uint64_t reg_size,
+                     std::shared_ptr<CmdQueueMgm> hqc_queue_mgm)
+    : BaseDevice(name, ctx, hqc_queue_mgm),
       ddp_id_(ddp_id),
       controller_id_(controller_id),
       reg_offset_(reg_offset),

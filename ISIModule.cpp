@@ -6,8 +6,12 @@ ISIModule::ISIModule(const std::string& name,
                      const DeviceContext& ctx,
                      uint32_t link_id,
                      uint64_t reg_offset,
-                     uint64_t reg_size)
-    : BaseDevice(name, ctx), link_id_(link_id), reg_offset_(reg_offset), reg_size_(reg_size)
+                     uint64_t reg_size,
+                     std::shared_ptr<CmdQueueMgm> hqc_queue_mgm)
+    : BaseDevice(name, ctx, hqc_queue_mgm),
+      link_id_(link_id),
+      reg_offset_(reg_offset),
+      reg_size_(reg_size)
 {
     auto* bar_base = static_cast<uint8_t*>(ctx_.mapped_bar_base);
     reg_base_ = bar_base == nullptr ? nullptr : bar_base + reg_offset_;
