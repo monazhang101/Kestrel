@@ -11,18 +11,18 @@ private:
     uint64_t reg_offset_ = 0;
     uint64_t reg_size_ = 0;
 
-    TestResult PmuIpcRequestStart(const TestArgs& args);
-    TestResult PmuIpcRequestExec(const TestArgs& args);
-    TestResult PmuIpcRequestFinish(const TestArgs& args);
-    TestResult PmuRegRead(const TestArgs& args);
-    TestResult PmuRegWrite(const TestArgs& args);
-    TestResult PmuRegExpect(const TestArgs& args);
-    TestResult PmuSoftResetTrigger(const TestArgs& args);
-    TestResult PmuPcieCfgBackup(const TestArgs& args);
-    TestResult PmuPcieCfgRestore(const TestArgs& args);
-    TestResult PmuEccTrigger(const TestArgs& args);
-    TestResult PmuEccClean(const TestArgs& args);
-    TestResult PmuEccSnapshotAssert(const TestArgs& args);
+    TestResult PmuIpcRequestStart(TestInfo& ti);
+    TestResult PmuIpcRequestExec(TestInfo& ti);
+    TestResult PmuIpcRequestFinish(TestInfo& ti);
+    TestResult PmuRegRead(TestInfo& ti);
+    TestResult PmuRegWrite(TestInfo& ti);
+    TestResult PmuRegCheck(TestInfo& ti);
+    TestResult PmuSoftResetTrigger(TestInfo& ti);
+    TestResult PmuPcieCfgBackup(TestInfo& ti);
+    TestResult PmuPcieCfgRestore(TestInfo& ti);
+    TestResult PmuEccTrigger(TestInfo& ti);
+    TestResult PmuEccClean(TestInfo& ti);
+    TestResult PmuEccSnapshotAssert(TestInfo& ti);
 
 public:
     PMUModule(const std::string& name,

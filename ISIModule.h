@@ -12,25 +12,25 @@ private:
     uint64_t reg_offset_ = 0;
     uint64_t reg_size_ = 0;
 
-    TestResult IsiLinkup(const TestArgs& args);
-    TestResult IsiSetup(const TestArgs& args);
-    TestResult IsiIsrTblWriteEnable(const TestArgs& args);
-    TestResult IsiIsrTblWriteDisable(const TestArgs& args);
-    TestResult IsiIsrTblSet(const TestArgs& args);
-    TestResult IsiIsrTblDirectSet(const TestArgs& args);
-    TestResult IsiIsrTblGet(const TestArgs& args);
-    TestResult IsiPcsLoopback(const TestArgs& args);
-    TestResult IsiPhyLoopback(const TestArgs& args);
-    TestResult IsiPhyBistTest(const TestArgs& args);
-    TestResult IsiIfcIntrEnable(const TestArgs& args);
-    TestResult IsiIfcIntrIsSet(const TestArgs& args);
-    TestResult IsiIfcNodeIdSet(const TestArgs& args);
-    TestResult IsiXdcAddrSet(const TestArgs& args);
-    TestResult IsiSendPacket(const TestArgs& args);
-    TestResult IsiRegScan(const TestArgs& args);
-    TestResult IsiPollCreditRegs(const TestArgs& args);
-    TestResult IsiDumpDebugRegs(const TestArgs& args);
-    TestResult IsiPciePmuIntrIsSet(const TestArgs& args);
+    TestResult IsiLinkup(TestInfo& ti);
+    TestResult IsiSetup(TestInfo& ti);
+    TestResult IsiIsrTblWriteEnable(TestInfo& ti);
+    TestResult IsiIsrTblWriteDisable(TestInfo& ti);
+    TestResult IsiIsrTblSet(TestInfo& ti);
+    TestResult IsiIsrTblDirectSet(TestInfo& ti);
+    TestResult IsiIsrTblGet(TestInfo& ti);
+    TestResult IsiPcsLoopback(TestInfo& ti);
+    TestResult IsiPhyLoopback(TestInfo& ti);
+    TestResult IsiPhyBistTest(TestInfo& ti);
+    TestResult IsiIfcIntrEnable(TestInfo& ti);
+    TestResult IsiIfcIntrIsSet(TestInfo& ti);
+    TestResult IsiIfcNodeIdSet(TestInfo& ti);
+    TestResult IsiXdcAddrSet(TestInfo& ti);
+    TestResult IsiSendPacket(TestInfo& ti);
+    TestResult IsiRegScan(TestInfo& ti);
+    TestResult IsiPollCreditRegs(TestInfo& ti);
+    TestResult IsiDumpDebugRegs(TestInfo& ti);
+    TestResult IsiPciePmuIntrIsSet(TestInfo& ti);
 
 public:
     ISIModule(const std::string& name,

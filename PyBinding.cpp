@@ -12,16 +12,16 @@ static py::dict device_tree_to_dict(const DeviceTree& tree)
 {
     py::list devices;
     for (const auto& device : tree.devices) {
-        py::dict dev;
-        dev["name"] = device.name;
-        dev["type"] = device.type;
-        dev["parent"] = device.parent;
-        dev["bdf"] = device.bdf;
-        dev["vendor_id"] = device.vendor_id;
-        dev["device_id"] = device.device_id;
-        dev["locator"] = device.locator;
-        dev["children"] = device.children;
-        devices.append(dev);
+        py::dict d;
+        d["name"] = device.name;
+        d["type"] = device.type;
+        d["parent"] = device.parent;
+        d["bdf"] = device.bdf;
+        d["vendor_id"] = device.vendor_id;
+        d["device_id"] = device.device_id;
+        d["locator"] = device.locator;
+        d["children"] = device.children;
+        devices.append(d);
     }
 
     py::list topology;
@@ -61,14 +61,22 @@ PYBIND11_MODULE(tpu_hal, m)
     py::class_<TestResult>(m, "TestResult")
         .def(py::init<>())
         .def_readwrite("test_name", &TestResult::test_name)
-        .def_readwrite("device_name", &TestResult::device_name)
+        .def_readwrite("target_name", &TestResult::target_name)
         .def_readwrite("passed", &TestResult::passed)
         .def_readwrite("metrics", &TestResult::metrics)
+        .def_readwrite("error_description", &TestResult::error_description)
+        .def_readwrite("error_details", &TestResult::error_details)
         .def("__repr__", [](const TestResult& result) {
             return "<TestResult test_name='" + result.test_name +
-                   "' device_name='" + result.device_name +
+                   "' target_name='" + result.target_name +
                    "' passed=" + (result.passed ? "true" : "false") + ">";
         });
+
+    py::enum_<LogLevel>(m, "LogLevel")
+        .value("ERROR", LogLevel::Error)
+        .value("INFO", LogLevel::Info)
+        .value("DEBUG", LogLevel::Debug)
+        .value("TRACE", LogLevel::Trace);
 
     py::class_<DeviceDiscoveryInfo>(m, "DeviceDiscoveryInfo")
         .def(py::init<>())
@@ -115,9 +123,13 @@ PYBIND11_MODULE(tpu_hal, m)
         .def("tpu_index", &TPUDevice::tpu_index)
         .def("print_tree", &TPUDevice::print_tree);
 
+    py::class_<PCIeModule, BaseDevice>(m, "PCIeModule");
     py::class_<PMUModule, BaseDevice>(m, "PMUModule");
     py::class_<ISIModule, BaseDevice>(m, "ISIModule")
         .def("link_id", &ISIModule::link_id);
+    py::class_<DMCModule, BaseDevice>(m, "DMCModule")
+        .def("ddp_id", &DMCModule::ddp_id)
+        .def("controller_id", &DMCModule::controller_id);
     py::class_<DDPModule, BaseDevice>(m, "DDPModule");
 
     py::class_<DeviceManager>(m, "DeviceManager")
@@ -131,6 +143,8 @@ PYBIND11_MODULE(tpu_hal, m)
              py::arg("target_name"),
              py::return_value_policy::reference_internal)
         .def("get_target_names", &DeviceManager::get_target_names)
+        .def("set_log_level", &DeviceManager::set_log_level)
+        .def("get_log_level", &DeviceManager::get_log_level)
         .def("run_atomic_test",
              [](DeviceManager& manager,
                 const std::string& target_name,

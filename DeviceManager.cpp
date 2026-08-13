@@ -2,6 +2,30 @@
 
 #include <iostream>
 
+namespace {
+
+std::string infer_child_type(const std::string& target_name)
+{
+    if (target_name.find(".PCIE_") != std::string::npos) {
+        return "PCIE_MODULE";
+    }
+    if (target_name.find(".PMU_") != std::string::npos) {
+        return "PMU_MODULE";
+    }
+    if (target_name.find(".DMC_") != std::string::npos) {
+        return "DMC_MODULE";
+    }
+    if (target_name.find(".DDP_") != std::string::npos) {
+        return "DDP_MODULE";
+    }
+    if (target_name.find(".ISI_") != std::string::npos) {
+        return "ISI_MODULE";
+    }
+    return "MODULE";
+}
+
+}
+
 DeviceManager::DeviceManager()
     : policy_(load_policy())
 {
@@ -19,8 +43,8 @@ std::vector<PolicyEntry> DeviceManager::load_policy() const
     // 2. Map physical locators such as BDF/slot/serial to stable target names.
     // 3. Return the names that CLI/Python/reporting should use.
     return {
-        {"0000:65:00.0", "TPU_0", "UBB0", 0},
-        {"0000:ca:00.0", "TPU_1", "UBB0", 1},
+        {"0000:65:00.0", "ATLAS_0", "UBB0", "UBB0_POS0", 0},
+        {"0000:ca:00.0", "ATLAS_1", "UBB0", "UBB0_POS1", 1},
     };
 }
 
@@ -92,6 +116,18 @@ void DeviceManager::register_target(BaseDevice* target)
     }
 }
 
+void DeviceManager::register_device_tree(BaseDevice* target)
+{
+    if (target == nullptr) {
+        return;
+    }
+
+    register_target(target);
+    for (auto* child : target->child_targets()) {
+        register_device_tree(child);
+    }
+}
+
 DeviceDiscoveryInfo DeviceManager::make_tpu_info(const TPUDevice& device,
                                                  const PolicyEntry& policy_entry) const
 {
@@ -105,8 +141,9 @@ DeviceDiscoveryInfo DeviceManager::make_tpu_info(const TPUDevice& device,
     info.vendor_id = ctx.vendor_id;
     info.device_id = ctx.device_id;
     info.locator = {
-        {"pci_bdf", ctx.bdf},
         {"slot", policy_entry.slot},
+        {"position", policy_entry.position},
+        {"atlas_index", std::to_string(policy_entry.tpu_index)},
     };
 
     for (const auto* child : device.child_targets()) {
@@ -117,10 +154,10 @@ DeviceDiscoveryInfo DeviceManager::make_tpu_info(const TPUDevice& device,
 }
 
 DeviceDiscoveryInfo DeviceManager::make_child_info(const BaseDevice& child,
-                                                   const TPUDevice& parent,
+                                                   const BaseDevice& parent,
                                                    const std::string& type) const
 {
-    const auto& ctx = parent.get_context();
+    const auto& ctx = child.get_context();
 
     DeviceDiscoveryInfo info;
     info.name = child.get_name();
@@ -131,9 +168,29 @@ DeviceDiscoveryInfo DeviceManager::make_child_info(const BaseDevice& child,
     info.device_id = ctx.device_id;
     info.locator = {
         {"parent", parent.get_name()},
-        {"pci_bdf", ctx.bdf},
     };
+
+    for (const auto* grandchild : child.child_targets()) {
+        if (grandchild != nullptr) {
+            info.children.push_back(grandchild->get_name());
+        }
+    }
+
     return info;
+}
+
+void DeviceManager::add_child_to_tree(const BaseDevice& child,
+                                      const BaseDevice& parent)
+{
+    auto type = infer_child_type(child.get_name());
+    device_tree_.devices.push_back(make_child_info(child, parent, type));
+    device_tree_.topology.push_back({parent.get_name(), child.get_name(), "module"});
+
+    for (const auto* grandchild : child.child_targets()) {
+        if (grandchild != nullptr) {
+            add_child_to_tree(*grandchild, child);
+        }
+    }
 }
 
 void DeviceManager::add_tpu_to_tree(const TPUDevice& device,
@@ -142,22 +199,10 @@ void DeviceManager::add_tpu_to_tree(const TPUDevice& device,
     device_tree_.devices.push_back(make_tpu_info(device, policy_entry));
     device_tree_.topology.push_back({"PCIeRootComplex0", device.get_name(), "pcie"});
 
-    if (device.pmu() != nullptr) {
-        device_tree_.devices.push_back(make_child_info(*device.pmu(), device, "PMU"));
-        device_tree_.topology.push_back({device.get_name(), device.pmu()->get_name(), "module"});
-    }
-
-    for (size_t i = 0; i < 2; ++i) {
-        auto* isi = device.isi(i);
-        if (isi != nullptr) {
-            device_tree_.devices.push_back(make_child_info(*isi, device, "ISI"));
-            device_tree_.topology.push_back({device.get_name(), isi->get_name(), "module"});
+    for (const auto* child : device.child_targets()) {
+        if (child != nullptr) {
+            add_child_to_tree(*child, device);
         }
-    }
-
-    if (device.ddp() != nullptr) {
-        device_tree_.devices.push_back(make_child_info(*device.ddp(), device, "DDP"));
-        device_tree_.topology.push_back({device.get_name(), device.ddp()->get_name(), "module"});
     }
 }
 
@@ -182,10 +227,7 @@ DeviceTree DeviceManager::discover()
             policy_entry->logical_name, mapped_ctx, policy_entry->tpu_index);
 
         auto* tpu = tpu_device.get();
-        register_target(tpu);
-        for (auto* child : tpu->child_targets()) {
-            register_target(child);
-        }
+        register_device_tree(tpu);
 
         add_tpu_to_tree(*tpu, *policy_entry);
         devices_.push_back(std::move(tpu_device));
@@ -203,10 +245,20 @@ BaseDevice* DeviceManager::get_target(const std::string& target_name)
 std::vector<std::string> DeviceManager::get_target_names() const
 {
     std::vector<std::string> names;
-    for (const auto& device : device_tree_.devices) {
-        names.push_back(device.name);
+    for (const auto& target : device_tree_.devices) {
+        names.push_back(target.name);
     }
     return names;
+}
+
+void DeviceManager::set_log_level(LogLevel level)
+{
+    logger_.set_level(level);
+}
+
+LogLevel DeviceManager::get_log_level() const
+{
+    return logger_.get_level();
 }
 
 TestResult DeviceManager::run_atomic_test(const std::string& target_name,
@@ -215,10 +267,17 @@ TestResult DeviceManager::run_atomic_test(const std::string& target_name,
 {
     auto* target = get_target(target_name);
     if (target == nullptr) {
-        return {test_name, target_name, false, {{"error", "target device not found"}}};
+        return {
+            test_name,
+            target_name,
+            false,
+            {},
+            "target device not found",
+            "target=" + target_name + " is not registered; call discover() before running tests"
+        };
     }
 
-    return target->run_atomic_test(test_name, args);
+    return target->run_atomic_test(test_name, args, &logger_);
 }
 
 void DeviceManager::print_tree() const
