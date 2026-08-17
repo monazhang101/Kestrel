@@ -1,14 +1,13 @@
-#include "DDPModule.h"
+#include "diag/module/DDPModule.h"
 
-#include "Common.h"
+#include "diag/core/Common.h"
 
 DDPModule::DDPModule(const std::string& name,
                      const DeviceContext& ctx,
                      uint32_t ddp_id,
                      uint64_t reg_offset,
-                     uint64_t reg_size,
-                     std::shared_ptr<CmdQueueMgm> hqc_queue_mgm)
-    : BaseDevice(name, ctx, hqc_queue_mgm),
+                     uint64_t reg_size)
+    : BaseDevice(name, ctx),
       ddp_id_(ddp_id),
       reg_offset_(reg_offset),
       reg_size_(reg_size)
@@ -33,8 +32,7 @@ DDPModule::DDPModule(const std::string& name,
             ddp_id_,
             static_cast<uint32_t>(i),
             reg_offset_ + DMC_REG_OFFSET + i * DMC_REG_SIZE,
-            DMC_REG_SIZE,
-            hqc_queue_mgm));
+            DMC_REG_SIZE));
     }
 }
 

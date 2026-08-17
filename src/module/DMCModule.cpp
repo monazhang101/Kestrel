@@ -1,15 +1,14 @@
-#include "DMCModule.h"
+#include "diag/module/DMCModule.h"
 
-#include "Common.h"
+#include "diag/core/Common.h"
 
 DMCModule::DMCModule(const std::string& name,
                      const DeviceContext& ctx,
                      uint32_t ddp_id,
                      uint32_t controller_id,
                      uint64_t reg_offset,
-                     uint64_t reg_size,
-                     std::shared_ptr<CmdQueueMgm> hqc_queue_mgm)
-    : BaseDevice(name, ctx, hqc_queue_mgm),
+                     uint64_t reg_size)
+    : BaseDevice(name, ctx),
       ddp_id_(ddp_id),
       controller_id_(controller_id),
       reg_offset_(reg_offset),

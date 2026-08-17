@@ -1,6 +1,6 @@
 #pragma once
 
-#include "TestInfo.h"
+#include "diag/core/TestInfo.h"
 
 #include <cstddef>
 #include <cstdint>

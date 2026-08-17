@@ -1,10 +1,10 @@
 #pragma once
 
-#include "BaseDevice.h"
-#include "DDPModule.h"
-#include "ISIModule.h"
-#include "PCIeModule.h"
-#include "PMUModule.h"
+#include "diag/core/BaseDevice.h"
+#include "diag/module/DDPModule.h"
+#include "diag/module/ISIModule.h"
+#include "diag/module/PCIeModule.h"
+#include "diag/module/PMUModule.h"
 
 #include <cstddef>
 #include <cstdint>

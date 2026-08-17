@@ -1,4 +1,4 @@
-#include "DeviceManager.h"
+#include "diag/device/DeviceManager.h"
 
 #include <cstdint>
 #include <string>

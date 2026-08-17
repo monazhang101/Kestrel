@@ -1,9 +1,8 @@
 #pragma once
 
-#include "BaseDevice.h"
+#include "diag/core/BaseDevice.h"
 
 #include <cstdint>
-#include <memory>
 #include <string>
 
 class DMCModule : public BaseDevice {
@@ -23,8 +22,7 @@ public:
               uint32_t ddp_id,
               uint32_t controller_id,
               uint64_t reg_offset,
-              uint64_t reg_size,
-              std::shared_ptr<CmdQueueMgm> hqc_queue_mgm);
+              uint64_t reg_size);
 
     uint32_t ddp_id() const { return ddp_id_; }
     uint32_t controller_id() const { return controller_id_; }

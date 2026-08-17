@@ -1,9 +1,8 @@
 #pragma once
 
-#include "BaseDevice.h"
+#include "diag/core/BaseDevice.h"
 
 #include <cstdint>
-#include <memory>
 #include <string>
 
 class PCIeModule : public BaseDevice {
@@ -12,8 +11,10 @@ private:
     uint64_t reg_offset_ = 0;
     uint64_t reg_size_ = 0;
 
+    TestResult PcieLinkStatusGet(TestInfo& ti);
+    TestResult PcieDmaDataTransfer(TestInfo& ti);
+    /*
     TestResult PcieEnumCheck(TestInfo& ti);
-    TestResult PcieLinkStatusCheck(TestInfo& ti);
     TestResult PcieCapListCheck(TestInfo& ti);
     TestResult PcieExtCapListCheck(TestInfo& ti);
     TestResult PcieRegScan(TestInfo& ti);
@@ -30,14 +31,13 @@ private:
     TestResult PciePmuIntrIsSet(TestInfo& ti);
     TestResult PcieIsiIntrIsSet(TestInfo& ti);
     TestResult PcieLinkSpeedChange(TestInfo& ti);
-    TestResult PcieDmaDataTransfer(TestInfo& ti);
+    */
 
 public:
     PCIeModule(const std::string& name,
                const DeviceContext& ctx,
                uint64_t reg_offset,
-               uint64_t reg_size,
-               std::shared_ptr<CmdQueueMgm> hqc_queue_mgm);
+               uint64_t reg_size);
 
     uint64_t reg_offset() const { return reg_offset_; }
     uint64_t reg_size() const { return reg_size_; }

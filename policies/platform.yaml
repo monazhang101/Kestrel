@@ -1,0 +1,32 @@
+platform: atlas_mvp
+description: ATLAS TPU diagnostic MVP policy placeholder.
+
+devices:
+  - name: ATLAS_0
+    type: TPU
+    match:
+      bdf: "0000:65:00.0"
+      vendor_id: "0x1d0f"
+      device_id: "0x1000"
+    locator:
+      slot: UBB0
+      position: UBB0_POS0
+      atlas_index: 0
+
+  - name: ATLAS_1
+    type: TPU
+    match:
+      bdf: "0000:ca:00.0"
+      vendor_id: "0x1d0f"
+      device_id: "0x1000"
+    locator:
+      slot: UBB0
+      position: UBB0_POS1
+      atlas_index: 1
+
+module_topology:
+  pcie_per_atlas: 1
+  pmu_per_atlas: 1
+  ddp_per_atlas: 4
+  dmc_per_ddp: 3
+  isi_per_atlas: 8

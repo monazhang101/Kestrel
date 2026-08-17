@@ -1,0 +1,23 @@
+module: pcie
+
+tests:
+  pcie_link_status_get:
+    summary: Get current PCIe negotiated speed and link width.
+    args: {}
+
+  pcie_dma_data_transfer:
+    summary: Run PCIe DMA data movement and compare payload.
+    args:
+      direction:
+        type: string
+        default: h2d
+        range: h2d, d2h, both
+      size_bytes:
+        type: u64
+        default: 4096
+        range: 1-4294967296
+        unit: bytes
+      pattern:
+        type: string
+        default: incremental
+        range: zero, incremental, random

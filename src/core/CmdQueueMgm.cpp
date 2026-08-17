@@ -1,4 +1,4 @@
-#include "CmdQueueMgm.h"
+#include "diag/core/CmdQueueMgm.h"
 
 #include <chrono>
 #include <thread>

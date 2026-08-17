@@ -1,13 +1,12 @@
-#include "PMUModule.h"
+#include "diag/module/PMUModule.h"
 
-#include "Common.h"
+#include "diag/core/Common.h"
 
 PMUModule::PMUModule(const std::string& name,
                      const DeviceContext& ctx,
                      uint64_t reg_offset,
-                     uint64_t reg_size,
-                     std::shared_ptr<CmdQueueMgm> hqc_queue_mgm)
-    : BaseDevice(name, ctx, hqc_queue_mgm), reg_offset_(reg_offset), reg_size_(reg_size)
+                     uint64_t reg_size)
+    : BaseDevice(name, ctx), reg_offset_(reg_offset), reg_size_(reg_size)
 {
     auto* bar_base = static_cast<uint8_t*>(ctx_.mapped_bar_base);
     reg_base_ = bar_base == nullptr ? nullptr : bar_base + reg_offset_;

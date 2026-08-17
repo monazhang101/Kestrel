@@ -1,7 +1,7 @@
 #pragma once
 
-#include "BaseDevice.h"
-#include "TPUDevice.h"
+#include "diag/core/BaseDevice.h"
+#include "diag/device/TPUDevice.h"
 
 #include <cstdint>
 #include <memory>

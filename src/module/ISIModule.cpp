@@ -1,14 +1,13 @@
-#include "ISIModule.h"
+#include "diag/module/ISIModule.h"
 
-#include "Common.h"
+#include "diag/core/Common.h"
 
 ISIModule::ISIModule(const std::string& name,
                      const DeviceContext& ctx,
                      uint32_t link_id,
                      uint64_t reg_offset,
-                     uint64_t reg_size,
-                     std::shared_ptr<CmdQueueMgm> hqc_queue_mgm)
-    : BaseDevice(name, ctx, hqc_queue_mgm),
+                     uint64_t reg_size)
+    : BaseDevice(name, ctx),
       link_id_(link_id),
       reg_offset_(reg_offset),
       reg_size_(reg_size)
