@@ -11,7 +11,7 @@ tests:
       direction:
         type: string
         default: h2d
-        range: h2d, d2h, both
+        range: h2d, d2h
       size_bytes:
         type: u64
         default: 4096

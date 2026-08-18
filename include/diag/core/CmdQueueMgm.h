@@ -7,7 +7,7 @@
 
 enum class CmdQueuePath {
     HQC,
-    IPC,
+    IPC, // PMU
 };
 
 struct CmdDescriptor {

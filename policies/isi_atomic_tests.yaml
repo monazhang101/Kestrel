@@ -1,0 +1,14 @@
+module: isi
+
+tests:
+  isi_linkup:
+    summary: Check whether this ISI link is physically present and link-up.
+    args: {}
+
+  isi_setup:
+    summary: Initialize ISI link configuration for this ISI instance.
+    args:
+      mode:
+        type: string
+        default: default
+        range: default, bringup

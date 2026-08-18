@@ -13,6 +13,7 @@ add_library(kestrel_diag
     src/core/CmdQueueMgm.cpp
     src/device/DeviceManager.cpp
     src/device/TPUDevice.cpp
+    src/core/HalBackend.cpp
     src/module/DDPModule.cpp
     src/module/DMCModule.cpp
     src/module/ISIModule.cpp

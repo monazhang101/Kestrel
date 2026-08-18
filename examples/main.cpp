@@ -43,6 +43,8 @@ int main()
     // Pseudocode: discover scans PCI devices, applies BDF/VID/DID policy,
     // mmaps BAR space, creates ATLAS parent devices, and registers child modules.
     DeviceTree tree = device_manager.discover();
+    // Default is iHal. Pass pHal if needed.
+    // DeviceTree tree = device_manager.discover(HalType::pHal);
 
     print_discovery_summary(tree);
 
@@ -54,16 +56,7 @@ int main()
     std::cout << "=== CLI One-shot Simulation ===" << std::endl;
 
     print_test_result(device_manager.run_atomic_test(
-        "ATLAS_0", "identify"));
-
-    print_test_result(device_manager.run_atomic_test(
-        "ATLAS_0.PCIE_0", "pcie_enum_check"));
-
-    print_test_result(device_manager.run_atomic_test(
-        "ATLAS_0.PCIE_0", "pcie_link_status_check", {
-            {"expected_speed", "gen5"},
-            {"expected_width", "x16"},
-        }));
+        "ATLAS_0.PCIE_0", "pcie_link_status_get"));
 
     print_test_result(device_manager.run_atomic_test(
         "ATLAS_0.PCIE_0", "pcie_dma_data_transfer", {
@@ -71,36 +64,6 @@ int main()
             {"size_bytes", "4096"},
             {"pattern", "incremental"},
         }));
-
-    print_test_result(device_manager.run_atomic_test(
-        "ATLAS_0", "soc_gpio_read", {
-            {"pin", "3"},
-        }));
-
-    print_test_result(device_manager.run_atomic_test(
-        "ATLAS_0.PMU_0", "pmu_reg_read", {
-            {"offset", "0x40"},
-        }));
-
-    print_test_result(device_manager.run_atomic_test(
-        "ATLAS_0.ISI_1", "isi_linkup"));
-
-    print_test_result(device_manager.run_atomic_test(
-        "ATLAS_0.DDP_0", "ddp_dvsec_verify"));
-
-    print_test_result(device_manager.run_atomic_test(
-        "ATLAS_1.PCIE_0", "pcie_dma_data_transfer", {
-            {"direction", "both"},
-            {"size_bytes", "1048576"},
-        }));
-
-    // Error scenario: target exists, but this atomic test is not registered there.
-    print_test_result(device_manager.run_atomic_test(
-        "ATLAS_1.PMU_0", "pcie_dma_data_transfer"));
-
-    // Error scenario: unknown target name.
-    print_test_result(device_manager.run_atomic_test(
-        "ATLAS_9", "identify"));
 
     return 0;
 }

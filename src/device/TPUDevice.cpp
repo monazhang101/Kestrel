@@ -104,8 +104,8 @@ TestResult TPUDevice::Identify(TestInfo& ti)
 // @output: TestResult metrics include pin, direction, and status.
 TestResult TPUDevice::SocGpioDirSet(TestInfo& ti)
 {
-    auto pin = common::args::get_string(ti.args, "pin", "0");
-    auto direction = common::args::get_string(ti.args, "direction", "input");
+    auto pin = common::args::get_string(ti.args, "pin");
+    auto direction = common::args::get_string(ti.args, "direction");
     // Pseudocode: route GPIO direction control through PMU, PCIe, or GPIO index access.
     return {"soc_gpio_dir_set", get_name(), true, {
         {"pin", pin},
@@ -119,7 +119,7 @@ TestResult TPUDevice::SocGpioDirSet(TestInfo& ti)
 // @output: TestResult metrics include pin and value.
 TestResult TPUDevice::SocGpioRead(TestInfo& ti)
 {
-    auto pin = common::args::get_string(ti.args, "pin", "0");
+    auto pin = common::args::get_string(ti.args, "pin");
     // Pseudocode: route GPIO read through PMU, PCIe, or GPIO index access.
     return {"soc_gpio_read", get_name(), true, {
         {"pin", pin},
@@ -132,8 +132,8 @@ TestResult TPUDevice::SocGpioRead(TestInfo& ti)
 // @output: TestResult metrics include pin, value, and status.
 TestResult TPUDevice::SocGpioWrite(TestInfo& ti)
 {
-    auto pin = common::args::get_string(ti.args, "pin", "0");
-    auto value = common::args::get_string(ti.args, "value", "1");
+    auto pin = common::args::get_string(ti.args, "pin");
+    auto value = common::args::get_string(ti.args, "value");
     // Pseudocode: route GPIO write through PMU, PCIe, or GPIO index access.
     return {"soc_gpio_write", get_name(), true, {
         {"pin", pin},

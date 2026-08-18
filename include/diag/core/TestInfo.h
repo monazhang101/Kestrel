@@ -7,6 +7,8 @@
 using TestArgs = std::unordered_map<std::string, std::string>;
 using TestMetrics = std::unordered_map<std::string, std::string>;
 
+class HalSession;
+
 enum class LogLevel {
     Error = 0,
     Info = 1,
@@ -59,6 +61,7 @@ struct TestInfo {
     std::string end_time;
     std::string log_path;
     Logger* logger = nullptr;
+    HalSession* hal = nullptr;
 };
 
 struct TestResult {

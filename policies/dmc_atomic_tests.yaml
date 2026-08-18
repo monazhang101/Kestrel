@@ -1,0 +1,14 @@
+module: dmc
+
+tests:
+  dmc_status_check:
+    summary: Check one DDP memory-controller status block.
+    args: {}
+
+  dmc_reg_scan:
+    summary: Scan readable registers for one DMC controller.
+    args:
+      range:
+        type: string
+        default: default
+        range: default, all

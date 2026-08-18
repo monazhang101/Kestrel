@@ -4,36 +4,37 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <exception>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 // ------------------------------------------------------------
-// common::args::get_string() / common::args::get_u64() 
-// provides typed argument parsing for test inputs.
+// common::args::get_string() / common::args::get_u64()
+// reads resolved test inputs after CLI/Python has applied YAML defaults.
 // ------------------------------------------------------------
 namespace common::args {
 
 inline std::string get_string(const TestArgs& args,
-                              const std::string& key,
-                              const std::string& default_value)
+                              const std::string& key)
 {
     auto it = args.find(key);
-    // Use the default when the caller did not provide this argument.
-    return it == args.end() ? default_value : it->second;
+    if (it == args.end()) {
+        throw std::invalid_argument("missing required argument: " + key);
+    }
+    return it->second;
 }
 
 inline uint64_t get_u64(const TestArgs& args,
-                        const std::string& key,
-                        uint64_t default_value)
+                        const std::string& key)
 {
-    auto it = args.find(key);
-    // Use the default when the caller did not provide this argument.
-    if (it == args.end()) {
-        return default_value;
-    }
+    auto value = get_string(args, key);
 
-    // Pseudocode: use robust parsing and error reporting in real code.
-    return static_cast<uint64_t>(std::stoull(it->second, nullptr, 0));
+    try {
+        return static_cast<uint64_t>(std::stoull(value, nullptr, 0));
+    } catch (const std::exception&) {
+        throw std::invalid_argument("invalid u64 argument: " + key + "=" + value);
+    }
 }
 
 }

@@ -17,12 +17,6 @@ private:
     TestResult PmuRegRead(TestInfo& ti);
     TestResult PmuRegWrite(TestInfo& ti);
     TestResult PmuRegCheck(TestInfo& ti);
-    TestResult PmuSoftResetTrigger(TestInfo& ti);
-    TestResult PmuPcieCfgBackup(TestInfo& ti);
-    TestResult PmuPcieCfgRestore(TestInfo& ti);
-    TestResult PmuEccTrigger(TestInfo& ti);
-    TestResult PmuEccClean(TestInfo& ti);
-    TestResult PmuEccSnapshotAssert(TestInfo& ti);
 
 public:
     PMUModule(const std::string& name,

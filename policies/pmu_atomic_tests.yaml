@@ -1,0 +1,59 @@
+module: pmu
+
+tests:
+  pmu_ipc_request_start:
+    summary: Start a PMU IPC transaction and reserve the command mailbox.
+    args:
+      request_id:
+        type: string
+        default: default
+        range: user-defined
+
+  pmu_ipc_request_exec:
+    summary: Execute a previously prepared PMU IPC request.
+    args:
+      opcode:
+        type: string
+        default: "0x0"
+        range: platform-defined
+
+  pmu_ipc_request_finish:
+    summary: Finish a PMU IPC transaction and collect completion status.
+    args:
+      timeout_ms:
+        type: u64
+        default: 1000
+        range: 1-60000
+        unit: ms
+
+  pmu_reg_read:
+    summary: Read one PMU register through the PMU register window.
+    args:
+      offset:
+        type: string
+        default: "0x0"
+        range: pmu-register-window
+
+  pmu_reg_write:
+    summary: Write one PMU register through the PMU register window.
+    args:
+      offset:
+        type: string
+        default: "0x0"
+        range: pmu-register-window
+      value:
+        type: string
+        default: "0x0"
+        range: u32
+
+  pmu_reg_check:
+    summary: Read a PMU register and check it against an expected value.
+    args:
+      offset:
+        type: string
+        default: "0x0"
+        range: pmu-register-window
+      expected:
+        type: string
+        default: "0x0"
+        range: u32

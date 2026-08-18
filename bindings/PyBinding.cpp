@@ -78,6 +78,10 @@ PYBIND11_MODULE(tpu_hal, m)
         .value("DEBUG", LogLevel::Debug)
         .value("TRACE", LogLevel::Trace);
 
+    py::enum_<HalType>(m, "HalType")
+        .value("pHal", HalType::pHal)
+        .value("iHal", HalType::iHal);
+
     py::class_<DeviceDiscoveryInfo>(m, "DeviceDiscoveryInfo")
         .def(py::init<>())
         .def_readwrite("name", &DeviceDiscoveryInfo::name)
@@ -134,10 +138,21 @@ PYBIND11_MODULE(tpu_hal, m)
 
     py::class_<DeviceManager>(m, "DeviceManager")
         .def(py::init<>())
+        .def(py::init<HalType>(), py::arg("hal_type"))
+        .def("get_hal_type", &DeviceManager::get_hal_type)
         .def("discover", [](DeviceManager& manager) {
             return device_tree_to_dict(manager.discover());
         })
-        .def("discover_tree", &DeviceManager::discover)
+        .def("discover",
+             [](DeviceManager& manager, HalType hal_type) {
+                 return device_tree_to_dict(manager.discover(hal_type));
+             },
+             py::arg("hal_type"))
+        .def("discover_tree",
+             static_cast<DeviceTree (DeviceManager::*)()>(&DeviceManager::discover))
+        .def("discover_tree",
+             static_cast<DeviceTree (DeviceManager::*)(HalType)>(&DeviceManager::discover),
+             py::arg("hal_type"))
         .def("get_target",
              &DeviceManager::get_target,
              py::arg("target_name"),
@@ -162,4 +177,9 @@ PYBIND11_MODULE(tpu_hal, m)
         DeviceManager manager;
         return device_tree_to_dict(manager.discover());
     });
+
+    m.def("discover", [](HalType hal_type) {
+        DeviceManager manager;
+        return device_tree_to_dict(manager.discover(hal_type));
+    }, py::arg("hal_type"));
 }

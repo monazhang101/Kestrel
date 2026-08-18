@@ -2,6 +2,7 @@
 
 #include "diag/core/BaseDevice.h"
 #include "diag/device/TPUDevice.h"
+#include "diag/core/HalBackend.h"
 
 #include <cstdint>
 #include <memory>
@@ -43,20 +44,17 @@ class DeviceManager {
 private:
     static constexpr uint16_t TPU_VENDOR_ID = 0x1d0f;
     static constexpr uint16_t TPU_DEVICE_ID = 0x1000;
-    static constexpr uint64_t TPU_BAR_SIZE  = 0x10000;
 
+    HalSession hal_;
     std::vector<std::unique_ptr<TPUDevice>> devices_;
-    std::vector<std::unique_ptr<std::vector<uint8_t>>> mapped_bar_storage_;
     std::unordered_map<std::string, BaseDevice*> target_registry_;
     std::vector<PolicyEntry> policy_;
     DeviceTree device_tree_;
     Logger logger_;
 
     std::vector<PolicyEntry> load_policy() const;
-    std::vector<DeviceContext> scan_pci_devices() const;
     const PolicyEntry* find_policy_for_bdf(const std::string& bdf) const;
     bool is_supported_tpu(const DeviceContext& ctx) const;
-    DeviceContext mmap_bar_space(DeviceContext ctx);
     void clear_discovered_devices();
     void register_target(BaseDevice* target);
     void register_device_tree(BaseDevice* target);
@@ -71,14 +69,16 @@ private:
                          const PolicyEntry& policy_entry);
 
 public:
-    DeviceManager();
+    explicit DeviceManager(HalType hal_type = HalType::iHal);
 
     DeviceManager(const DeviceManager&) = delete;
     DeviceManager& operator=(const DeviceManager&) = delete;
 
     ~DeviceManager();
 
+    HalType get_hal_type() const;
     DeviceTree discover();
+    DeviceTree discover(HalType hal_type);
     BaseDevice* get_target(const std::string& target_name);
     std::vector<std::string> get_target_names() const;
     void set_log_level(LogLevel level);

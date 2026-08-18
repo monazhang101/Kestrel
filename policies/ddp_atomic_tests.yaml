@@ -1,0 +1,10 @@
+module: ddp
+
+tests:
+  ddp_dmem_linkup_verify:
+    summary: Verify DDP device-memory link-up state.
+    args:
+      link:
+        type: string
+        default: all
+        range: all, platform-defined

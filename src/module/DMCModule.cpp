@@ -37,11 +37,11 @@ TestResult DMCModule::DmcStatusCheck(TestInfo& ti)
 }
 
 // dmc_reg_scan : To scan readable registers for one DMC controller.
-// @input: args["range"] optional register range.
+// @input: args["range"] resolved by YAML defaults.
 // @output: TestResult metrics include scanned_range and bad_register_count.
 TestResult DMCModule::DmcRegScan(TestInfo& ti)
 {
-    auto range = common::args::get_string(ti.args, "range", "default");
+    auto range = common::args::get_string(ti.args, "range");
     (void)reg_base_;
     (void)reg_size_;
     return {"dmc_reg_scan", get_name(), true, {

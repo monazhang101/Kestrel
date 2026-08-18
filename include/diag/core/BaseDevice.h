@@ -3,6 +3,7 @@
 #include "diag/core/TestInfo.h"
 
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -45,7 +46,8 @@ public:
 
     virtual TestResult run_atomic_test(const std::string& test_name,
                                        const TestArgs& args = {},
-                                       Logger* logger = nullptr)
+                                       Logger* logger = nullptr,
+                                       HalSession* hal = nullptr)
     {
         std::lock_guard<std::mutex> lock(device_mutex_);
         Logger default_logger;
@@ -59,6 +61,7 @@ public:
         ti.start_time = "start_time_pseudocode";
         ti.log_path = "./logs/" + name_ + "/" + test_name + ".log";
         ti.logger = logger == nullptr ? &default_logger : logger;
+        ti.hal = hal;
         ti.logger->set_log_path(ti.log_path);
 
         auto it = registered_tests_.find(test_name);
@@ -74,7 +77,19 @@ public:
             };
         }
 
-        auto result = it->second(ti);
+        TestResult result;
+        try {
+            result = it->second(ti);
+        } catch (const std::exception& e) {
+            result = {
+                test_name,
+                name_,
+                false,
+                {},
+                "atomic test failed before execution completed",
+                e.what()
+            };
+        }
         ti.end_time = "end_time_pseudocode";
         return result;
     }

@@ -26,8 +26,9 @@ std::string infer_child_type(const std::string& target_name)
 
 }
 
-DeviceManager::DeviceManager()
-    : policy_(load_policy())
+DeviceManager::DeviceManager(HalType hal_type)
+    : hal_(hal_type),
+      policy_(load_policy())
 {
 }
 
@@ -48,30 +49,6 @@ std::vector<PolicyEntry> DeviceManager::load_policy() const
     };
 }
 
-std::vector<DeviceContext> DeviceManager::scan_pci_devices() const
-{
-    // Pseudocode:
-    // 1. Walk /sys/bus/pci/devices.
-    // 2. Read vendor, device, revision, and BAR resource files.
-    // 3. Return observed PCI devices before policy filtering.
-    DeviceContext tpu0;
-    tpu0.bdf = "0000:65:00.0";
-    tpu0.vendor_id = TPU_VENDOR_ID;
-    tpu0.device_id = TPU_DEVICE_ID;
-
-    DeviceContext tpu1;
-    tpu1.bdf = "0000:ca:00.0";
-    tpu1.vendor_id = TPU_VENDOR_ID;
-    tpu1.device_id = TPU_DEVICE_ID;
-
-    DeviceContext unrelated_device;
-    unrelated_device.bdf = "0000:17:00.0";
-    unrelated_device.vendor_id = 0xffff;
-    unrelated_device.device_id = 0xffff;
-
-    return {tpu0, tpu1, unrelated_device};
-}
-
 const PolicyEntry* DeviceManager::find_policy_for_bdf(const std::string& bdf) const
 {
     for (const auto& entry : policy_) {
@@ -87,25 +64,11 @@ bool DeviceManager::is_supported_tpu(const DeviceContext& ctx) const
     return ctx.vendor_id == TPU_VENDOR_ID && ctx.device_id == TPU_DEVICE_ID;
 }
 
-DeviceContext DeviceManager::mmap_bar_space(DeviceContext ctx)
-{
-    // Pseudocode:
-    // 1. Open /sys/bus/pci/devices/<bdf>/resource0 or a VFIO region.
-    // 2. mmap BAR0 into user space.
-    // 3. Keep the mapping lifetime owned by DeviceManager.
-    mapped_bar_storage_.push_back(
-        std::make_unique<std::vector<uint8_t>>(TPU_BAR_SIZE, 0));
-
-    ctx.mapped_bar_base = mapped_bar_storage_.back()->data();
-    ctx.bar_size = TPU_BAR_SIZE;
-    return ctx;
-}
-
 void DeviceManager::clear_discovered_devices()
 {
     target_registry_.clear();
     devices_.clear();
-    mapped_bar_storage_.clear();
+    hal_.clear();
     device_tree_ = {};
 }
 
@@ -210,7 +173,7 @@ DeviceTree DeviceManager::discover()
 {
     clear_discovered_devices();
 
-    auto pci_devices = scan_pci_devices();
+    auto pci_devices = hal_.scan_pci_devices();
 
     for (auto& pci_device : pci_devices) {
         if (!is_supported_tpu(pci_device)) {
@@ -222,7 +185,7 @@ DeviceTree DeviceManager::discover()
             continue;
         }
 
-        auto mapped_ctx = mmap_bar_space(pci_device);
+        auto mapped_ctx = hal_.mmap_bar_space(pci_device);
         auto tpu_device = std::make_unique<TPUDevice>(
             policy_entry->logical_name, mapped_ctx, policy_entry->tpu_index);
 
@@ -234,6 +197,18 @@ DeviceTree DeviceManager::discover()
     }
 
     return device_tree_;
+}
+
+DeviceTree DeviceManager::discover(HalType hal_type)
+{
+    clear_discovered_devices();
+    hal_.reset(hal_type);
+    return discover();
+}
+
+HalType DeviceManager::get_hal_type() const
+{
+    return hal_.type();
 }
 
 BaseDevice* DeviceManager::get_target(const std::string& target_name)
@@ -277,7 +252,8 @@ TestResult DeviceManager::run_atomic_test(const std::string& target_name,
         };
     }
 
-    return target->run_atomic_test(test_name, args, &logger_);
+    // TODO: Resolve YAML policy defaults/ranges for this target/test before dispatch.
+    return target->run_atomic_test(test_name, args, &logger_, &hal_);
 }
 
 void DeviceManager::print_tree() const

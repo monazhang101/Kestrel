@@ -14,16 +14,9 @@ DDPModule::DDPModule(const std::string& name,
 {
     auto* bar_base = static_cast<uint8_t*>(ctx_.mapped_bar_base);
     reg_base_ = bar_base == nullptr ? nullptr : bar_base + reg_offset_;
-
-    _add_test("ddp_bdf_get_secondary_bus", [this](TestInfo& ti) { return DdpBdfGetSecondaryBus(ti); });
-    _add_test("ddp_dvsec_verify", [this](TestInfo& ti) { return DdpDvsecVerify(ti); });
-    _add_test("ddp_dvsec_walk_chain", [this](TestInfo& ti) { return DdpDvsecWalkChain(ti); });
-    _add_test("ddp_width_verify", [this](TestInfo& ti) { return DdpWidthVerify(ti); });
+    
+    // ----------------- Atomic Tests -----------------
     _add_test("ddp_dmem_linkup_verify", [this](TestInfo& ti) { return DdpDmemLinkupVerify(ti); });
-    _add_test("ddp_dmem_perf", [this](TestInfo& ti) { return DdpDmemPerf(ti); });
-    _add_test("ddp_mc_linkup_intr_verify", [this](TestInfo& ti) { return DdpMcLinkupIntrVerify(ti); });
-    _add_test("ddp_pcie_reg_scan", [this](TestInfo& ti) { return DdpPcieRegScan(ti); });
-    _add_test("ddp_bist_fifo_run", [this](TestInfo& ti) { return DdpBistFifoRun(ti); });
 
     for (size_t i = 0; i < DMC_COUNT; ++i) {
         dmc_modules_.push_back(std::make_unique<DMCModule>(
@@ -68,11 +61,11 @@ TestResult DDPModule::DdpBdfGetSecondaryBus(TestInfo& ti)
 }
 
 // ddp_dvsec_verify : To verify DDP DVSEC capability fields against expected values.
-// @input: args["expected_vendor"] optional expected DVSEC vendor.
+// @input: args["expected_vendor"] resolved by YAML defaults.
 // @output: TestResult metrics include dvsec_status and expected_vendor.
 TestResult DDPModule::DdpDvsecVerify(TestInfo& ti)
 {
-    auto expected_vendor = common::args::get_string(ti.args, "expected_vendor", "tpu_vendor");
+    auto expected_vendor = common::args::get_string(ti.args, "expected_vendor");
     return {"ddp_dvsec_verify", get_name(), true, {
         {"expected_vendor", expected_vendor},
         {"dvsec_status", "matched"}
@@ -96,7 +89,7 @@ TestResult DDPModule::DdpDvsecWalkChain(TestInfo& ti)
 // @output: TestResult metrics include expected_width, observed_width, and width_status.
 TestResult DDPModule::DdpWidthVerify(TestInfo& ti)
 {
-    auto expected_width = common::args::get_string(ti.args, "expected_width", "x8");
+    auto expected_width = common::args::get_string(ti.args, "expected_width");
     return {"ddp_width_verify", get_name(), true, {
         {"expected_width", expected_width},
         {"observed_width", expected_width},
@@ -105,11 +98,11 @@ TestResult DDPModule::DdpWidthVerify(TestInfo& ti)
 }
 
 // ddp_dmem_linkup_verify : To verify DDP device-memory link-up state.
-// @input: args["link"] optional DDP DMEM link selector.
+// @input: args["link"] resolved by YAML defaults.
 // @output: TestResult metrics include link and linkup_status.
 TestResult DDPModule::DdpDmemLinkupVerify(TestInfo& ti)
 {
-    auto link = common::args::get_string(ti.args, "link", "all");
+    auto link = common::args::get_string(ti.args, "link");
     return {"ddp_dmem_linkup_verify", get_name(), true, {
         {"link", link},
         {"linkup_status", "up"}
@@ -121,8 +114,8 @@ TestResult DDPModule::DdpDmemLinkupVerify(TestInfo& ti)
 // @output: TestResult metrics include size_bytes, pattern, and bandwidth_gbps.
 TestResult DDPModule::DdpDmemPerf(TestInfo& ti)
 {
-    auto size_bytes = common::args::get_string(ti.args, "size_bytes", "1048576");
-    auto pattern = common::args::get_string(ti.args, "pattern", "incremental");
+    auto size_bytes = common::args::get_string(ti.args, "size_bytes");
+    auto pattern = common::args::get_string(ti.args, "pattern");
     return {"ddp_dmem_perf", get_name(), true, {
         {"size_bytes", size_bytes},
         {"pattern", pattern},
@@ -135,7 +128,7 @@ TestResult DDPModule::DdpDmemPerf(TestInfo& ti)
 // @output: TestResult metrics include mc and interrupt_status.
 TestResult DDPModule::DdpMcLinkupIntrVerify(TestInfo& ti)
 {
-    auto mc = common::args::get_string(ti.args, "mc", "all");
+    auto mc = common::args::get_string(ti.args, "mc");
     return {"ddp_mc_linkup_intr_verify", get_name(), true, {
         {"mc", mc},
         {"interrupt_status", "observed"}
@@ -143,11 +136,11 @@ TestResult DDPModule::DdpMcLinkupIntrVerify(TestInfo& ti)
 }
 
 // ddp_pcie_reg_scan : To scan PCIe-facing DDP registers.
-// @input: args["range"] optional register range.
+// @input: args["range"] resolved by YAML defaults.
 // @output: TestResult metrics include scanned_range and bad_register_count.
 TestResult DDPModule::DdpPcieRegScan(TestInfo& ti)
 {
-    auto range = common::args::get_string(ti.args, "range", "all");
+    auto range = common::args::get_string(ti.args, "range");
     (void)reg_base_;
     (void)reg_size_;
     return {"ddp_pcie_reg_scan", get_name(), true, {
@@ -157,11 +150,11 @@ TestResult DDPModule::DdpPcieRegScan(TestInfo& ti)
 }
 
 // ddp_bist_fifo_run : To run DDP BIST FIFO diagnostics.
-// @input: args["pattern"] optional BIST data pattern.
+// @input: args["pattern"] resolved by YAML defaults.
 // @output: TestResult metrics include pattern and bist_status.
 TestResult DDPModule::DdpBistFifoRun(TestInfo& ti)
 {
-    auto pattern = common::args::get_string(ti.args, "pattern", "incremental");
+    auto pattern = common::args::get_string(ti.args, "pattern");
     return {"ddp_bist_fifo_run", get_name(), true, {
         {"pattern", pattern},
         {"bist_status", "passed"}
