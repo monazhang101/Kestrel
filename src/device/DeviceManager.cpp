@@ -252,6 +252,25 @@ TestResult DeviceManager::run_atomic_test(const std::string& target_name,
         };
     }
 
+    // -------------------------------
+    // Future per-device execution lock boundary.
+    //
+    // If MVP policy chooses "one test at a time per TPU", derive the top-level
+    // TPU name from target_name before dispatch:
+    //   ATLAS_0           -> ATLAS_0
+    //   ATLAS_0.PCIE_0    -> ATLAS_0
+    //   ATLAS_0.DDP_0     -> ATLAS_0
+    //   ATLAS_0.DDP_0.DMC_0_0 -> ATLAS_0
+    //
+    // Then lock device_execution_mutexes_[root_tpu_name] here, before calling
+    // target->run_atomic_test(). BaseDevice still keeps its own
+    // atomic_test_mutex_ for same-target atomic test serialization,
+    // so the final order is:
+    //   DeviceManager per-TPU lock -> BaseDevice atomic_test_mutex_ -> test body.
+    //
+    // This intentionally serializes all modules under one TPU while allowing
+    // different TPU devices, such as ATLAS_0 and ATLAS_1, to run in parallel.
+    // -------------------------------
     // TODO: Resolve YAML policy defaults/ranges for this target/test before dispatch.
     return target->run_atomic_test(test_name, args, &logger_, &hal_);
 }

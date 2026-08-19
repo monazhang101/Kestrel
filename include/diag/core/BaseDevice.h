@@ -24,7 +24,7 @@ using AtomicTestFunc = std::function<TestResult(TestInfo& ti)>;
 
 class BaseDevice {
 private:
-    std::mutex device_mutex_;
+    std::mutex atomic_test_mutex_;
 
 protected:
     std::string name_;
@@ -49,7 +49,7 @@ public:
                                        Logger* logger = nullptr,
                                        HalSession* hal = nullptr)
     {
-        std::lock_guard<std::mutex> lock(device_mutex_);
+        std::lock_guard<std::mutex> lock(atomic_test_mutex_);
         Logger default_logger;
 
         TestInfo ti;
