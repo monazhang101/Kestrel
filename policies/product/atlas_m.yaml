@@ -1,0 +1,32 @@
+chip_profile:
+  product: atlas_m
+  match:
+    vendor_id: "0x1d0f"
+    device_id: "0x1001"
+  modules:
+    pcie:
+      - index: 0
+        reg_offset: "0x0000"
+        reg_size: "0x1000"
+    ddp:
+      - index: 0
+        reg_offset: "0x2000"
+        reg_size: "0x1000"
+    isi:
+      - index: 0
+        reg_offset: "0x4000"
+        reg_size: "0x1000"
+      - index: 1
+        reg_offset: "0x5000"
+        reg_size: "0x1000"
+
+platform_inventory:
+  platform: atlas_m
+  devices:
+    - name: ATM_0
+      match:
+        bdf: "0000:65:00.0"
+      locator:
+        slot: UBB0
+        position: UBB0_POS0
+        index: 0

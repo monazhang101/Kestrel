@@ -1,12 +1,15 @@
 #include "diag/module/PMUModule.h"
 
-#include "diag/core/Common.h"
+#include <utility>
 
 PMUModule::PMUModule(const std::string& name,
                      const DeviceContext& ctx,
-                     uint64_t reg_offset,
-                     uint64_t reg_size)
-    : BaseDevice(name, ctx), reg_offset_(reg_offset), reg_size_(reg_size)
+                     const ModuleInstanceConfig& config,
+                     std::unique_ptr<PMUImpl> impl)
+    : BaseDevice(name, ctx),
+      reg_offset_(config.reg_offset),
+      reg_size_(config.reg_size),
+      impl_(std::move(impl))
 {
     auto* bar_base = static_cast<uint8_t*>(ctx_.mapped_bar_base);
     reg_base_ = bar_base == nullptr ? nullptr : bar_base + reg_offset_;
@@ -26,16 +29,10 @@ PMUModule::PMUModule(const std::string& name,
 // @output: TestResult metrics include ipc_state and request_id.
 TestResult PMUModule::PmuIpcRequestStart(TestInfo& ti)
 {
-    auto request_id = common::args::get_string(ti.args, "request_id");
-
-    // Pseudocode: check mailbox idle, write request header, mark IPC busy.
-    (void)reg_base_;
-    (void)reg_size_;
-
-    return {"pmu_ipc_request_start", get_name(), true, {
-        {"request_id", request_id},
-        {"ipc_state", "started"}
-    }};
+    if (impl_ == nullptr) {
+        return make_unimplemented_result(ti, "PMU implementation is not bound");
+    }
+    return impl_->PmuIpcRequestStart(ti);
 }
 
 // pmu_ipc_request_exec : To execute a previously prepared PMU IPC request.
@@ -43,16 +40,10 @@ TestResult PMUModule::PmuIpcRequestStart(TestInfo& ti)
 // @output: TestResult metrics include opcode and completion_state.
 TestResult PMUModule::PmuIpcRequestExec(TestInfo& ti)
 {
-    auto opcode = common::args::get_string(ti.args, "opcode");
-
-    // Pseudocode: write opcode, ring PMU mailbox doorbell, poll command accepted bit.
-    (void)reg_base_;
-    (void)reg_size_;
-
-    return {"pmu_ipc_request_exec", get_name(), true, {
-        {"opcode", opcode},
-        {"completion_state", "accepted"}
-    }};
+    if (impl_ == nullptr) {
+        return make_unimplemented_result(ti, "PMU implementation is not bound");
+    }
+    return impl_->PmuIpcRequestExec(ti);
 }
 
 // pmu_ipc_request_finish : To finish a PMU IPC transaction and collect completion status.
@@ -60,17 +51,10 @@ TestResult PMUModule::PmuIpcRequestExec(TestInfo& ti)
 // @output: TestResult metrics include completion_state and pmu_status.
 TestResult PMUModule::PmuIpcRequestFinish(TestInfo& ti)
 {
-    auto timeout_ms = common::args::get_string(ti.args, "timeout_ms");
-
-    // Pseudocode: poll completion bit, read result code, clear mailbox busy state.
-    (void)reg_base_;
-    (void)reg_size_;
-
-    return {"pmu_ipc_request_finish", get_name(), true, {
-        {"timeout_ms", timeout_ms},
-        {"completion_state", "done"},
-        {"pmu_status", "ok"}
-    }};
+    if (impl_ == nullptr) {
+        return make_unimplemented_result(ti, "PMU implementation is not bound");
+    }
+    return impl_->PmuIpcRequestFinish(ti);
 }
 
 // pmu_reg_read : To read one PMU register through the PMU register window.
@@ -78,16 +62,10 @@ TestResult PMUModule::PmuIpcRequestFinish(TestInfo& ti)
 // @output: TestResult metrics include offset and value.
 TestResult PMUModule::PmuRegRead(TestInfo& ti)
 {
-    auto offset = common::args::get_string(ti.args, "offset");
-
-    // Pseudocode: ok = common::reg::read(reg_base_, reg_size_, parsed_offset, &value, sizeof(value)).
-    (void)reg_base_;
-    (void)reg_size_;
-
-    return {"pmu_reg_read", get_name(), true, {
-        {"offset", offset},
-        {"value", "0x00000000"}
-    }};
+    if (impl_ == nullptr) {
+        return make_unimplemented_result(ti, "PMU implementation is not bound");
+    }
+    return impl_->PmuRegRead(ti);
 }
 
 // pmu_reg_write : To write one PMU register through the PMU register window.
@@ -95,18 +73,10 @@ TestResult PMUModule::PmuRegRead(TestInfo& ti)
 // @output: TestResult metrics include offset, value, and write_status.
 TestResult PMUModule::PmuRegWrite(TestInfo& ti)
 {
-    auto offset = common::args::get_string(ti.args, "offset");
-    auto value = common::args::get_string(ti.args, "value");
-
-    // Pseudocode: ok = common::reg::write(reg_base_, reg_size_, parsed_offset, &parsed_value, sizeof(parsed_value)).
-    (void)reg_base_;
-    (void)reg_size_;
-
-    return {"pmu_reg_write", get_name(), true, {
-        {"offset", offset},
-        {"value", value},
-        {"write_status", "done"}
-    }};
+    if (impl_ == nullptr) {
+        return make_unimplemented_result(ti, "PMU implementation is not bound");
+    }
+    return impl_->PmuRegWrite(ti);
 }
 
 // pmu_reg_check : To read a PMU register and check it against an expected value.
@@ -114,17 +84,8 @@ TestResult PMUModule::PmuRegWrite(TestInfo& ti)
 // @output: TestResult metrics include offset, actual, expected, and check_status.
 TestResult PMUModule::PmuRegCheck(TestInfo& ti)
 {
-    auto offset = common::args::get_string(ti.args, "offset");
-    auto expected = common::args::get_string(ti.args, "expected");
-
-    // Pseudocode: read actual value, apply optional mask, compare with expected.
-    (void)reg_base_;
-    (void)reg_size_;
-
-    return {"pmu_reg_check", get_name(), true, {
-        {"offset", offset},
-        {"actual", expected},
-        {"expected", expected},
-        {"check_status", "match"}
-    }};
+    if (impl_ == nullptr) {
+        return make_unimplemented_result(ti, "PMU implementation is not bound");
+    }
+    return impl_->PmuRegCheck(ti);
 }

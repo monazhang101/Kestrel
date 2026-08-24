@@ -1,16 +1,16 @@
 #include "diag/module/ISIModule.h"
 
-#include "diag/core/Common.h"
+#include <utility>
 
 ISIModule::ISIModule(const std::string& name,
                      const DeviceContext& ctx,
-                     uint32_t link_id,
-                     uint64_t reg_offset,
-                     uint64_t reg_size)
+                     const ModuleInstanceConfig& config,
+                     std::unique_ptr<ISIImpl> impl)
     : BaseDevice(name, ctx),
-      link_id_(link_id),
-      reg_offset_(reg_offset),
-      reg_size_(reg_size)
+      link_id_(config.index),
+      reg_offset_(config.reg_offset),
+      reg_size_(config.reg_size),
+      impl_(std::move(impl))
 {
     auto* bar_base = static_cast<uint8_t*>(ctx_.mapped_bar_base);
     reg_base_ = bar_base == nullptr ? nullptr : bar_base + reg_offset_;
@@ -26,18 +26,10 @@ ISIModule::ISIModule(const std::string& name,
 // @output: TestResult metrics include link_id, link_status, lane_ready_bitmap, and error_count.
 TestResult ISIModule::IsiLinkup(TestInfo& ti)
 {
-    (void)reg_base_;
-    (void)reg_size_;
-
-    // Pseudocode: read present, training done, lane ready, and error counter registers.
-    (void)ti.args;
-
-    return {"isi_linkup", get_name(), true, {
-        {"link_id", std::to_string(link_id_)},
-        {"link_status", "up"},
-        {"lane_ready_bitmap", "0xff"},
-        {"error_count", "0"}
-    }};
+    if (impl_ == nullptr) {
+        return make_unimplemented_result(ti, "ISI implementation is not bound");
+    }
+    return impl_->IsiLinkup(ti);
 }
 
 // isi_setup : To initialize ISI link configuration for this ISI instance.
@@ -45,15 +37,8 @@ TestResult ISIModule::IsiLinkup(TestInfo& ti)
 // @output: TestResult metrics include link_id, mode, and setup_status.
 TestResult ISIModule::IsiSetup(TestInfo& ti)
 {
-    (void)reg_base_;
-    (void)reg_size_;
-    auto mode = common::args::get_string(ti.args, "mode");
-
-    // Pseudocode: program link mode, lane config, timeout, and enable training.
-
-    return {"isi_setup", get_name(), true, {
-        {"link_id", std::to_string(link_id_)},
-        {"mode", mode},
-        {"setup_status", "done"}
-    }};
+    if (impl_ == nullptr) {
+        return make_unimplemented_result(ti, "ISI implementation is not bound");
+    }
+    return impl_->IsiSetup(ti);
 }

@@ -72,3 +72,16 @@ struct TestResult {
     std::string error_description;
     std::string error_details;
 };
+
+inline TestResult make_unimplemented_result(const TestInfo& ti,
+                                            const std::string& reason)
+{
+    return {
+        ti.test_name,
+        ti.target_name,
+        false,
+        {{"status", "UNIMPLEMENTED"}},
+        "UNIMPLEMENTED",
+        reason
+    };
+}

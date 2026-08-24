@@ -12,12 +12,14 @@ uint64_t align_up(uint64_t value, uint64_t alignment)
 
 uint64_t reserve_fake_dma_addr(uint64_t size_bytes)
 {
+    // Temporary dry-run address allocator; real backends should return HAL-owned addresses.
     static std::atomic<uint64_t> next_addr{0x10000000};
     return next_addr.fetch_add(align_up(size_bytes, 0x1000));
 }
 
 uint64_t next_fake_backend_handle()
 {
+    // Temporary dry-run handle generator; real backends should return backend resource handles.
     static std::atomic<uint64_t> next_handle{1};
     return next_handle.fetch_add(1);
 }

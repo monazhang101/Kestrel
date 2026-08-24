@@ -43,8 +43,7 @@ int main()
     // Pseudocode: discover scans PCI devices, applies BDF/VID/DID policy,
     // mmaps BAR space, creates ATLAS parent devices, and registers child modules.
     DeviceTree tree = device_manager.discover();
-    // Default is iHal. Pass pHal if needed.
-    // DeviceTree tree = device_manager.discover(HalType::pHal);
+    // Use DeviceManager(HalType::pHal) to discover through the pHal backend.
 
     print_discovery_summary(tree);
 

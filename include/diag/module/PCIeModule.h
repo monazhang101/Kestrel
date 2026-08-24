@@ -1,8 +1,11 @@
 #pragma once
 
 #include "diag/core/BaseDevice.h"
+#include "diag/core/PlatformPolicy.h"
+#include "diag/implementer/PCIeImpl.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 
 class PCIeModule : public BaseDevice {
@@ -10,7 +13,9 @@ private:
     void* reg_base_ = nullptr;
     uint64_t reg_offset_ = 0;
     uint64_t reg_size_ = 0;
+    std::unique_ptr<PCIeImpl> impl_;
 
+    /* ----------- Register atomic tests here ----------- */
     TestResult PcieLinkStatusGet(TestInfo& ti);
     TestResult PcieDmaDataTransfer(TestInfo& ti);
     /*
@@ -36,8 +41,8 @@ private:
 public:
     PCIeModule(const std::string& name,
                const DeviceContext& ctx,
-               uint64_t reg_offset,
-               uint64_t reg_size);
+               const ModuleInstanceConfig& config,
+               std::unique_ptr<PCIeImpl> impl);
 
     uint64_t reg_offset() const { return reg_offset_; }
     uint64_t reg_size() const { return reg_size_; }

@@ -1,8 +1,11 @@
 #pragma once
 
 #include "diag/core/BaseDevice.h"
+#include "diag/core/PlatformPolicy.h"
+#include "diag/implementer/DMCImpl.h"
 
 #include <cstdint>
+#include <memory>
 #include <string>
 
 class DMCModule : public BaseDevice {
@@ -12,7 +15,9 @@ private:
     void* reg_base_ = nullptr;
     uint64_t reg_offset_ = 0;
     uint64_t reg_size_ = 0;
+    std::unique_ptr<DMCImpl> impl_;
 
+    /* ----------- Register atomic tests here ----------- */
     TestResult DmcStatusCheck(TestInfo& ti);
     TestResult DmcRegScan(TestInfo& ti);
 
@@ -20,9 +25,8 @@ public:
     DMCModule(const std::string& name,
               const DeviceContext& ctx,
               uint32_t ddp_id,
-              uint32_t controller_id,
-              uint64_t reg_offset,
-              uint64_t reg_size);
+              const ModuleInstanceConfig& config,
+              std::unique_ptr<DMCImpl> impl);
 
     uint32_t ddp_id() const { return ddp_id_; }
     uint32_t controller_id() const { return controller_id_; }

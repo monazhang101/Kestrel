@@ -1,0 +1,124 @@
+chip_profile:
+  product: atlas
+  match:
+    vendor_id: "0x1d0f"
+    device_id: "0x1000"
+  modules:
+    pcie:
+      - index: 0
+        reg_offset: "0x0000"
+        reg_size: "0x1000"
+    pmu:
+      - index: 0
+        reg_offset: "0x1000"
+        reg_size: "0x1000"
+    ddp:
+      - index: 0
+        reg_offset: "0x2000"
+        reg_size: "0x1000"
+        dmc:
+          - index: 0
+            reg_offset: "0x2400"
+            reg_size: "0x100"
+          - index: 1
+            reg_offset: "0x2500"
+            reg_size: "0x100"
+          - index: 2
+            reg_offset: "0x2600"
+            reg_size: "0x100"
+      - index: 1
+        reg_offset: "0x3000"
+        reg_size: "0x1000"
+        dmc:
+          - index: 0
+            reg_offset: "0x3400"
+            reg_size: "0x100"
+          - index: 1
+            reg_offset: "0x3500"
+            reg_size: "0x100"
+          - index: 2
+            reg_offset: "0x3600"
+            reg_size: "0x100"
+      - index: 2
+        reg_offset: "0x4000"
+        reg_size: "0x1000"
+        dmc:
+          - index: 0
+            reg_offset: "0x4400"
+            reg_size: "0x100"
+          - index: 1
+            reg_offset: "0x4500"
+            reg_size: "0x100"
+          - index: 2
+            reg_offset: "0x4600"
+            reg_size: "0x100"
+      - index: 3
+        reg_offset: "0x5000"
+        reg_size: "0x1000"
+        dmc:
+          - index: 0
+            reg_offset: "0x5400"
+            reg_size: "0x100"
+          - index: 1
+            reg_offset: "0x5500"
+            reg_size: "0x100"
+          - index: 2
+            reg_offset: "0x5600"
+            reg_size: "0x100"
+    isi:
+      - index: 0
+        reg_offset: "0x6000"
+        reg_size: "0x1000"
+      - index: 1
+        reg_offset: "0x7000"
+        reg_size: "0x1000"
+      - index: 2
+        reg_offset: "0x8000"
+        reg_size: "0x1000"
+      - index: 3
+        reg_offset: "0x9000"
+        reg_size: "0x1000"
+      - index: 4
+        reg_offset: "0xa000"
+        reg_size: "0x1000"
+      - index: 5
+        reg_offset: "0xb000"
+        reg_size: "0x1000"
+      - index: 6
+        reg_offset: "0xc000"
+        reg_size: "0x1000"
+      - index: 7
+        reg_offset: "0xd000"
+        reg_size: "0x1000"
+
+platform_inventory:
+  platform: atlas_ubb
+  devices:
+    - name: ATLAS_0
+      match:
+        bdf: "0000:65:00.0"
+      locator:
+        slot: UBB0
+        position: UBB0_POS0
+        index: 0
+    - name: ATLAS_1
+      match:
+        bdf: "0000:ca:00.0"
+      locator:
+        slot: UBB0
+        position: UBB0_POS1
+        index: 1
+    - name: ATLAS_2
+      match:
+        bdf: "0000:e3:00.0"
+      locator:
+        slot: UBB0
+        position: UBB0_POS2
+        index: 2
+    - name: ATLAS_3
+      match:
+        bdf: "0000:17:00.0"
+      locator:
+        slot: UBB0
+        position: UBB0_POS3
+        index: 3

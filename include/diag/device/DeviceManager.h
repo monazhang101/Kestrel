@@ -1,6 +1,7 @@
 #pragma once
 
 #include "diag/core/BaseDevice.h"
+#include "diag/core/PlatformPolicy.h"
 #include "diag/device/TPUDevice.h"
 #include "diag/core/HalBackend.h"
 
@@ -32,19 +33,8 @@ struct DeviceTree {
     std::vector<TopologyEdge> topology;
 };
 
-struct PolicyEntry {
-    std::string bdf;
-    std::string logical_name;
-    std::string slot;
-    std::string position;
-    uint32_t tpu_index = 0;
-};
-
 class DeviceManager {
 private:
-    static constexpr uint16_t TPU_VENDOR_ID = 0x1d0f;
-    static constexpr uint16_t TPU_DEVICE_ID = 0x1000;
-
     HalSession hal_;
     std::vector<std::unique_ptr<TPUDevice>> devices_;
     std::unordered_map<std::string, BaseDevice*> target_registry_;
@@ -64,21 +54,10 @@ private:
     DeviceTree device_tree_;
     Logger logger_;
 
-    std::vector<PolicyEntry> load_policy() const;
-    const PolicyEntry* find_policy_for_bdf(const std::string& bdf) const;
-    bool is_supported_tpu(const DeviceContext& ctx) const;
     void clear_discovered_devices();
-    void register_target(BaseDevice* target);
     void register_device_tree(BaseDevice* target);
-    DeviceDiscoveryInfo make_tpu_info(const TPUDevice& device,
-                                      const PolicyEntry& policy_entry) const;
-    DeviceDiscoveryInfo make_child_info(const BaseDevice& child,
-                                        const BaseDevice& parent,
-                                        const std::string& type) const;
     void add_child_to_tree(const BaseDevice& child,
                            const BaseDevice& parent);
-    void add_tpu_to_tree(const TPUDevice& device,
-                         const PolicyEntry& policy_entry);
 
 public:
     explicit DeviceManager(HalType hal_type = HalType::iHal);
@@ -90,7 +69,6 @@ public:
 
     HalType get_hal_type() const;
     DeviceTree discover();
-    DeviceTree discover(HalType hal_type);
     BaseDevice* get_target(const std::string& target_name);
     std::vector<std::string> get_target_names() const;
     void set_log_level(LogLevel level);

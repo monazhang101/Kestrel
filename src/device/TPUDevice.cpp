@@ -3,39 +3,133 @@
 #include "diag/core/Common.h"
 
 #include <iostream>
+#include <utility>
+
+namespace {
+
+ModuleImplContext make_impl_context(const std::string& target_name,
+                                    const DeviceContext& ctx,
+                                    uint32_t index,
+                                    uint32_t parent_index,
+                                    uint64_t reg_offset,
+                                    uint64_t reg_size)
+{
+    auto* bar_base = static_cast<uint8_t*>(ctx.mapped_bar_base);
+    return {
+        target_name,
+        ctx,
+        index,
+        parent_index,
+        bar_base == nullptr ? nullptr : bar_base + reg_offset,
+        reg_offset,
+        reg_size
+    };
+}
+
+}
 
 TPUDevice::TPUDevice(const std::string& logical_name,
                      const DeviceContext& ctx,
-                     uint32_t tpu_index)
-    : BaseDevice(logical_name, ctx), tpu_index_(tpu_index)
+                     const TPUDeviceConfig& config,
+                     std::shared_ptr<Implementer> implementer)
+    : BaseDevice(logical_name, ctx),
+      tpu_index_(config.tpu_index),
+      config_(config),
+      implementer_(std::move(implementer))
 {
+    // Bind the top-level TPU operation implementation.
+    auto tpu_impl_ctx = make_impl_context(logical_name, ctx_, tpu_index_, 0, 0, ctx_.bar_size);
+    if (implementer_ != nullptr) {
+        impl_ = implementer_->tpu_ops(tpu_impl_ctx);
+    }
+
+    // Register generic TPU tests; each body delegates to the bound implementation.
     _add_test("identify", [this](TestInfo& ti) { return Identify(ti); });
     _add_test("soc_gpio_dir_set", [this](TestInfo& ti) { return SocGpioDirSet(ti); });
     _add_test("soc_gpio_read", [this](TestInfo& ti) { return SocGpioRead(ti); });
     _add_test("soc_gpio_write", [this](TestInfo& ti) { return SocGpioWrite(ti); });
 
-    pcie_ = std::make_unique<PCIeModule>(
-        logical_name + ".PCIE_0", ctx_, PCIE_REG_OFFSET, PCIE_REG_SIZE);
-
-    pmu_ = std::make_unique<PMUModule>(
-        logical_name + ".PMU_0", ctx_, PMU_REG_OFFSET, PMU_REG_SIZE);
-
-    for (size_t i = 0; i < DDP_COUNT; ++i) {
-        ddp_modules_.push_back(std::make_unique<DDPModule>(
-            logical_name + ".DDP_" + std::to_string(i),
+    // Create the policy-defined PCIe module, if this TPU type exposes one.
+    if (!config_.pcie_modules.empty()) {
+        const auto& pcie_config = config_.pcie_modules.front();
+        auto pcie_name = logical_name + ".PCIE_" + std::to_string(pcie_config.index);
+        auto impl_ctx = make_impl_context(pcie_name,
+                                          ctx_,
+                                          pcie_config.index,
+                                          tpu_index_,
+                                          pcie_config.reg_offset,
+                                          pcie_config.reg_size);
+        std::unique_ptr<PCIeImpl> pcie_impl;
+        if (implementer_ != nullptr) {
+            pcie_impl = implementer_->pcie_ops(impl_ctx);
+        }
+        pcie_ = std::make_unique<PCIeModule>(
+            pcie_name,
             ctx_,
-            static_cast<uint32_t>(i),
-            DDP_REG_OFFSET + i * DDP_REG_SIZE,
-            DDP_REG_SIZE));
+            pcie_config,
+            std::move(pcie_impl));
     }
 
-    for (size_t i = 0; i < ISI_COUNT; ++i) {
-        isi_modules_.push_back(std::make_unique<ISIModule>(
-            logical_name + ".ISI_" + std::to_string(i),
+    // Create the policy-defined PMU module, if present on this TPU type.
+    if (!config_.pmu_modules.empty()) {
+        const auto& pmu_config = config_.pmu_modules.front();
+        auto pmu_name = logical_name + ".PMU_" + std::to_string(pmu_config.index);
+        auto impl_ctx = make_impl_context(pmu_name,
+                                          ctx_,
+                                          pmu_config.index,
+                                          tpu_index_,
+                                          pmu_config.reg_offset,
+                                          pmu_config.reg_size);
+        std::unique_ptr<PMUImpl> pmu_impl;
+        if (implementer_ != nullptr) {
+            pmu_impl = implementer_->pmu_ops(impl_ctx);
+        }
+        pmu_ = std::make_unique<PMUModule>(
+            pmu_name,
             ctx_,
-            static_cast<uint32_t>(i),
-            ISI_REG_OFFSET + i * ISI_REG_SIZE,
-            ISI_REG_SIZE));
+            pmu_config,
+            std::move(pmu_impl));
+    }
+
+    // Create all policy-defined DDP modules and their DMC children.
+    for (const auto& ddp_config : config_.ddp_modules) {
+        auto ddp_name = logical_name + ".DDP_" + std::to_string(ddp_config.index);
+        auto impl_ctx = make_impl_context(ddp_name,
+                                          ctx_,
+                                          ddp_config.index,
+                                          tpu_index_,
+                                          ddp_config.reg_offset,
+                                          ddp_config.reg_size);
+        std::unique_ptr<DDPImpl> ddp_impl;
+        if (implementer_ != nullptr) {
+            ddp_impl = implementer_->ddp_ops(impl_ctx);
+        }
+        ddp_modules_.push_back(std::make_unique<DDPModule>(
+            ddp_name,
+            ctx_,
+            ddp_config,
+            std::move(ddp_impl),
+            implementer_));
+    }
+
+    // Create all policy-defined ISI modules.
+    for (const auto& isi_config : config_.isi_modules) {
+        auto isi_name = logical_name + ".ISI_" + std::to_string(isi_config.index);
+        auto impl_ctx = make_impl_context(isi_name,
+                                          ctx_,
+                                          isi_config.index,
+                                          tpu_index_,
+                                          isi_config.reg_offset,
+                                          isi_config.reg_size);
+        std::unique_ptr<ISIImpl> isi_impl;
+        if (implementer_ != nullptr) {
+            isi_impl = implementer_->isi_ops(impl_ctx);
+        }
+        isi_modules_.push_back(std::make_unique<ISIModule>(
+            isi_name,
+            ctx_,
+            isi_config,
+            std::move(isi_impl)));
     }
 }
 
@@ -58,8 +152,12 @@ DDPModule* TPUDevice::ddp(size_t index) const
 std::vector<BaseDevice*> TPUDevice::child_targets() const
 {
     std::vector<BaseDevice*> children;
-    children.push_back(pcie_.get());
-    children.push_back(pmu_.get());
+    if (pcie_ != nullptr) {
+        children.push_back(pcie_.get());
+    }
+    if (pmu_ != nullptr) {
+        children.push_back(pmu_.get());
+    }
     for (const auto& ddp_module : ddp_modules_) {
         children.push_back(ddp_module.get());
     }
@@ -76,6 +174,7 @@ void TPUDevice::print_tree() const
               << " vid=0x" << std::hex << ctx_.vendor_id
               << " did=0x" << ctx_.device_id
               << " bar_size=0x" << ctx_.bar_size
+              << " impl=" << (implementer_ == nullptr ? "unknown" : to_string(implementer_->tpu_type()))
               << std::dec << std::endl;
 
     for (const auto* child : child_targets()) {
@@ -88,15 +187,10 @@ void TPUDevice::print_tree() const
 // @output: TestResult metrics include bdf, vendor_id, device_id, chip_id, and revision.
 TestResult TPUDevice::Identify(TestInfo& ti)
 {
-    (void)ti.args;
-    return {"identify", get_name(), true, {
-        {"product", "ATLAS"},
-        {"bdf", ctx_.bdf},
-        {"vendor_id", "0x" + std::to_string(ctx_.vendor_id)},
-        {"device_id", "0x" + std::to_string(ctx_.device_id)},
-        {"chip_id", "ATLAS_CHIP_PSEUDO"},
-        {"revision", "A0"}
-    }};
+    if (impl_ == nullptr) {
+        return make_unimplemented_result(ti, "TPU implementation is not bound");
+    }
+    return impl_->Identify(ti);
 }
 
 // soc_gpio_dir_set : To configure a SoC GPIO pin direction.
@@ -104,14 +198,10 @@ TestResult TPUDevice::Identify(TestInfo& ti)
 // @output: TestResult metrics include pin, direction, and status.
 TestResult TPUDevice::SocGpioDirSet(TestInfo& ti)
 {
-    auto pin = common::args::get_string(ti.args, "pin");
-    auto direction = common::args::get_string(ti.args, "direction");
-    // Pseudocode: route GPIO direction control through PMU, PCIe, or GPIO index access.
-    return {"soc_gpio_dir_set", get_name(), true, {
-        {"pin", pin},
-        {"direction", direction},
-        {"status", "configured"}
-    }};
+    if (impl_ == nullptr) {
+        return make_unimplemented_result(ti, "TPU implementation is not bound");
+    }
+    return impl_->SocGpioDirSet(ti);
 }
 
 // soc_gpio_read : To read a SoC GPIO pin value.
@@ -119,12 +209,10 @@ TestResult TPUDevice::SocGpioDirSet(TestInfo& ti)
 // @output: TestResult metrics include pin and value.
 TestResult TPUDevice::SocGpioRead(TestInfo& ti)
 {
-    auto pin = common::args::get_string(ti.args, "pin");
-    // Pseudocode: route GPIO read through PMU, PCIe, or GPIO index access.
-    return {"soc_gpio_read", get_name(), true, {
-        {"pin", pin},
-        {"value", "1"}
-    }};
+    if (impl_ == nullptr) {
+        return make_unimplemented_result(ti, "TPU implementation is not bound");
+    }
+    return impl_->SocGpioRead(ti);
 }
 
 // soc_gpio_write : To write a SoC GPIO pin value.
@@ -132,12 +220,8 @@ TestResult TPUDevice::SocGpioRead(TestInfo& ti)
 // @output: TestResult metrics include pin, value, and status.
 TestResult TPUDevice::SocGpioWrite(TestInfo& ti)
 {
-    auto pin = common::args::get_string(ti.args, "pin");
-    auto value = common::args::get_string(ti.args, "value");
-    // Pseudocode: route GPIO write through PMU, PCIe, or GPIO index access.
-    return {"soc_gpio_write", get_name(), true, {
-        {"pin", pin},
-        {"value", value},
-        {"status", "written"}
-    }};
+    if (impl_ == nullptr) {
+        return make_unimplemented_result(ti, "TPU implementation is not bound");
+    }
+    return impl_->SocGpioWrite(ti);
 }

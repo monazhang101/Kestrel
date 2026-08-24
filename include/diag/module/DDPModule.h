@@ -1,6 +1,9 @@
 #pragma once
 
 #include "diag/core/BaseDevice.h"
+#include "diag/core/PlatformPolicy.h"
+#include "diag/implementer/DDPImpl.h"
+#include "diag/implementer/Implementer.h"
 #include "diag/module/DMCModule.h"
 
 #include <cstddef>
@@ -11,32 +14,22 @@
 
 class DDPModule : public BaseDevice {
 private:
-    static constexpr size_t DMC_COUNT = 3;
-    static constexpr uint64_t DMC_REG_OFFSET = 0x400;
-    static constexpr uint64_t DMC_REG_SIZE = 0x100;
-
     uint32_t ddp_id_ = 0;
     void* reg_base_ = nullptr;
     uint64_t reg_offset_ = 0;
     uint64_t reg_size_ = 0;
+    std::unique_ptr<DDPImpl> impl_;
     std::vector<std::unique_ptr<DMCModule>> dmc_modules_;
 
-    TestResult DdpBdfGetSecondaryBus(TestInfo& ti);
-    TestResult DdpDvsecVerify(TestInfo& ti);
-    TestResult DdpDvsecWalkChain(TestInfo& ti);
-    TestResult DdpWidthVerify(TestInfo& ti);
+    /* ----------- Register atomic tests here ----------- */
     TestResult DdpDmemLinkupVerify(TestInfo& ti);
-    TestResult DdpDmemPerf(TestInfo& ti);
-    TestResult DdpMcLinkupIntrVerify(TestInfo& ti);
-    TestResult DdpPcieRegScan(TestInfo& ti);
-    TestResult DdpBistFifoRun(TestInfo& ti);
 
 public:
     DDPModule(const std::string& name,
               const DeviceContext& ctx,
-              uint32_t ddp_id,
-              uint64_t reg_offset,
-              uint64_t reg_size);
+              const DDPModuleConfig& config,
+              std::unique_ptr<DDPImpl> impl,
+              const std::shared_ptr<Implementer>& implementer);
 
     uint32_t ddp_id() const { return ddp_id_; }
     DMCModule* dmc(size_t index) const;

@@ -1,6 +1,9 @@
 #pragma once
 
 #include "diag/core/BaseDevice.h"
+#include "diag/core/PlatformPolicy.h"
+#include "diag/implementer/Implementer.h"
+#include "diag/implementer/TPUImpl.h"
 #include "diag/module/DDPModule.h"
 #include "diag/module/ISIModule.h"
 #include "diag/module/PCIeModule.h"
@@ -14,21 +17,10 @@
 
 class TPUDevice : public BaseDevice {
 private:
-    static constexpr uint64_t PCIE_REG_OFFSET = 0x0000;
-    static constexpr uint64_t PCIE_REG_SIZE   = 0x1000;
-
-    static constexpr uint64_t PMU_REG_OFFSET  = 0x1000;
-    static constexpr uint64_t PMU_REG_SIZE    = 0x1000;
-
-    static constexpr uint64_t DDP_REG_OFFSET  = 0x2000;
-    static constexpr uint64_t DDP_REG_SIZE    = 0x1000;
-    static constexpr size_t DDP_COUNT         = 4;
-
-    static constexpr uint64_t ISI_REG_OFFSET  = 0x6000;
-    static constexpr uint64_t ISI_REG_SIZE    = 0x1000;
-    static constexpr size_t ISI_COUNT         = 8;
-
     uint32_t tpu_index_ = 0;
+    TPUDeviceConfig config_;
+    std::shared_ptr<Implementer> implementer_;
+    std::unique_ptr<TPUImpl> impl_;
 
     std::unique_ptr<PCIeModule> pcie_;
     std::unique_ptr<PMUModule> pmu_;
@@ -44,7 +36,8 @@ private:
 public:
     TPUDevice(const std::string& logical_name,
               const DeviceContext& ctx,
-              uint32_t tpu_index);
+              const TPUDeviceConfig& config,
+              std::shared_ptr<Implementer> implementer);
 
     TPUDevice(const TPUDevice&) = delete;
     TPUDevice& operator=(const TPUDevice&) = delete;

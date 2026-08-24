@@ -11,9 +11,24 @@ option(KESTREL_BUILD_PYTHON_BINDINGS "Build pybind11 Python bindings" OFF)
 
 add_library(kestrel_diag
     src/core/CmdQueueMgm.cpp
+    src/core/PolicyParser.cpp
     src/device/DeviceManager.cpp
     src/device/TPUDevice.cpp
     src/core/HalBackend.cpp
+    src/implementer/implementer.cpp
+    src/implementer/generic/generic_impl.cpp
+    src/implementer/atlas/ddp/ddp_impl.cpp
+    src/implementer/atlas/dmc/dmc_impl.cpp
+    src/implementer/atlas/isi/isi_impl.cpp
+    src/implementer/atlas/pcie/pcie_impl.cpp
+    src/implementer/atlas/pmu/pmu_impl.cpp
+    src/implementer/atlas/tpu/tpu_impl.cpp
+    src/implementer/atlas_m/ddp/ddp_impl.cpp
+    src/implementer/atlas_m/dmc/dmc_impl.cpp
+    src/implementer/atlas_m/isi/isi_impl.cpp
+    src/implementer/atlas_m/pcie/pcie_impl.cpp
+    src/implementer/atlas_m/pmu/pmu_impl.cpp
+    src/implementer/atlas_m/tpu/tpu_impl.cpp
     src/module/DDPModule.cpp
     src/module/DMCModule.cpp
     src/module/ISIModule.cpp
@@ -24,6 +39,8 @@ add_library(kestrel_diag
 target_include_directories(kestrel_diag
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/implementer
 )
 
 if(KESTREL_BUILD_EXAMPLES)

@@ -1,6 +1,7 @@
 #include "diag/device/DeviceManager.h"
 
-#include <iostream>
+#include <memory>
+#include <utility>
 
 namespace {
 
@@ -28,40 +29,16 @@ std::string infer_child_type(const std::string& target_name)
 
 DeviceManager::DeviceManager(HalType hal_type)
     : hal_(hal_type),
-      policy_(load_policy())
+      policy_(load_product_policy({
+          "policies/product/atlas_ubb.yaml",
+          "policies/product/atlas_m.yaml",
+      }))
 {
 }
 
 DeviceManager::~DeviceManager()
 {
     clear_discovered_devices();
-}
-
-std::vector<PolicyEntry> DeviceManager::load_policy() const
-{
-    // Pseudocode:
-    // 1. Read platform/SKU policy from yaml/json.
-    // 2. Map physical locators such as BDF/slot/serial to stable target names.
-    // 3. Return the names that CLI/Python/reporting should use.
-    return {
-        {"0000:65:00.0", "ATLAS_0", "UBB0", "UBB0_POS0", 0},
-        {"0000:ca:00.0", "ATLAS_1", "UBB0", "UBB0_POS1", 1},
-    };
-}
-
-const PolicyEntry* DeviceManager::find_policy_for_bdf(const std::string& bdf) const
-{
-    for (const auto& entry : policy_) {
-        if (entry.bdf == bdf) {
-            return &entry;
-        }
-    }
-    return nullptr;
-}
-
-bool DeviceManager::is_supported_tpu(const DeviceContext& ctx) const
-{
-    return ctx.vendor_id == TPU_VENDOR_ID && ctx.device_id == TPU_DEVICE_ID;
 }
 
 void DeviceManager::clear_discovered_devices()
@@ -72,59 +49,27 @@ void DeviceManager::clear_discovered_devices()
     device_tree_ = {};
 }
 
-void DeviceManager::register_target(BaseDevice* target)
-{
-    if (target != nullptr) {
-        target_registry_[target->get_name()] = target;
-    }
-}
-
 void DeviceManager::register_device_tree(BaseDevice* target)
 {
     if (target == nullptr) {
         return;
     }
 
-    register_target(target);
+    // Register this target and all descendants for run_atomic_test lookup.
+    target_registry_[target->get_name()] = target;
     for (auto* child : target->child_targets()) {
         register_device_tree(child);
     }
 }
 
-DeviceDiscoveryInfo DeviceManager::make_tpu_info(const TPUDevice& device,
-                                                 const PolicyEntry& policy_entry) const
-{
-    const auto& ctx = device.get_context();
-
-    DeviceDiscoveryInfo info;
-    info.name = device.get_name();
-    info.type = "TPU";
-    info.parent = "PCIeRootComplex0";
-    info.bdf = ctx.bdf;
-    info.vendor_id = ctx.vendor_id;
-    info.device_id = ctx.device_id;
-    info.locator = {
-        {"slot", policy_entry.slot},
-        {"position", policy_entry.position},
-        {"atlas_index", std::to_string(policy_entry.tpu_index)},
-    };
-
-    for (const auto* child : device.child_targets()) {
-        info.children.push_back(child->get_name());
-    }
-
-    return info;
-}
-
-DeviceDiscoveryInfo DeviceManager::make_child_info(const BaseDevice& child,
-                                                   const BaseDevice& parent,
-                                                   const std::string& type) const
+void DeviceManager::add_child_to_tree(const BaseDevice& child,
+                                      const BaseDevice& parent)
 {
     const auto& ctx = child.get_context();
 
     DeviceDiscoveryInfo info;
     info.name = child.get_name();
-    info.type = type;
+    info.type = infer_child_type(child.get_name());
     info.parent = parent.get_name();
     info.bdf = ctx.bdf;
     info.vendor_id = ctx.vendor_id;
@@ -139,14 +84,7 @@ DeviceDiscoveryInfo DeviceManager::make_child_info(const BaseDevice& child,
         }
     }
 
-    return info;
-}
-
-void DeviceManager::add_child_to_tree(const BaseDevice& child,
-                                      const BaseDevice& parent)
-{
-    auto type = infer_child_type(child.get_name());
-    device_tree_.devices.push_back(make_child_info(child, parent, type));
+    device_tree_.devices.push_back(std::move(info));
     device_tree_.topology.push_back({parent.get_name(), child.get_name(), "module"});
 
     for (const auto* grandchild : child.child_targets()) {
@@ -156,54 +94,78 @@ void DeviceManager::add_child_to_tree(const BaseDevice& child,
     }
 }
 
-void DeviceManager::add_tpu_to_tree(const TPUDevice& device,
-                                    const PolicyEntry& policy_entry)
-{
-    device_tree_.devices.push_back(make_tpu_info(device, policy_entry));
-    device_tree_.topology.push_back({"PCIeRootComplex0", device.get_name(), "pcie"});
-
-    for (const auto* child : device.child_targets()) {
-        if (child != nullptr) {
-            add_child_to_tree(*child, device);
-        }
-    }
-}
-
 DeviceTree DeviceManager::discover()
 {
+    // Start a fresh discovery result and release previous transient mappings.
     clear_discovered_devices();
 
+    // Ask the selected HAL backend for observed PCI devices.
     auto pci_devices = hal_.scan_pci_devices();
 
     for (auto& pci_device : pci_devices) {
-        if (!is_supported_tpu(pci_device)) {
-            continue;
+        // Match observed BDF/VID/DID against all loaded product policies.
+        const PolicyEntry* policy_entry = nullptr;
+        for (const auto& entry : policy_) {
+            if (entry.match_bdf == pci_device.bdf &&
+                entry.match_vendor_id == pci_device.vendor_id &&
+                entry.match_device_id == pci_device.device_id) {
+                policy_entry = &entry;
+                break;
+            }
         }
-
-        const auto* policy_entry = find_policy_for_bdf(pci_device.bdf);
         if (policy_entry == nullptr) {
             continue;
         }
 
+        // Map the matched device BAR through the HAL session.
         auto mapped_ctx = hal_.mmap_bar_space(pci_device);
+
+        // Bind operation implementations for the matched TPU type.
+        auto implementer = std::make_shared<Implementer>(policy_entry->tpu_type);
+
+        // Build the TPU object and policy-defined child modules.
         auto tpu_device = std::make_unique<TPUDevice>(
-            policy_entry->logical_name, mapped_ctx, policy_entry->tpu_index);
+            policy_entry->device_config.name,
+            mapped_ctx,
+            policy_entry->device_config,
+            implementer);
 
         auto* tpu = tpu_device.get();
+
+        // Register the TPU and child targets for run_atomic_test lookup.
         register_device_tree(tpu);
 
-        add_tpu_to_tree(*tpu, *policy_entry);
+        // Add the discovered TPU and its module hierarchy to the public topology.
+        const auto& ctx = tpu->get_context();
+        DeviceDiscoveryInfo info;
+        info.name = tpu->get_name();
+        info.type = "TPU";
+        info.parent = "PCIeRootComplex0";
+        info.bdf = ctx.bdf;
+        info.vendor_id = ctx.vendor_id;
+        info.device_id = ctx.device_id;
+        info.locator = {
+            {"slot", policy_entry->device_config.slot},
+            {"position", policy_entry->device_config.position},
+            {"index", std::to_string(policy_entry->device_config.tpu_index)},
+        };
+
+        for (const auto* child : tpu->child_targets()) {
+            info.children.push_back(child->get_name());
+        }
+
+        device_tree_.devices.push_back(std::move(info));
+        device_tree_.topology.push_back({"PCIeRootComplex0", tpu->get_name(), "pcie"});
+
+        for (const auto* child : tpu->child_targets()) {
+            if (child != nullptr) {
+                add_child_to_tree(*child, *tpu);
+            }
+        }
         devices_.push_back(std::move(tpu_device));
     }
 
     return device_tree_;
-}
-
-DeviceTree DeviceManager::discover(HalType hal_type)
-{
-    clear_discovered_devices();
-    hal_.reset(hal_type);
-    return discover();
 }
 
 HalType DeviceManager::get_hal_type() const
@@ -262,11 +224,10 @@ TestResult DeviceManager::run_atomic_test(const std::string& target_name,
     //   ATLAS_0.DDP_0     -> ATLAS_0
     //   ATLAS_0.DDP_0.DMC_0_0 -> ATLAS_0
     //
-    // Then lock device_execution_mutexes_[root_tpu_name] here, before calling
-    // target->run_atomic_test(). BaseDevice still keeps its own
-    // atomic_test_mutex_ for same-target atomic test serialization,
+    // Then lock device_execution_mutexes_[ATLAS_0] here, before calling
+    // target->run_atomic_test(). BaseDevice still keeps its own object mutex,
     // so the final order is:
-    //   DeviceManager per-TPU lock -> BaseDevice atomic_test_mutex_ -> test body.
+    //   DeviceManager per-TPU lock -> BaseDevice per-object lock -> test body.
     //
     // This intentionally serializes all modules under one TPU while allowing
     // different TPU devices, such as ATLAS_0 and ATLAS_1, to run in parallel.
