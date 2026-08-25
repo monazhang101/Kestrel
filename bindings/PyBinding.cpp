@@ -48,6 +48,7 @@ PYBIND11_MODULE(tpu_hal, m)
         .def_readwrite("bdf", &DeviceContext::bdf)
         .def_readwrite("vendor_id", &DeviceContext::vendor_id)
         .def_readwrite("device_id", &DeviceContext::device_id)
+        .def_readwrite("bar_device_base", &DeviceContext::bar_device_base)
         .def_readwrite("bar_size", &DeviceContext::bar_size)
         .def_property(
             "mapped_bar_base",

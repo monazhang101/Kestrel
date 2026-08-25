@@ -16,8 +16,8 @@ private:
     std::unique_ptr<PCIeImpl> impl_;
 
     /* ----------- Register atomic tests here ----------- */
-    TestResult PcieLinkStatusGet(TestInfo& ti);
-    TestResult PcieDmaDataTransfer(TestInfo& ti);
+    TestResult pcie_link_status_get(TestInfo& ti);
+    TestResult pcie_dma_data_transfer(TestInfo& ti);
     /*
     TestResult PcieEnumCheck(TestInfo& ti);
     TestResult PcieCapListCheck(TestInfo& ti);

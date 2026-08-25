@@ -14,9 +14,6 @@ public:
     explicit GenericTPUImpl(ModuleImplContext ctx);
 
     TestResult Identify(TestInfo& ti) override;
-    TestResult SocGpioDirSet(TestInfo& ti) override;
-    TestResult SocGpioRead(TestInfo& ti) override;
-    TestResult SocGpioWrite(TestInfo& ti) override;
 };
 
 class GenericPCIeImpl : public PCIeImpl {
@@ -26,8 +23,9 @@ protected:
 public:
     explicit GenericPCIeImpl(ModuleImplContext ctx);
 
-    TestResult PcieLinkStatusGet(TestInfo& ti) override;
-    TestResult PcieDmaDataTransfer(TestInfo& ti) override;
+    LinkStatus link_status_get() override;
+    DmaTransferResult dma_copy_h2d(const DmaTransferRequest& req) override;
+    DmaTransferResult dma_copy_d2h(const DmaTransferRequest& req) override;
 };
 
 class GenericPMUImpl : public PMUImpl {

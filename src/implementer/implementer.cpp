@@ -29,7 +29,7 @@ Implementer::Implementer(TPUType tpu_type)
 {
 }
 
-std::unique_ptr<TPUImpl> Implementer::tpu_ops(const ModuleImplContext& ctx) const
+std::unique_ptr<TPUImpl> Implementer::tpu_impl(const ModuleImplContext& ctx) const
 {
     if (tpu_type_ == TPUType::Atlas) {
         return atlas_impl::make_tpu_impl(ctx);
@@ -40,7 +40,7 @@ std::unique_ptr<TPUImpl> Implementer::tpu_ops(const ModuleImplContext& ctx) cons
     return generic_impl::make_tpu_impl(ctx);
 }
 
-std::unique_ptr<PCIeImpl> Implementer::pcie_ops(const ModuleImplContext& ctx) const
+std::unique_ptr<PCIeImpl> Implementer::pcie_impl(const ModuleImplContext& ctx) const
 {
     if (tpu_type_ == TPUType::Atlas) {
         return atlas_impl::make_pcie_impl(ctx);
@@ -51,7 +51,7 @@ std::unique_ptr<PCIeImpl> Implementer::pcie_ops(const ModuleImplContext& ctx) co
     return generic_impl::make_pcie_impl(ctx);
 }
 
-std::unique_ptr<PMUImpl> Implementer::pmu_ops(const ModuleImplContext& ctx) const
+std::unique_ptr<PMUImpl> Implementer::pmu_impl(const ModuleImplContext& ctx) const
 {
     if (tpu_type_ == TPUType::Atlas) {
         return atlas_impl::make_pmu_impl(ctx);
@@ -62,7 +62,7 @@ std::unique_ptr<PMUImpl> Implementer::pmu_ops(const ModuleImplContext& ctx) cons
     return generic_impl::make_pmu_impl(ctx);
 }
 
-std::unique_ptr<ISIImpl> Implementer::isi_ops(const ModuleImplContext& ctx) const
+std::unique_ptr<ISIImpl> Implementer::isi_impl(const ModuleImplContext& ctx) const
 {
     if (tpu_type_ == TPUType::Atlas) {
         return atlas_impl::make_isi_impl(ctx);
@@ -73,7 +73,7 @@ std::unique_ptr<ISIImpl> Implementer::isi_ops(const ModuleImplContext& ctx) cons
     return generic_impl::make_isi_impl(ctx);
 }
 
-std::unique_ptr<DDPImpl> Implementer::ddp_ops(const ModuleImplContext& ctx) const
+std::unique_ptr<DDPImpl> Implementer::ddp_impl(const ModuleImplContext& ctx) const
 {
     if (tpu_type_ == TPUType::Atlas) {
         return atlas_impl::make_ddp_impl(ctx);
@@ -84,7 +84,7 @@ std::unique_ptr<DDPImpl> Implementer::ddp_ops(const ModuleImplContext& ctx) cons
     return generic_impl::make_ddp_impl(ctx);
 }
 
-std::unique_ptr<DMCImpl> Implementer::dmc_ops(const ModuleImplContext& ctx) const
+std::unique_ptr<DMCImpl> Implementer::dmc_impl(const ModuleImplContext& ctx) const
 {
     if (tpu_type_ == TPUType::Atlas) {
         return atlas_impl::make_dmc_impl(ctx);

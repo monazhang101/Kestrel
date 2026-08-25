@@ -20,25 +20,3 @@ DMCModule::DMCModule(const std::string& name,
     _add_test("dmc_status_check", [this](TestInfo& ti) { return DmcStatusCheck(ti); });
     _add_test("dmc_reg_scan", [this](TestInfo& ti) { return DmcRegScan(ti); });
 }
-
-// dmc_status_check : To check one DDP memory-controller status block.
-// @input: none.
-// @output: TestResult metrics include ddp_id, controller_id, and status.
-TestResult DMCModule::DmcStatusCheck(TestInfo& ti)
-{
-    if (impl_ == nullptr) {
-        return make_unimplemented_result(ti, "DMC implementation is not bound");
-    }
-    return impl_->DmcStatusCheck(ti);
-}
-
-// dmc_reg_scan : To scan readable registers for one DMC controller.
-// @input: args["range"] resolved by YAML defaults.
-// @output: TestResult metrics include scanned_range and bad_register_count.
-TestResult DMCModule::DmcRegScan(TestInfo& ti)
-{
-    if (impl_ == nullptr) {
-        return make_unimplemented_result(ti, "DMC implementation is not bound");
-    }
-    return impl_->DmcRegScan(ti);
-}

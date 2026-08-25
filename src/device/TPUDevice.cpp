@@ -40,14 +40,11 @@ TPUDevice::TPUDevice(const std::string& logical_name,
     // Bind the top-level TPU operation implementation.
     auto tpu_impl_ctx = make_impl_context(logical_name, ctx_, tpu_index_, 0, 0, ctx_.bar_size);
     if (implementer_ != nullptr) {
-        impl_ = implementer_->tpu_ops(tpu_impl_ctx);
+        impl_ = implementer_->tpu_impl(tpu_impl_ctx);
     }
 
-    // Register generic TPU tests; each body delegates to the bound implementation.
+    // ----------------- Atomic Tests -----------------
     _add_test("identify", [this](TestInfo& ti) { return Identify(ti); });
-    _add_test("soc_gpio_dir_set", [this](TestInfo& ti) { return SocGpioDirSet(ti); });
-    _add_test("soc_gpio_read", [this](TestInfo& ti) { return SocGpioRead(ti); });
-    _add_test("soc_gpio_write", [this](TestInfo& ti) { return SocGpioWrite(ti); });
 
     // Create the policy-defined PCIe module, if this TPU type exposes one.
     if (!config_.pcie_modules.empty()) {
@@ -61,7 +58,7 @@ TPUDevice::TPUDevice(const std::string& logical_name,
                                           pcie_config.reg_size);
         std::unique_ptr<PCIeImpl> pcie_impl;
         if (implementer_ != nullptr) {
-            pcie_impl = implementer_->pcie_ops(impl_ctx);
+            pcie_impl = implementer_->pcie_impl(impl_ctx);
         }
         pcie_ = std::make_unique<PCIeModule>(
             pcie_name,
@@ -82,7 +79,7 @@ TPUDevice::TPUDevice(const std::string& logical_name,
                                           pmu_config.reg_size);
         std::unique_ptr<PMUImpl> pmu_impl;
         if (implementer_ != nullptr) {
-            pmu_impl = implementer_->pmu_ops(impl_ctx);
+            pmu_impl = implementer_->pmu_impl(impl_ctx);
         }
         pmu_ = std::make_unique<PMUModule>(
             pmu_name,
@@ -102,7 +99,7 @@ TPUDevice::TPUDevice(const std::string& logical_name,
                                           ddp_config.reg_size);
         std::unique_ptr<DDPImpl> ddp_impl;
         if (implementer_ != nullptr) {
-            ddp_impl = implementer_->ddp_ops(impl_ctx);
+            ddp_impl = implementer_->ddp_impl(impl_ctx);
         }
         ddp_modules_.push_back(std::make_unique<DDPModule>(
             ddp_name,
@@ -123,7 +120,7 @@ TPUDevice::TPUDevice(const std::string& logical_name,
                                           isi_config.reg_size);
         std::unique_ptr<ISIImpl> isi_impl;
         if (implementer_ != nullptr) {
-            isi_impl = implementer_->isi_ops(impl_ctx);
+            isi_impl = implementer_->isi_impl(impl_ctx);
         }
         isi_modules_.push_back(std::make_unique<ISIModule>(
             isi_name,
@@ -173,6 +170,7 @@ void TPUDevice::print_tree() const
               << " bdf=" << ctx_.bdf
               << " vid=0x" << std::hex << ctx_.vendor_id
               << " did=0x" << ctx_.device_id
+              << " bar_device_base=0x" << ctx_.bar_device_base
               << " bar_size=0x" << ctx_.bar_size
               << " impl=" << (implementer_ == nullptr ? "unknown" : to_string(implementer_->tpu_type()))
               << std::dec << std::endl;
@@ -191,37 +189,4 @@ TestResult TPUDevice::Identify(TestInfo& ti)
         return make_unimplemented_result(ti, "TPU implementation is not bound");
     }
     return impl_->Identify(ti);
-}
-
-// soc_gpio_dir_set : To configure a SoC GPIO pin direction.
-// @input: args["pin"] GPIO pin index, args["direction"] input/output.
-// @output: TestResult metrics include pin, direction, and status.
-TestResult TPUDevice::SocGpioDirSet(TestInfo& ti)
-{
-    if (impl_ == nullptr) {
-        return make_unimplemented_result(ti, "TPU implementation is not bound");
-    }
-    return impl_->SocGpioDirSet(ti);
-}
-
-// soc_gpio_read : To read a SoC GPIO pin value.
-// @input: args["pin"] GPIO pin index.
-// @output: TestResult metrics include pin and value.
-TestResult TPUDevice::SocGpioRead(TestInfo& ti)
-{
-    if (impl_ == nullptr) {
-        return make_unimplemented_result(ti, "TPU implementation is not bound");
-    }
-    return impl_->SocGpioRead(ti);
-}
-
-// soc_gpio_write : To write a SoC GPIO pin value.
-// @input: args["pin"] GPIO pin index, args["value"] GPIO value.
-// @output: TestResult metrics include pin, value, and status.
-TestResult TPUDevice::SocGpioWrite(TestInfo& ti)
-{
-    if (impl_ == nullptr) {
-        return make_unimplemented_result(ti, "TPU implementation is not bound");
-    }
-    return impl_->SocGpioWrite(ti);
 }

@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <exception>
 #include <stdexcept>
 #include <string>
@@ -34,6 +35,22 @@ inline uint64_t get_u64(const TestArgs& args,
         return static_cast<uint64_t>(std::stoull(value, nullptr, 0));
     } catch (const std::exception&) {
         throw std::invalid_argument("invalid u64 argument: " + key + "=" + value);
+    }
+}
+
+inline uint64_t get_u64(const TestArgs& args,
+                        const std::string& key,
+                        uint64_t default_value)
+{
+    auto it = args.find(key);
+    if (it == args.end()) {
+        return default_value;
+    }
+
+    try {
+        return static_cast<uint64_t>(std::stoull(it->second, nullptr, 0));
+    } catch (const std::exception&) {
+        throw std::invalid_argument("invalid u64 argument: " + key + "=" + it->second);
     }
 }
 
@@ -288,6 +305,31 @@ inline std::vector<uint8_t> generate(size_t size, const std::string& pattern)
     }
 
     return {};
+}
+
+inline bool write(void* dst, size_t size, const std::string& pattern)
+{
+    if (dst == nullptr) {
+        return false;
+    }
+
+    auto data = generate(size, pattern);
+    if (data.empty()) {
+        return false;
+    }
+
+    std::memcpy(dst, data.data(), data.size());
+    return true;
+}
+
+inline bool compare(const void* expected,
+                    const void* actual,
+                    size_t size)
+{
+    if (expected == nullptr || actual == nullptr || size == 0) {
+        return false;
+    }
+    return std::memcmp(expected, actual, size) == 0;
 }
 
 inline bool compare(const std::vector<uint8_t>& expected,

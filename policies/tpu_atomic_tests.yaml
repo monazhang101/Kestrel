@@ -4,35 +4,3 @@ tests:
   identify:
     summary: Read ATLAS identity registers and report stable hardware facts.
     args: {}
-
-  soc_gpio_dir_set:
-    summary: Configure a SoC GPIO pin direction.
-    args:
-      pin:
-        type: string
-        default: "0"
-        range: platform-defined
-      direction:
-        type: string
-        default: input
-        range: input, output
-
-  soc_gpio_read:
-    summary: Read a SoC GPIO pin value.
-    args:
-      pin:
-        type: string
-        default: "0"
-        range: platform-defined
-
-  soc_gpio_write:
-    summary: Write a SoC GPIO pin value.
-    args:
-      pin:
-        type: string
-        default: "0"
-        range: platform-defined
-      value:
-        type: string
-        default: "1"
-        range: 0, 1

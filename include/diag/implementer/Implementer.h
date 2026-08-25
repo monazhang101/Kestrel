@@ -32,10 +32,10 @@ public:
 
     TPUType tpu_type() const { return tpu_type_; }
 
-    std::unique_ptr<TPUImpl> tpu_ops(const ModuleImplContext& ctx) const;
-    std::unique_ptr<PCIeImpl> pcie_ops(const ModuleImplContext& ctx) const;
-    std::unique_ptr<PMUImpl> pmu_ops(const ModuleImplContext& ctx) const;
-    std::unique_ptr<ISIImpl> isi_ops(const ModuleImplContext& ctx) const;
-    std::unique_ptr<DDPImpl> ddp_ops(const ModuleImplContext& ctx) const;
-    std::unique_ptr<DMCImpl> dmc_ops(const ModuleImplContext& ctx) const;
+    std::unique_ptr<TPUImpl> tpu_impl(const ModuleImplContext& ctx) const;
+    std::unique_ptr<PCIeImpl> pcie_impl(const ModuleImplContext& ctx) const;
+    std::unique_ptr<PMUImpl> pmu_impl(const ModuleImplContext& ctx) const;
+    std::unique_ptr<ISIImpl> isi_impl(const ModuleImplContext& ctx) const;
+    std::unique_ptr<DDPImpl> ddp_impl(const ModuleImplContext& ctx) const;
+    std::unique_ptr<DMCImpl> dmc_impl(const ModuleImplContext& ctx) const;
 };

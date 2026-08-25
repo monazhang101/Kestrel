@@ -65,10 +65,10 @@ private:
     HalType type_ = HalType::iHal;
     std::vector<std::unique_ptr<std::vector<uint8_t>>> mapped_bar_storage_;
 
-    DmaBuffer alloc_dma_buffer(HalSession* session,
-                               const DeviceContext& ctx,
-                               uint64_t size_bytes);
-    void free_dma_buffer(DmaBuffer& buffer);
+    DmaBuffer alloc_host_buffer(HalSession* session,
+                                const DeviceContext& ctx,
+                                uint64_t size_bytes);
+    void free_host_buffer(DmaBuffer& buffer);
 
 public:
     explicit HalBackend(HalType type = HalType::iHal);
@@ -94,7 +94,7 @@ public:
     void reset(HalType type);
     std::vector<DeviceContext> scan_pci_devices() const;
     DeviceContext mmap_bar_space(DeviceContext ctx);
-    DmaBuffer alloc_dma_buffer(const DeviceContext& ctx, uint64_t size_bytes);
-    void free_dma_buffer(DmaBuffer& buffer);
+    DmaBuffer alloc_host_buffer(const DeviceContext& ctx, uint64_t size_bytes);
+    void free_host_buffer(DmaBuffer& buffer);
     void clear();
 };

@@ -1,5 +1,6 @@
 #include "diag/module/DDPModule.h"
 
+#include <string>
 #include <utility>
 
 DDPModule::DDPModule(const std::string& name,
@@ -16,7 +17,6 @@ DDPModule::DDPModule(const std::string& name,
     auto* bar_base = static_cast<uint8_t*>(ctx_.mapped_bar_base);
     reg_base_ = bar_base == nullptr ? nullptr : bar_base + reg_offset_;
 
-    // ----------------- Atomic Tests -----------------
     _add_test("ddp_dmem_linkup_verify", [this](TestInfo& ti) { return DdpDmemLinkupVerify(ti); });
 
     for (const auto& dmc_config : config.dmc_modules) {
@@ -35,7 +35,7 @@ DDPModule::DDPModule(const std::string& name,
 
         std::unique_ptr<DMCImpl> dmc_impl;
         if (implementer != nullptr) {
-            dmc_impl = implementer->dmc_ops(dmc_impl_ctx);
+            dmc_impl = implementer->dmc_impl(dmc_impl_ctx);
         }
         dmc_modules_.push_back(std::make_unique<DMCModule>(
             dmc_name,
@@ -61,16 +61,4 @@ std::vector<BaseDevice*> DDPModule::child_targets() const
         children.push_back(dmc_module.get());
     }
     return children;
-}
-
-
-// ddp_dmem_linkup_verify : To verify DDP device-memory link-up state.
-// @input: args["link"] resolved by YAML defaults.
-// @output: TestResult metrics include link and linkup_status.
-TestResult DDPModule::DdpDmemLinkupVerify(TestInfo& ti)
-{
-    if (impl_ == nullptr) {
-        return make_unimplemented_result(ti, "DDP implementation is not bound");
-    }
-    return impl_->DdpDmemLinkupVerify(ti);
 }

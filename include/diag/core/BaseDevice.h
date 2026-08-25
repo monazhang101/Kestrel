@@ -17,6 +17,7 @@ struct DeviceContext {
     uint16_t device_id = 0;
 
     void* mapped_bar_base = nullptr;
+    uint64_t bar_device_base = 0;
     uint64_t bar_size = 0;
 };
 

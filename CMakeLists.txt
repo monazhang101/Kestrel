@@ -29,11 +29,21 @@ add_library(kestrel_diag
     src/implementer/atlas_m/pcie/pcie_impl.cpp
     src/implementer/atlas_m/pmu/pmu_impl.cpp
     src/implementer/atlas_m/tpu/tpu_impl.cpp
-    src/module/DDPModule.cpp
-    src/module/DMCModule.cpp
-    src/module/ISIModule.cpp
-    src/module/PCIeModule.cpp
-    src/module/PMUModule.cpp
+    src/modules/ddp/DDPModule.cpp
+    src/modules/ddp/ddp_dmem_cases.cpp
+    src/modules/dmc/DMCModule.cpp
+    src/modules/dmc/dmc_status_cases.cpp
+    src/modules/dmc/dmc_reg_cases.cpp
+    src/modules/isi/ISIModule.cpp
+    src/modules/isi/isi_link_cases.cpp
+    src/modules/isi/isi_setup_cases.cpp
+    src/modules/pcie/PCIeModule.cpp
+    src/modules/pcie/pcie_link_cases.cpp
+    src/modules/pcie/pcie_dma_cases.cpp
+    src/modules/pcie/pcie_reg_cases.cpp
+    src/modules/pmu/PMUModule.cpp
+    src/modules/pmu/pmu_ipc_cases.cpp
+    src/modules/pmu/pmu_reg_cases.cpp
 )
 
 target_include_directories(kestrel_diag

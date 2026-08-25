@@ -29,10 +29,6 @@ private:
 
     TestResult Identify(TestInfo& ti);
 
-    TestResult SocGpioDirSet(TestInfo& ti);
-    TestResult SocGpioRead(TestInfo& ti);
-    TestResult SocGpioWrite(TestInfo& ti);
-
 public:
     TPUDevice(const std::string& logical_name,
               const DeviceContext& ctx,

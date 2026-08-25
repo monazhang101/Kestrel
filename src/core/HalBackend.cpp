@@ -5,6 +5,22 @@
 
 namespace {
 
+uint64_t fake_bar_device_base_for_bdf(const std::string& bdf)
+{
+    // Dry-run BAR device-visible base. Real backends should discover this from:
+    //   pHal: /sys/bus/pci/devices/<bdf>/resourceN start address or VFIO region info.
+    //   iHal: vendor HAL device BAR metadata, for example dev->bars[N].baseAddr.
+    // This is the address a device DMA descriptor should use, not the CPU
+    // virtual pointer returned by mmap/VFIO mmap.
+    if (bdf == "0000:65:00.0") {
+        return 0x80000000;
+    }
+    if (bdf == "0000:ca:00.0") {
+        return 0x90000000;
+    }
+    return 0;
+}
+
 uint64_t align_up(uint64_t value, uint64_t alignment)
 {
     return (value + alignment - 1) / alignment * alignment;
@@ -98,7 +114,7 @@ void DmaBuffer::release()
     if (session_ == nullptr) {
         return;
     }
-    session_->free_dma_buffer(*this);
+    session_->free_host_buffer(*this);
 }
 
 HalBackend::HalBackend(HalType type)
@@ -138,19 +154,27 @@ std::vector<DeviceContext> HalBackend::scan_pci_devices() const
 DeviceContext HalBackend::mmap_bar_space(DeviceContext ctx)
 {
     // Pseudocode:
-    // pHal can open /sys/bus/pci/devices/<bdf>/resource0 or a VFIO region.
-    // iHal can request an equivalent BAR/MMIO mapping from its backend service.
+    // pHal can:
+    //   1. Read /sys/bus/pci/devices/<bdf>/resourceN to get BAR start/size.
+    //   2. mmap resourceN or VFIO region N to get the CPU virtual mapping.
+    //   3. Store resourceN start in bar_device_base for DMA descriptors.
+    //
+    // iHal can request equivalent BAR metadata from its backend service:
+    //   host-mapped pointer -> mapped_bar_base
+    //   device-visible BAR base, e.g. dev->bars[N].baseAddr -> bar_device_base
+    //   BAR length -> bar_size
     mapped_bar_storage_.push_back(
         std::make_unique<std::vector<uint8_t>>(DEFAULT_BAR_SIZE, 0));
 
     ctx.mapped_bar_base = mapped_bar_storage_.back()->data();
+    ctx.bar_device_base = fake_bar_device_base_for_bdf(ctx.bdf);
     ctx.bar_size = DEFAULT_BAR_SIZE;
     return ctx;
 }
 
-DmaBuffer HalBackend::alloc_dma_buffer(HalSession* session,
-                                       const DeviceContext& ctx,
-                                       uint64_t size_bytes)
+DmaBuffer HalBackend::alloc_host_buffer(HalSession* session,
+                                        const DeviceContext& ctx,
+                                        uint64_t size_bytes)
 {
     (void)ctx;
 
@@ -171,7 +195,7 @@ DmaBuffer HalBackend::alloc_dma_buffer(HalSession* session,
                      type_ == HalType::iHal ? "iova" : "phal_handle");
 }
 
-void HalBackend::free_dma_buffer(DmaBuffer& buffer)
+void HalBackend::free_host_buffer(DmaBuffer& buffer)
 {
     buffer.storage_.clear();
     buffer.session_ = nullptr;
@@ -206,14 +230,14 @@ DeviceContext HalSession::mmap_bar_space(DeviceContext ctx)
     return backend_.mmap_bar_space(ctx);
 }
 
-DmaBuffer HalSession::alloc_dma_buffer(const DeviceContext& ctx, uint64_t size_bytes)
+DmaBuffer HalSession::alloc_host_buffer(const DeviceContext& ctx, uint64_t size_bytes)
 {
-    return backend_.alloc_dma_buffer(this, ctx, size_bytes);
+    return backend_.alloc_host_buffer(this, ctx, size_bytes);
 }
 
-void HalSession::free_dma_buffer(DmaBuffer& buffer)
+void HalSession::free_host_buffer(DmaBuffer& buffer)
 {
-    backend_.free_dma_buffer(buffer);
+    backend_.free_host_buffer(buffer);
 }
 
 void HalSession::clear()

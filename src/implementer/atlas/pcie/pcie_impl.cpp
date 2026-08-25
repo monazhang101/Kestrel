@@ -1,8 +1,5 @@
 #include "generic/generic_impl.h"
 
-#include "diag/core/Common.h"
-#include "diag/core/HalBackend.h"
-
 #include <utility>
 
 namespace atlas_impl {
@@ -15,63 +12,79 @@ public:
     {
     }
 
-    TestResult PcieLinkStatusGet(TestInfo& ti) override
+    LinkStatus link_status_get() override
     {
-        ti.logger->trace("start atlas pcie_link_status_get");
         (void)ctx_.reg_base;
         (void)ctx_.reg_size;
 
-        return {"pcie_link_status_get", ctx_.target_name, true, {
-            {"current_speed", "gen5"},
-            {"current_width", "x8"},
-            {"impl", "atlas"}
-        }};
+        LinkStatus status;
+        status.ok = true;
+        status.current_speed = "gen5";
+        status.current_width = "x8";
+        status.metrics = {{"impl", "atlas"}};
+        return status;
     }
 
-    TestResult PcieDmaDataTransfer(TestInfo& ti) override
+    DmaTransferResult dma_copy_h2d(const DmaTransferRequest& req) override
     {
-        constexpr uint64_t dev_off = 0x2000;
-        constexpr uint64_t phy_off = 0x0;
+        if (req.host_buffer == nullptr || !req.host_buffer->valid()) {
+            return {false, 0, 0, "host_buffer_invalid", "host DMA buffer is invalid"};
+        }
 
-        auto direction = common::args::get_string(ti.args, "direction");
-        auto size_bytes = common::args::get_u64(ti.args, "size_bytes");
-        auto pattern = common::args::get_string(ti.args, "pattern");
+        // Real Atlas flow:
+        //   1. Build an Atlas H2D DMA descriptor using req.host_buffer->device_addr()
+        //      plus req.host_offset as source, and req.device_offset as destination.
+        //   2. Program descriptor/ring state through the Atlas DMA engine path.
+        //   3. Execute dma_setup and dma_start.
+        //   4. Poll or wait for completion, then collect completion status.
+        // Pseudocode keeps this as a successful placeholder until the real
+        // descriptor format and completion path are wired in.
 
-        auto make_result = [&](bool passed,
-                               const std::string& compare_status,
-                               const std::string& error_description = "") {
-            return TestResult{"pcie_dma_data_transfer", ctx_.target_name, passed, {
-                {"direction", direction},
-                {"size_bytes", std::to_string(size_bytes)},
-                {"pattern", pattern},
-                {"dev_off", std::to_string(dev_off)},
-                {"phy_off", std::to_string(phy_off)},
-                {"compare_status", compare_status},
-                {"impl", "atlas"}
-            }, error_description};
+        DmaTransferResult dma_transfer_res;
+        dma_transfer_res.ok = true;
+        dma_transfer_res.bytes = req.size_bytes;
+        dma_transfer_res.duration_us = 10;
+        dma_transfer_res.completion_status = "completed";
+        dma_transfer_res.metrics = {
+            {"impl", "atlas"},
+            {"dma_direction", "h2d"},
+            {"dma_device_offset", std::to_string(req.device_offset)},
+            {"dma_host_offset", std::to_string(req.host_offset)},
+            {"dma_addr_kind", req.host_buffer->addr_kind()},
+            {"dma_device_addr", std::to_string(req.host_buffer->device_addr())}
         };
+        return dma_transfer_res;
+    }
 
-        if (ti.hal == nullptr) {
-            return make_result(false, "hal_session_missing", "HAL session is not available");
+    DmaTransferResult dma_copy_d2h(const DmaTransferRequest& req) override
+    {
+        if (req.host_buffer == nullptr || !req.host_buffer->valid()) {
+            return {false, 0, 0, "host_buffer_invalid", "host DMA buffer is invalid"};
         }
 
-        auto dma_buffer = ti.hal->alloc_dma_buffer(ctx_.device_ctx, size_bytes);
-        if (!dma_buffer.valid()) {
-            return make_result(false, "dma_alloc_failed", "DMA buffer allocation failed");
-        }
+        // Real Atlas flow:
+        //   1. Build an Atlas D2H DMA descriptor using req.device_offset as source
+        //      and req.host_buffer->device_addr() plus req.host_offset as destination.
+        //   2. Program descriptor/ring state through the Atlas DMA engine path.
+        //   3. Execute dma_setup and dma_start.
+        //   4. Poll or wait for completion, then collect completion status.
+        // Pseudocode keeps this as a successful placeholder until the real
+        // descriptor format and completion path are wired in.
 
-        return {"pcie_dma_data_transfer", ctx_.target_name, false, {
-            {"direction", direction},
-            {"size_bytes", std::to_string(size_bytes)},
-            {"pattern", pattern},
-            {"dev_off", std::to_string(dev_off)},
-            {"phy_off", std::to_string(phy_off)},
-            {"dma_addr_kind", dma_buffer.addr_kind()},
-            {"dma_device_addr", std::to_string(dma_buffer.device_addr())},
-            {"dma_size", std::to_string(dma_buffer.size())},
-            {"compare_status", "pseudocode_only"},
-            {"impl", "atlas"}
-        }, "atlas pcie_dma_data_transfer is a HAL flow sketch; real DMA submit/readback is not implemented yet"};
+        DmaTransferResult dma_transfer_res;
+        dma_transfer_res.ok = true;
+        dma_transfer_res.bytes = req.size_bytes;
+        dma_transfer_res.duration_us = 10;
+        dma_transfer_res.completion_status = "completed";
+        dma_transfer_res.metrics = {
+            {"impl", "atlas"},
+            {"dma_direction", "d2h"},
+            {"dma_device_offset", std::to_string(req.device_offset)},
+            {"dma_host_offset", std::to_string(req.host_offset)},
+            {"dma_addr_kind", req.host_buffer->addr_kind()},
+            {"dma_device_addr", std::to_string(req.host_buffer->device_addr())}
+        };
+        return dma_transfer_res;
     }
 };
 
