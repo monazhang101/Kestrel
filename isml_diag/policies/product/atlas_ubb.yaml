@@ -1,8 +1,8 @@
 chip_profile:
   product: atlas
   match:
-    vendor_id: "0x1d0f"
-    device_id: "0x1000"
+    vendor_id: "0x16c3"
+    device_id: "0xabcd"
   modules:
     pcie:
       - index: 0
@@ -90,35 +90,3 @@ chip_profile:
       - index: 7
         reg_offset: "0xd000"
         reg_size: "0x1000"
-
-platform_inventory:
-  platform: atlas_ubb
-  devices:
-    - name: ATLAS_0
-      match:
-        bdf: "0000:65:00.0"
-      locator:
-        slot: UBB0
-        position: UBB0_POS0
-        index: 0
-    - name: ATLAS_1
-      match:
-        bdf: "0000:ca:00.0"
-      locator:
-        slot: UBB0
-        position: UBB0_POS1
-        index: 1
-    - name: ATLAS_2
-      match:
-        bdf: "0000:e3:00.0"
-      locator:
-        slot: UBB0
-        position: UBB0_POS2
-        index: 2
-    - name: ATLAS_3
-      match:
-        bdf: "0000:17:00.0"
-      locator:
-        slot: UBB0
-        position: UBB0_POS3
-        index: 3

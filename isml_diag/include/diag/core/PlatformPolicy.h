@@ -49,7 +49,6 @@ struct TPUDeviceConfig {
 };
 
 struct PolicyEntry {
-    std::string match_bdf;
     uint16_t match_vendor_id = 0;
     uint16_t match_device_id = 0;
     std::string product;

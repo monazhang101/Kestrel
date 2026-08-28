@@ -1,6 +1,8 @@
 #include "diag/device/DeviceManager.h"
 
 #include <memory>
+#include <string>
+#include <unordered_map>
 #include <utility>
 
 namespace {
@@ -25,13 +27,26 @@ std::string infer_child_type(const std::string& target_name)
     return "MODULE";
 }
 
+std::string default_tpu_name(TPUType tpu_type, uint32_t index)
+{
+    switch (tpu_type) {
+    case TPUType::Atlas:
+        return "ATLAS_" + std::to_string(index);
+    case TPUType::AtlasM:
+        return "ATM_" + std::to_string(index);
+    case TPUType::Unknown:
+        return "TPU_" + std::to_string(index);
+    }
+    return "TPU_" + std::to_string(index);
+}
+
 }
 
 DeviceManager::DeviceManager(HalType hal_type)
     : hal_(hal_type),
       policy_(load_product_policy({
-          "policies/product/atlas_ubb.yaml",
-          "policies/product/atlas_m.yaml",
+          "isml_diag/policies/product/atlas_ubb.yaml",
+          "isml_diag/policies/product/atlas_m.yaml",
       }))
 {
 }
@@ -102,12 +117,13 @@ DeviceTree DeviceManager::discover()
     // Ask the selected HAL backend for observed PCI devices.
     auto pci_devices = hal_.scan_pci_devices();
 
+    std::unordered_map<std::string, uint32_t> discovered_product_counts;
+
     for (auto& pci_device : pci_devices) {
-        // Match observed BDF/VID/DID against all loaded product policies.
+        // Match observed VID/DID against all loaded product policies.
         const PolicyEntry* policy_entry = nullptr;
         for (const auto& entry : policy_) {
-            if (entry.match_bdf == pci_device.bdf &&
-                entry.match_vendor_id == pci_device.vendor_id &&
+            if (entry.match_vendor_id == pci_device.vendor_id &&
                 entry.match_device_id == pci_device.device_id) {
                 policy_entry = &entry;
                 break;
@@ -123,11 +139,19 @@ DeviceTree DeviceManager::discover()
         // Bind operation implementations for the matched TPU type.
         auto implementer = std::make_shared<Implementer>(policy_entry->tpu_type);
 
+        auto device_config = policy_entry->device_config;
+        auto instance_index = discovered_product_counts[policy_entry->product]++;
+        if (device_config.name.empty() ||
+            target_registry_.find(device_config.name) != target_registry_.end()) {
+            device_config.name = default_tpu_name(policy_entry->tpu_type, instance_index);
+            device_config.tpu_index = instance_index;
+        }
+
         // Build the TPU object and policy-defined child modules.
         auto tpu_device = std::make_unique<TPUDevice>(
-            policy_entry->device_config.name,
+            device_config.name,
             mapped_ctx,
-            policy_entry->device_config,
+            device_config,
             implementer);
 
         auto* tpu = tpu_device.get();
@@ -144,11 +168,13 @@ DeviceTree DeviceManager::discover()
         info.bdf = ctx.bdf;
         info.vendor_id = ctx.vendor_id;
         info.device_id = ctx.device_id;
-        info.locator = {
-            {"slot", policy_entry->device_config.slot},
-            {"position", policy_entry->device_config.position},
-            {"index", std::to_string(policy_entry->device_config.tpu_index)},
-        };
+        if (!device_config.slot.empty()) {
+            info.locator["slot"] = device_config.slot;
+        }
+        if (!device_config.position.empty()) {
+            info.locator["position"] = device_config.position;
+        }
+        info.locator["index"] = std::to_string(device_config.tpu_index);
 
         for (const auto* child : tpu->child_targets()) {
             info.children.push_back(child->get_name());

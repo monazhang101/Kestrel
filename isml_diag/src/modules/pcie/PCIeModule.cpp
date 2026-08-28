@@ -15,5 +15,7 @@ PCIeModule::PCIeModule(const std::string& name,
     reg_base_ = bar_base == nullptr ? nullptr : bar_base + reg_offset_;
 
     _add_test("pcie_link_status_get", [this](TestInfo& ti) { return pcie_link_status_get(ti); });
+    _add_test("pcie_bar_read32", [this](TestInfo& ti) { return pcie_bar_read32(ti); });
+    _add_test("pcie_bar_scan32", [this](TestInfo& ti) { return pcie_bar_scan32(ti); });
     _add_test("pcie_dma_data_transfer", [this](TestInfo& ti) { return pcie_dma_data_transfer(ti); });
 }

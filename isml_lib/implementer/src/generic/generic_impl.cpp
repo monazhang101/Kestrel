@@ -1,6 +1,27 @@
 #include "generic_impl.h"
 
+#include "diag/core/Common.h"
+
+#include <cstdint>
+#include <iomanip>
+#include <sstream>
 #include <utility>
+#include <vector>
+
+namespace {
+
+std::string hex32(uint32_t value)
+{
+    std::ostringstream stream;
+    stream << "0x"
+           << std::hex
+           << std::setw(8)
+           << std::setfill('0')
+           << value;
+    return stream.str();
+}
+
+}
 
 namespace generic_impl {
 
@@ -26,6 +47,82 @@ GenericPCIeImpl::GenericPCIeImpl(ModuleImplContext ctx)
 LinkStatus GenericPCIeImpl::link_status_get()
 {
     return {false, "", "", "PCIe link status get is not implemented for " + ctx_.target_name};
+}
+
+TestResult GenericPCIeImpl::bar_read32(TestInfo& ti)
+{
+    auto offset = common::args::get_u64(ti.args, "offset", 0);
+
+    if ((offset % sizeof(uint32_t)) != 0) {
+        return {"pcie_bar_read32", ctx_.target_name, false, {
+            {"offset", std::to_string(offset)}
+        }, "offset must be 4-byte aligned"};
+    }
+
+    uint32_t value = 0;
+    if (!common::reg::read(ctx_.reg_base,
+                           ctx_.reg_size,
+                           offset,
+                           &value,
+                           sizeof(value))) {
+        return {"pcie_bar_read32", ctx_.target_name, false, {
+            {"offset", std::to_string(offset)},
+            {"reg_size", std::to_string(ctx_.reg_size)}
+        }, "BAR read32 failed", "check BAR mmap, offset alignment, and policy reg_size"};
+    }
+
+    return {"pcie_bar_read32", ctx_.target_name, true, {
+        {"offset", std::to_string(offset)},
+        {"absolute_bar_offset", std::to_string(ctx_.reg_offset + offset)},
+        {"value", hex32(value)},
+        {"value_dec", std::to_string(value)}
+    }};
+}
+
+TestResult GenericPCIeImpl::bar_scan32(TestInfo& ti)
+{
+    constexpr uint64_t max_words = 256;
+
+    auto offset = common::args::get_u64(ti.args, "offset", 0);
+    auto words = common::args::get_u64(ti.args, "words", 16);
+
+    if ((offset % sizeof(uint32_t)) != 0) {
+        return {"pcie_bar_scan32", ctx_.target_name, false, {
+            {"offset", std::to_string(offset)}
+        }, "offset must be 4-byte aligned"};
+    }
+    if (words == 0 || words > max_words) {
+        return {"pcie_bar_scan32", ctx_.target_name, false, {
+            {"words", std::to_string(words)},
+            {"max_words", std::to_string(max_words)}
+        }, "words must be in range 1..256"};
+    }
+
+    std::vector<uint32_t> values(static_cast<size_t>(words), 0);
+    auto bytes = words * sizeof(uint32_t);
+    if (!common::reg::read(ctx_.reg_base,
+                           ctx_.reg_size,
+                           offset,
+                           values.data(),
+                           static_cast<size_t>(bytes))) {
+        return {"pcie_bar_scan32", ctx_.target_name, false, {
+            {"offset", std::to_string(offset)},
+            {"words", std::to_string(words)},
+            {"bytes", std::to_string(bytes)},
+            {"reg_size", std::to_string(ctx_.reg_size)}
+        }, "BAR scan32 failed", "check BAR mmap, offset range, and policy reg_size"};
+    }
+
+    TestMetrics metrics = {
+        {"offset", std::to_string(offset)},
+        {"absolute_bar_offset", std::to_string(ctx_.reg_offset + offset)},
+        {"words", std::to_string(words)}
+    };
+    for (size_t i = 0; i < values.size(); ++i) {
+        metrics["word_" + std::to_string(i)] = hex32(values[i]);
+    }
+
+    return {"pcie_bar_scan32", ctx_.target_name, true, metrics};
 }
 
 DmaTransferResult GenericPCIeImpl::dma_copy_h2d(const DmaTransferRequest& req)

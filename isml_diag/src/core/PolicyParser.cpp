@@ -9,7 +9,6 @@ namespace {
 
 struct PolicyDeviceInventory {
     std::string name;
-    std::string bdf;
     std::string slot;
     std::string position;
     uint32_t index = 0;
@@ -289,9 +288,7 @@ std::vector<PolicyDeviceInventory> parse_inventory(const std::vector<YamlLine>& 
         }
 
         for (size_t j = i + 1; j < next_device; ++j) {
-            if (starts_with(lines[j].text, "bdf:")) {
-                device.bdf = yaml_value(lines[j].text);
-            } else if (starts_with(lines[j].text, "slot:")) {
+            if (starts_with(lines[j].text, "slot:")) {
                 device.slot = yaml_value(lines[j].text);
             } else if (starts_with(lines[j].text, "position:")) {
                 device.position = yaml_value(lines[j].text);
@@ -322,14 +319,25 @@ std::vector<PolicyEntry> load_one_policy(const std::string& path)
     tpu_config.isi_modules = parse_module_list(lines, "isi:");
 
     std::vector<PolicyEntry> entries;
-    for (const auto& device : parse_inventory(lines)) {
+    auto inventory = parse_inventory(lines);
+    if (inventory.empty()) {
+        entries.push_back({
+            tpu_profile.vendor_id,
+            tpu_profile.device_id,
+            tpu_profile.product,
+            tpu_profile.tpu_type,
+            std::move(tpu_config)
+        });
+        return entries;
+    }
+
+    for (const auto& device : inventory) {
         auto config = tpu_config;
         config.name = device.name;
         config.slot = device.slot;
         config.position = device.position;
         config.tpu_index = device.index;
         entries.push_back({
-            device.bdf,
             tpu_profile.vendor_id,
             tpu_profile.device_id,
             tpu_profile.product,

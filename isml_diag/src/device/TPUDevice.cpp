@@ -26,6 +26,25 @@ ModuleImplContext make_impl_context(const std::string& target_name,
     };
 }
 
+void print_child_tree(const BaseDevice& target, const std::string& prefix)
+{
+    const auto children = target.child_targets();
+    for (size_t i = 0; i < children.size(); ++i) {
+        const auto* child = children[i];
+        if (child == nullptr) {
+            continue;
+        }
+
+        const bool is_last = (i + 1 == children.size());
+        std::cout << prefix
+                  << (is_last ? "`-- " : "|-- ")
+                  << child->get_name()
+                  << std::endl;
+
+        print_child_tree(*child, prefix + (is_last ? "    " : "|   "));
+    }
+}
+
 }
 
 TPUDevice::TPUDevice(const std::string& logical_name,
@@ -175,9 +194,7 @@ void TPUDevice::print_tree() const
               << " impl=" << (implementer_ == nullptr ? "unknown" : to_string(implementer_->tpu_type()))
               << std::dec << std::endl;
 
-    for (const auto* child : child_targets()) {
-        std::cout << "  |-- " << child->get_name() << std::endl;
-    }
+    print_child_tree(*this, "");
 }
 
 // identify : To read ATLAS identity registers and report stable hardware facts.

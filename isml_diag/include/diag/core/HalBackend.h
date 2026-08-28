@@ -64,6 +64,7 @@ private:
 
     HalType type_ = HalType::iHal;
     std::vector<std::unique_ptr<std::vector<uint8_t>>> mapped_bar_storage_;
+    std::vector<std::pair<void*, uint64_t>> mapped_bar_mappings_;
 
     DmaBuffer alloc_host_buffer(HalSession* session,
                                 const DeviceContext& ctx,
