@@ -19,6 +19,7 @@ struct DeviceDiscoveryInfo {
     uint16_t vendor_id = 0;
     uint16_t device_id = 0;
     std::unordered_map<std::string, std::string> locator;
+    std::vector<BarMapping> bars;
     std::vector<std::string> children;
 };
 
@@ -43,8 +44,8 @@ private:
     //
     // Use one lock per top-level TPU target, e.g. ATLAS_0 or ATLAS_1, when
     // the MVP needs every module under the same TPU to run sequentially.
-    // Child targets such as ATLAS_0.PCIE_0, ATLAS_0.PMU_0, ATLAS_0.DDP_0,
-    // and ATLAS_0.ISI_0 should all resolve to the ATLAS_0 lock before
+    // Child targets such as PCIE_0_0, PMU_0_0, DDP_0_1, DMC_0_1_2,
+    // and ISI_0_7 should all resolve to the ATLAS_0 lock before
     // dispatching into BaseDevice::run_atomic_test().
     //
     // Example shape:

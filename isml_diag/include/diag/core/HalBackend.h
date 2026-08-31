@@ -60,7 +60,7 @@ class HalBackend {
 private:
     friend class HalSession;
 
-    static constexpr uint64_t DEFAULT_BAR_SIZE = 0x10000;
+    static constexpr uint64_t DRYRUN_BAR_WINDOW_SIZE = 0x10000;
 
     HalType type_ = HalType::iHal;
     std::vector<std::unique_ptr<std::vector<uint8_t>>> mapped_bar_storage_;

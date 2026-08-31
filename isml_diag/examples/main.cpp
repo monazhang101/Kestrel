@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <string>
+#include <vector>
 
 static void print_test_result(const TestResult& result)
 {
@@ -26,15 +27,42 @@ static void print_usage(const char* program)
     std::cout << "Usage:\n"
               << "  " << program << " discover [--backend phal|ihal|dryrun] [--tree]\n"
               << "  " << program << " link-status [--backend phal|ihal|dryrun] [--target <target>]\n"
-              << "  " << program << " bar-read [--backend phal|ihal|dryrun] [--target <target>] [--offset <offset>]\n"
-              << "  " << program << " bar-scan [--backend phal|ihal|dryrun] [--target <target>] [--offset <offset>] [--words <words>]\n"
+              << "  " << program << " bar-read [--backend phal|ihal|dryrun] [--target <target>] [--bar <0|2|4>] [--offset <offset>]\n"
+              << "  " << program << " bar-scan [--backend phal|ihal|dryrun] [--target <target>] [--bar <0|2|4>] [--offset <offset>] [--words <words>]\n"
               << "\n"
               << "Default backend: ihal\n"
               << "\n"
               << "Examples:\n"
               << "  " << program << " discover --tree\n"
               << "  " << program << " discover --backend phal --tree\n"
-              << "  " << program << " link-status --target ATLAS_0.PCIE_0\n";
+              << "  " << program << " link-status --target PCIE_0_0\n";
+}
+
+static void print_bar_map_status(const std::vector<BarMapping>& bars)
+{
+    for (const auto& bar : bars) {
+        std::cout << " " << bar.name << "=" << (bar.mapped ? "ok" : "fail");
+        std::cout << "(expected=0x" << std::hex << bar.expected_size
+                  << " resource=0x" << bar.resource_size
+                  << " mapped=0x" << bar.mapped_size;
+        if (bar.mapped) {
+            std::cout << " base=0x" << bar.device_base;
+        }
+        std::cout << std::dec;
+        if (!bar.layout.empty()) {
+            std::cout << " layout=";
+            for (size_t i = 0; i < bar.layout.size(); ++i) {
+                if (i != 0) {
+                    std::cout << "|";
+                }
+                std::cout << bar.layout[i];
+            }
+        }
+        if (!bar.error.empty()) {
+            std::cout << " error=" << bar.error;
+        }
+        std::cout << ")";
+    }
 }
 
 static void print_discovery_summary(const DeviceTree& tree)
@@ -48,7 +76,9 @@ static void print_discovery_summary(const DeviceTree& tree)
                   << " bdf=" << device.bdf
                   << " vid=0x" << std::hex << device.vendor_id
                   << " did=0x" << device.device_id
-                  << std::dec << std::endl;
+                  << std::dec;
+        print_bar_map_status(device.bars);
+        std::cout << std::endl;
     }
 }
 
@@ -118,31 +148,41 @@ int main(int argc, char** argv)
     }
 
     if (command == "link-status") {
-        auto target = get_option(argc, argv, "--target", "ATLAS_0.PCIE_0");
+        auto target = get_option(argc, argv, "--target", "PCIE_0_0");
         print_test_result(device_manager.run_atomic_test(
             target, "pcie_link_status_get"));
         return 0;
     }
 
     if (command == "bar-read") {
-        auto target = get_option(argc, argv, "--target", "ATLAS_0.PCIE_0");
+        auto target = get_option(argc, argv, "--target", "PCIE_0_0");
         auto offset = get_option(argc, argv, "--offset", "0x0");
+        auto bar = get_option(argc, argv, "--bar", "");
+        TestArgs args = {
+            {"offset", offset},
+        };
+        if (!bar.empty()) {
+            args["bar_index"] = bar;
+        }
         print_test_result(device_manager.run_atomic_test(
-            target, "pcie_bar_read32", {
-                {"offset", offset},
-            }));
+            target, "pcie_bar_read32", args));
         return 0;
     }
 
     if (command == "bar-scan") {
-        auto target = get_option(argc, argv, "--target", "ATLAS_0.PCIE_0");
+        auto target = get_option(argc, argv, "--target", "PCIE_0_0");
         auto offset = get_option(argc, argv, "--offset", "0x0");
         auto words = get_option(argc, argv, "--words", "16");
+        auto bar = get_option(argc, argv, "--bar", "");
+        TestArgs args = {
+            {"offset", offset},
+            {"words", words},
+        };
+        if (!bar.empty()) {
+            args["bar_index"] = bar;
+        }
         print_test_result(device_manager.run_atomic_test(
-            target, "pcie_bar_scan32", {
-                {"offset", offset},
-                {"words", words},
-            }));
+            target, "pcie_bar_scan32", args));
         return 0;
     }
 

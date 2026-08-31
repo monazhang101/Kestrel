@@ -31,6 +31,7 @@ TestResult PCIeModule::pcie_dma_data_transfer(TestInfo& ti)
                            const std::string& error_description = "") {
         TestMetrics metrics = {
             {"direction", direction},
+            {"bar_index", std::to_string(bar_index_)},
             {"size_bytes", std::to_string(size_bytes)},
             {"pattern", pattern},
             {"device_offset", std::to_string(device_offset)},
@@ -86,11 +87,11 @@ TestResult PCIeModule::pcie_dma_data_transfer(TestInfo& ti)
         }
 
         std::vector<uint8_t> actual(static_cast<size_t>(size_bytes), 0);
-        if (!common::devmem::read(ctx_.mapped_bar_base,
-                                  ctx_.bar_size,
-                                  device_offset,
-                                  actual.data(),
-                                  actual.size())) {
+        if (!common::bar::read(ctx_,
+                               bar_index_,
+                               device_offset,
+                               actual.data(),
+                               actual.size())) {
             return make_result(false, "device_readback_failed", dma_transfer_res, "failed to read device window");
         }
 
@@ -102,11 +103,11 @@ TestResult PCIeModule::pcie_dma_data_transfer(TestInfo& ti)
     }
 
     if (direction == "d2h") {
-        if (!common::devmem::write(ctx_.mapped_bar_base,
-                                   ctx_.bar_size,
-                                   device_offset,
-                                   expected.data(),
-                                   expected.size())) {
+        if (!common::bar::write(ctx_,
+                                bar_index_,
+                                device_offset,
+                                expected.data(),
+                                expected.size())) {
             return make_result(false, "device_pattern_write_failed", {}, "failed to write device source pattern");
         }
         std::memset(host_base + host_offset, 0, static_cast<size_t>(size_bytes));

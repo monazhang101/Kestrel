@@ -52,6 +52,7 @@ LinkStatus GenericPCIeImpl::link_status_get()
 TestResult GenericPCIeImpl::bar_read32(TestInfo& ti)
 {
     auto offset = common::args::get_u64(ti.args, "offset", 0);
+    auto requested_bar = ti.args.find("bar_index");
 
     if ((offset % sizeof(uint32_t)) != 0) {
         return {"pcie_bar_read32", ctx_.target_name, false, {
@@ -60,18 +61,41 @@ TestResult GenericPCIeImpl::bar_read32(TestInfo& ti)
     }
 
     uint32_t value = 0;
+    if (requested_bar != ti.args.end()) {
+        auto bar_index = static_cast<uint32_t>(
+            common::args::get_u64(ti.args, "bar_index", ctx_.bar_index));
+        if (!common::bar::read32(ctx_.device_ctx, bar_index, offset, value)) {
+            const auto* bar = common::bar::find(ctx_.device_ctx, bar_index);
+            return {"pcie_bar_read32", ctx_.target_name, false, {
+                {"bar_index", std::to_string(bar_index)},
+                {"offset", std::to_string(offset)},
+                {"mapped_size", std::to_string(bar == nullptr ? 0 : bar->mapped_size)}
+            }, "BAR read32 failed", "check BAR mmap, offset alignment, and BAR range"};
+        }
+
+        return {"pcie_bar_read32", ctx_.target_name, true, {
+            {"bar_index", std::to_string(bar_index)},
+            {"offset", std::to_string(offset)},
+            {"absolute_bar_offset", std::to_string(offset)},
+            {"value", hex32(value)},
+            {"value_dec", std::to_string(value)}
+        }};
+    }
+
     if (!common::reg::read(ctx_.reg_base,
                            ctx_.reg_size,
                            offset,
                            &value,
                            sizeof(value))) {
         return {"pcie_bar_read32", ctx_.target_name, false, {
+            {"bar_index", std::to_string(ctx_.bar_index)},
             {"offset", std::to_string(offset)},
             {"reg_size", std::to_string(ctx_.reg_size)}
         }, "BAR read32 failed", "check BAR mmap, offset alignment, and policy reg_size"};
     }
 
     return {"pcie_bar_read32", ctx_.target_name, true, {
+        {"bar_index", std::to_string(ctx_.bar_index)},
         {"offset", std::to_string(offset)},
         {"absolute_bar_offset", std::to_string(ctx_.reg_offset + offset)},
         {"value", hex32(value)},
@@ -85,6 +109,7 @@ TestResult GenericPCIeImpl::bar_scan32(TestInfo& ti)
 
     auto offset = common::args::get_u64(ti.args, "offset", 0);
     auto words = common::args::get_u64(ti.args, "words", 16);
+    auto requested_bar = ti.args.find("bar_index");
 
     if ((offset % sizeof(uint32_t)) != 0) {
         return {"pcie_bar_scan32", ctx_.target_name, false, {
@@ -100,12 +125,44 @@ TestResult GenericPCIeImpl::bar_scan32(TestInfo& ti)
 
     std::vector<uint32_t> values(static_cast<size_t>(words), 0);
     auto bytes = words * sizeof(uint32_t);
+    if (requested_bar != ti.args.end()) {
+        auto bar_index = static_cast<uint32_t>(
+            common::args::get_u64(ti.args, "bar_index", ctx_.bar_index));
+        if (!common::bar::read(ctx_.device_ctx,
+                               bar_index,
+                               offset,
+                               values.data(),
+                               static_cast<size_t>(bytes))) {
+            const auto* bar = common::bar::find(ctx_.device_ctx, bar_index);
+            return {"pcie_bar_scan32", ctx_.target_name, false, {
+                {"bar_index", std::to_string(bar_index)},
+                {"offset", std::to_string(offset)},
+                {"words", std::to_string(words)},
+                {"bytes", std::to_string(bytes)},
+                {"mapped_size", std::to_string(bar == nullptr ? 0 : bar->mapped_size)}
+            }, "BAR scan32 failed", "check BAR mmap, offset range, and BAR size"};
+        }
+
+        TestMetrics metrics = {
+            {"bar_index", std::to_string(bar_index)},
+            {"offset", std::to_string(offset)},
+            {"absolute_bar_offset", std::to_string(offset)},
+            {"words", std::to_string(words)}
+        };
+        for (size_t i = 0; i < values.size(); ++i) {
+            metrics["word_" + std::to_string(i)] = hex32(values[i]);
+        }
+
+        return {"pcie_bar_scan32", ctx_.target_name, true, metrics};
+    }
+
     if (!common::reg::read(ctx_.reg_base,
                            ctx_.reg_size,
                            offset,
                            values.data(),
                            static_cast<size_t>(bytes))) {
         return {"pcie_bar_scan32", ctx_.target_name, false, {
+            {"bar_index", std::to_string(ctx_.bar_index)},
             {"offset", std::to_string(offset)},
             {"words", std::to_string(words)},
             {"bytes", std::to_string(bytes)},
@@ -114,6 +171,7 @@ TestResult GenericPCIeImpl::bar_scan32(TestInfo& ti)
     }
 
     TestMetrics metrics = {
+        {"bar_index", std::to_string(ctx_.bar_index)},
         {"offset", std::to_string(offset)},
         {"absolute_bar_offset", std::to_string(ctx_.reg_offset + offset)},
         {"words", std::to_string(words)}

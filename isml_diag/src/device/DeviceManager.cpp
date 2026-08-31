@@ -9,19 +9,19 @@ namespace {
 
 std::string infer_child_type(const std::string& target_name)
 {
-    if (target_name.find(".PCIE_") != std::string::npos) {
+    if (target_name.rfind("PCIE_", 0) == 0) {
         return "PCIE_MODULE";
     }
-    if (target_name.find(".PMU_") != std::string::npos) {
+    if (target_name.rfind("PMU_", 0) == 0) {
         return "PMU_MODULE";
     }
-    if (target_name.find(".DMC_") != std::string::npos) {
+    if (target_name.rfind("DMC_", 0) == 0) {
         return "DMC_MODULE";
     }
-    if (target_name.find(".DDP_") != std::string::npos) {
+    if (target_name.rfind("DDP_", 0) == 0) {
         return "DDP_MODULE";
     }
-    if (target_name.find(".ISI_") != std::string::npos) {
+    if (target_name.rfind("ISI_", 0) == 0) {
         return "ISI_MODULE";
     }
     return "MODULE";
@@ -168,6 +168,7 @@ DeviceTree DeviceManager::discover()
         info.bdf = ctx.bdf;
         info.vendor_id = ctx.vendor_id;
         info.device_id = ctx.device_id;
+        info.bars = ctx.bar_mappings;
         if (!device_config.slot.empty()) {
             info.locator["slot"] = device_config.slot;
         }
@@ -245,10 +246,10 @@ TestResult DeviceManager::run_atomic_test(const std::string& target_name,
     //
     // If MVP policy chooses "one test at a time per TPU", derive the top-level
     // TPU name from target_name before dispatch:
-    //   ATLAS_0           -> ATLAS_0
-    //   ATLAS_0.PCIE_0    -> ATLAS_0
-    //   ATLAS_0.DDP_0     -> ATLAS_0
-    //   ATLAS_0.DDP_0.DMC_0_0 -> ATLAS_0
+    //   ATLAS_0     -> ATLAS_0
+    //   PCIE_0_0    -> ATLAS_0
+    //   DDP_0_1     -> ATLAS_0
+    //   DMC_0_1_2   -> ATLAS_0
     //
     // Then lock device_execution_mutexes_[ATLAS_0] here, before calling
     // target->run_atomic_test(). BaseDevice still keeps its own object mutex,

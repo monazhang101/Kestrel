@@ -25,12 +25,14 @@ inline std::string to_string(TPUType tpu_type)
 
 struct ModuleInstanceConfig {
     uint32_t index = 0;
+    uint32_t bar_index = 0;
     uint64_t reg_offset = 0;
     uint64_t reg_size = 0;
 };
 
 struct DDPModuleConfig {
     uint32_t index = 0;
+    uint32_t bar_index = 0;
     uint64_t reg_offset = 0;
     uint64_t reg_size = 0;
     std::vector<ModuleInstanceConfig> dmc_modules;

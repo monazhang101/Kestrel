@@ -1,6 +1,6 @@
 #include "diag/core/HalBackend.h"
 
-#include <algorithm>
+#include <array>
 #include <atomic>
 #include <fstream>
 #include <limits>
@@ -18,20 +18,78 @@
 
 namespace {
 
-uint64_t fake_bar_device_base_for_bdf(const std::string& bdf)
+constexpr std::array<uint32_t, 3> kProbeBarIndices = {0, 2, 4};
+
+std::string bar_pair_name(uint32_t bar_index)
+{
+    return "bar" + std::to_string(bar_index) + std::to_string(bar_index + 1);
+}
+
+uint64_t expected_bar_size(uint32_t bar_index)
+{
+    constexpr uint64_t mib = 1024ull * 1024ull;
+    constexpr uint64_t gib = 1024ull * mib;
+
+    if (bar_index == 0) {
+        return 1ull * gib;
+    }
+    if (bar_index == 2 || bar_index == 4) {
+        return 512ull * gib;
+    }
+    return 0;
+}
+
+std::vector<std::string> bar_layout(uint32_t bar_index)
+{
+    if (bar_index == 0) {
+        return {
+            "2MiB MSI-X",
+            "126MiB indirect CSR",
+            "128MiB debug",
+            "256MiB doorbell",
+            "512MiB RCF"
+        };
+    }
+    if (bar_index == 2) {
+        return {
+            "256GiB RDMA",
+            "256GiB DF",
+            "8 apertures: aperture0 256MiB VMEM/SMEM readonly, aperture1-7 configurable DMEM"
+        };
+    }
+    if (bar_index == 4) {
+        return {
+            "512GiB DF",
+            "8 configurable DMEM apertures"
+        };
+    }
+    return {};
+}
+
+BarMapping make_bar_mapping(uint32_t bar_index)
+{
+    BarMapping bar;
+    bar.bar_index = bar_index;
+    bar.name = bar_pair_name(bar_index);
+    bar.expected_size = expected_bar_size(bar_index);
+    bar.layout = bar_layout(bar_index);
+    return bar;
+}
+
+uint64_t fake_bar_device_base_for_bdf(const std::string& bdf, uint32_t bar_index)
 {
     // Dry-run BAR device-visible base. Real backends should discover this from:
     //   pHal: /sys/bus/pci/devices/<bdf>/resourceN start address or VFIO region info.
     //   iHal: vendor HAL device BAR metadata, for example dev->bars[N].baseAddr.
     // This is the address a device DMA descriptor should use, not the CPU
     // virtual pointer returned by mmap/VFIO mmap.
+    uint64_t device_base = 0;
     if (bdf == "0000:19:00.0" || bdf == "0000:65:00.0") {
-        return 0x80000000;
+        device_base = 0x80000000;
+    } else if (bdf == "0000:ca:00.0") {
+        device_base = 0x90000000;
     }
-    if (bdf == "0000:ca:00.0") {
-        return 0x90000000;
-    }
-    return 0;
+    return device_base == 0 ? 0 : device_base + static_cast<uint64_t>(bar_index) * 0x100000;
 }
 
 uint64_t align_up(uint64_t value, uint64_t alignment)
@@ -70,14 +128,17 @@ bool read_hex_u16(const std::filesystem::path& path, uint16_t& value)
     }
 }
 
-bool read_resource0_info(const std::string& bdf,
-                         uint64_t& start,
-                         uint64_t& size)
+bool read_resource_info(const std::string& bdf,
+                        uint32_t bar_index,
+                        uint64_t& start,
+                        uint64_t& size)
 {
     std::ifstream input("/sys/bus/pci/devices/" + bdf + "/resource");
     std::string line;
-    if (!std::getline(input, line)) {
-        return false;
+    for (uint32_t i = 0; i <= bar_index; ++i) {
+        if (!std::getline(input, line)) {
+            return false;
+        }
     }
 
     uint64_t end = 0;
@@ -87,6 +148,9 @@ bool read_resource0_info(const std::string& bdf,
         return false;
     }
     if (end < start) {
+        return false;
+    }
+    if (start == 0 && end == 0 && flags == 0) {
         return false;
     }
 
@@ -238,56 +302,81 @@ std::vector<DeviceContext> HalBackend::scan_pci_devices() const
 
 DeviceContext HalBackend::mmap_bar_space(DeviceContext ctx)
 {
+    ctx.bar_mappings.clear();
+    ctx.mapped_bar_base = nullptr;
+    ctx.bar_device_base = 0;
+    ctx.bar_size = 0;
+
     if (type_ == HalType::iHal) {
 #ifdef __linux__
-        uint64_t bar_start = 0;
-        uint64_t bar_size = 0;
-        if (!read_resource0_info(ctx.bdf, bar_start, bar_size)) {
-            ctx.mapped_bar_base = nullptr;
-            ctx.bar_device_base = 0;
-            ctx.bar_size = 0;
-            return ctx;
-        }
+        for (auto bar_index : kProbeBarIndices) {
+            auto bar = make_bar_mapping(bar_index);
 
-        auto resource0 = "/sys/bus/pci/devices/" + ctx.bdf + "/resource0";
-        int fd = open(resource0.c_str(), O_RDWR | O_SYNC);
-        int prot = PROT_READ | PROT_WRITE;
-        if (fd < 0) {
-            fd = open(resource0.c_str(), O_RDONLY | O_SYNC);
-            prot = PROT_READ;
-        }
-        if (fd < 0) {
-            ctx.mapped_bar_base = nullptr;
-            ctx.bar_device_base = bar_start;
-            ctx.bar_size = bar_size;
-            return ctx;
-        }
+            uint64_t bar_start = 0;
+            uint64_t bar_size = 0;
+            if (!read_resource_info(ctx.bdf, bar_index, bar_start, bar_size)) {
+                bar.error = "resource" + std::to_string(bar_index) + " is not present";
+                ctx.bar_mappings.push_back(std::move(bar));
+                continue;
+            }
 
-        const uint64_t map_size = std::min(bar_size, DEFAULT_BAR_SIZE);
-        void* mapped = mmap(nullptr,
-                            static_cast<size_t>(map_size),
-                            prot,
-                            MAP_SHARED,
-                            fd,
-                            0);
-        close(fd);
+            auto resource = "/sys/bus/pci/devices/" + ctx.bdf + "/resource" +
+                            std::to_string(bar_index);
+            int fd = open(resource.c_str(), O_RDWR | O_SYNC);
+            int prot = PROT_READ | PROT_WRITE;
+            if (fd < 0) {
+                fd = open(resource.c_str(), O_RDONLY | O_SYNC);
+                prot = PROT_READ;
+            }
+            if (fd < 0) {
+                bar.device_base = bar_start;
+                bar.resource_size = bar_size;
+                bar.error = "open resource" + std::to_string(bar_index) +
+                            " failed: " + std::strerror(errno);
+                ctx.bar_mappings.push_back(std::move(bar));
+                continue;
+            }
 
-        if (mapped == MAP_FAILED) {
-            ctx.mapped_bar_base = nullptr;
-            ctx.bar_device_base = bar_start;
-            ctx.bar_size = bar_size;
-            return ctx;
+            const uint64_t map_size = bar_size;
+            void* mapped = mmap(nullptr,
+                                static_cast<size_t>(map_size),
+                                prot,
+                                MAP_SHARED,
+                                fd,
+                                0);
+            auto mmap_errno = errno;
+            close(fd);
+
+            bar.device_base = bar_start;
+            bar.resource_size = bar_size;
+            bar.mapped_size = map_size;
+            bar.size = map_size;
+            if (mapped == MAP_FAILED) {
+                bar.error = "mmap resource" + std::to_string(bar_index) +
+                            " failed: " + std::strerror(mmap_errno);
+                ctx.bar_mappings.push_back(std::move(bar));
+                continue;
+            }
+
+            bar.mapped_base = mapped;
+            bar.mapped = true;
+            mapped_bar_mappings_.push_back({mapped, map_size});
+
+            if (bar_index == 0) {
+                ctx.mapped_bar_base = mapped;
+                ctx.bar_device_base = bar_start;
+                ctx.bar_size = map_size;
+            }
+
+            ctx.bar_mappings.push_back(std::move(bar));
         }
-
-        ctx.mapped_bar_base = mapped;
-        ctx.bar_device_base = bar_start;
-        ctx.bar_size = map_size;
-        mapped_bar_mappings_.push_back({mapped, map_size});
         return ctx;
 #else
-        ctx.mapped_bar_base = nullptr;
-        ctx.bar_device_base = 0;
-        ctx.bar_size = 0;
+        for (auto bar_index : kProbeBarIndices) {
+            auto bar = make_bar_mapping(bar_index);
+            bar.error = "BAR mmap is only available on Linux for iHal";
+            ctx.bar_mappings.push_back(std::move(bar));
+        }
         return ctx;
 #endif
     }
@@ -297,13 +386,27 @@ DeviceContext HalBackend::mmap_bar_space(DeviceContext ctx)
     //   host-mapped pointer -> mapped_bar_base
     //   device-visible BAR base, e.g. dev->bars[N].baseAddr -> bar_device_base
     //   BAR length -> bar_size
-    // Until that API is wired in, pHal keeps a fake BAR mapping for dry-run.
-    mapped_bar_storage_.push_back(
-        std::make_unique<std::vector<uint8_t>>(DEFAULT_BAR_SIZE, 0));
+    // Until that API is wired in, pHal keeps fake BAR mappings for dry-run.
+    for (auto bar_index : kProbeBarIndices) {
+        mapped_bar_storage_.push_back(
+            std::make_unique<std::vector<uint8_t>>(DRYRUN_BAR_WINDOW_SIZE, 0));
 
-    ctx.mapped_bar_base = mapped_bar_storage_.back()->data();
-    ctx.bar_device_base = fake_bar_device_base_for_bdf(ctx.bdf);
-    ctx.bar_size = DEFAULT_BAR_SIZE;
+        auto bar = make_bar_mapping(bar_index);
+        bar.mapped_base = mapped_bar_storage_.back()->data();
+        bar.device_base = fake_bar_device_base_for_bdf(ctx.bdf, bar_index);
+        bar.resource_size = bar.expected_size;
+        bar.mapped_size = DRYRUN_BAR_WINDOW_SIZE;
+        bar.size = DRYRUN_BAR_WINDOW_SIZE;
+        bar.mapped = true;
+
+        if (bar_index == 0) {
+            ctx.mapped_bar_base = bar.mapped_base;
+            ctx.bar_device_base = bar.device_base;
+            ctx.bar_size = bar.size;
+        }
+
+        ctx.bar_mappings.push_back(std::move(bar));
+    }
     return ctx;
 }
 

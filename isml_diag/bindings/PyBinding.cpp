@@ -8,6 +8,23 @@
 
 namespace py = pybind11;
 
+static py::dict bar_mapping_to_dict(const BarMapping& bar)
+{
+    py::dict d;
+    d["bar_index"] = bar.bar_index;
+    d["name"] = bar.name;
+    d["mapped_base"] = reinterpret_cast<uintptr_t>(bar.mapped_base);
+    d["device_base"] = bar.device_base;
+    d["size"] = bar.size;
+    d["expected_size"] = bar.expected_size;
+    d["resource_size"] = bar.resource_size;
+    d["mapped_size"] = bar.mapped_size;
+    d["mapped"] = bar.mapped;
+    d["error"] = bar.error;
+    d["layout"] = bar.layout;
+    return d;
+}
+
 static py::dict device_tree_to_dict(const DeviceTree& tree)
 {
     py::list devices;
@@ -21,6 +38,11 @@ static py::dict device_tree_to_dict(const DeviceTree& tree)
         d["device_id"] = device.device_id;
         d["locator"] = device.locator;
         d["children"] = device.children;
+        py::list bars;
+        for (const auto& bar : device.bars) {
+            bars.append(bar_mapping_to_dict(bar));
+        }
+        d["bars"] = bars;
         devices.append(d);
     }
 
@@ -43,6 +65,27 @@ PYBIND11_MODULE(tpu_hal, m)
 {
     m.doc() = "Python bindings for TPU diagnostic HAL pseudocode";
 
+    py::class_<BarMapping>(m, "BarMapping")
+        .def(py::init<>())
+        .def_readwrite("bar_index", &BarMapping::bar_index)
+        .def_readwrite("name", &BarMapping::name)
+        .def_readwrite("device_base", &BarMapping::device_base)
+        .def_readwrite("size", &BarMapping::size)
+        .def_readwrite("expected_size", &BarMapping::expected_size)
+        .def_readwrite("resource_size", &BarMapping::resource_size)
+        .def_readwrite("mapped_size", &BarMapping::mapped_size)
+        .def_readwrite("mapped", &BarMapping::mapped)
+        .def_readwrite("error", &BarMapping::error)
+        .def_readwrite("layout", &BarMapping::layout)
+        .def_property(
+            "mapped_base",
+            [](const BarMapping& bar) {
+                return reinterpret_cast<uintptr_t>(bar.mapped_base);
+            },
+            [](BarMapping& bar, uintptr_t addr) {
+                bar.mapped_base = reinterpret_cast<void*>(addr);
+            });
+
     py::class_<DeviceContext>(m, "DeviceContext")
         .def(py::init<>())
         .def_readwrite("bdf", &DeviceContext::bdf)
@@ -50,6 +93,7 @@ PYBIND11_MODULE(tpu_hal, m)
         .def_readwrite("device_id", &DeviceContext::device_id)
         .def_readwrite("bar_device_base", &DeviceContext::bar_device_base)
         .def_readwrite("bar_size", &DeviceContext::bar_size)
+        .def_readwrite("bar_mappings", &DeviceContext::bar_mappings)
         .def_property(
             "mapped_bar_base",
             [](const DeviceContext& ctx) {
@@ -92,6 +136,7 @@ PYBIND11_MODULE(tpu_hal, m)
         .def_readwrite("vendor_id", &DeviceDiscoveryInfo::vendor_id)
         .def_readwrite("device_id", &DeviceDiscoveryInfo::device_id)
         .def_readwrite("locator", &DeviceDiscoveryInfo::locator)
+        .def_readwrite("bars", &DeviceDiscoveryInfo::bars)
         .def_readwrite("children", &DeviceDiscoveryInfo::children);
 
     py::class_<TopologyEdge>(m, "TopologyEdge")

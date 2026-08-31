@@ -190,6 +190,8 @@ std::vector<ModuleInstanceConfig> parse_module_list(const std::vector<YamlLine>&
             current->reg_offset = parse_u64(yaml_value(lines[i].text));
         } else if (current != nullptr && starts_with(lines[i].text, "reg_size:")) {
             current->reg_size = parse_u64(yaml_value(lines[i].text));
+        } else if (current != nullptr && starts_with(lines[i].text, "bar_index:")) {
+            current->bar_index = static_cast<uint32_t>(parse_u64(yaml_value(lines[i].text)));
         }
     }
 
@@ -214,6 +216,8 @@ std::vector<ModuleInstanceConfig> parse_dmc_list(const std::vector<YamlLine>& li
             current->reg_offset = parse_u64(yaml_value(lines[i].text));
         } else if (current != nullptr && starts_with(lines[i].text, "reg_size:")) {
             current->reg_size = parse_u64(yaml_value(lines[i].text));
+        } else if (current != nullptr && starts_with(lines[i].text, "bar_index:")) {
+            current->bar_index = static_cast<uint32_t>(parse_u64(yaml_value(lines[i].text)));
         }
     }
 
@@ -251,6 +255,9 @@ std::vector<DDPModuleConfig> parse_ddp_list(const std::vector<YamlLine>& lines)
             } else if (lines[j].indent == lines[i].indent + 2 &&
                        starts_with(lines[j].text, "reg_size:")) {
                 ddp.reg_size = parse_u64(yaml_value(lines[j].text));
+            } else if (lines[j].indent == lines[i].indent + 2 &&
+                       starts_with(lines[j].text, "bar_index:")) {
+                ddp.bar_index = static_cast<uint32_t>(parse_u64(yaml_value(lines[j].text)));
             } else if (lines[j].indent == lines[i].indent + 2 &&
                        lines[j].text == "dmc:") {
                 ddp.dmc_modules = parse_dmc_list(lines, j);

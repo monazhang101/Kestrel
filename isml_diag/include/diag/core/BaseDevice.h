@@ -11,6 +11,20 @@
 #include <utility>
 #include <vector>
 
+struct BarMapping {
+    uint32_t bar_index = 0;
+    std::string name;
+    void* mapped_base = nullptr;
+    uint64_t device_base = 0;
+    uint64_t size = 0;
+    uint64_t expected_size = 0;
+    uint64_t resource_size = 0;
+    uint64_t mapped_size = 0;
+    bool mapped = false;
+    std::string error;
+    std::vector<std::string> layout;
+};
+
 struct DeviceContext {
     std::string bdf;
     uint16_t vendor_id = 0;
@@ -19,6 +33,7 @@ struct DeviceContext {
     void* mapped_bar_base = nullptr;
     uint64_t bar_device_base = 0;
     uint64_t bar_size = 0;
+    std::vector<BarMapping> bar_mappings;
 };
 
 using AtomicTestFunc = std::function<TestResult(TestInfo& ti)>;

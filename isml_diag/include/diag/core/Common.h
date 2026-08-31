@@ -1,5 +1,6 @@
 #pragma once
 
+#include "diag/core/BaseDevice.h"
 #include "diag/core/TestInfo.h"
 
 #include <cstddef>
@@ -162,6 +163,84 @@ inline bool write(void* dev_mem_base,
     }
 
     return true;
+}
+
+}
+
+// -------------------------------------------------------------
+// common::bar helpers select one mapped PCI BAR window from a
+// discovered DeviceContext and provide checked read/write access.
+// -------------------------------------------------------------
+namespace common::bar {
+
+inline const BarMapping* find(const DeviceContext& ctx, uint32_t bar_index)
+{
+    for (const auto& bar : ctx.bar_mappings) {
+        if (bar.bar_index == bar_index) {
+            return &bar;
+        }
+    }
+    return nullptr;
+}
+
+inline void* mapped_base(const DeviceContext& ctx, uint32_t bar_index)
+{
+    const auto* bar = find(ctx, bar_index);
+    if (bar == nullptr || !bar->mapped) {
+        return nullptr;
+    }
+    return bar->mapped_base;
+}
+
+inline uint64_t mapped_size(const DeviceContext& ctx, uint32_t bar_index)
+{
+    const auto* bar = find(ctx, bar_index);
+    if (bar == nullptr || !bar->mapped) {
+        return 0;
+    }
+    return bar->mapped_size;
+}
+
+inline bool read(const DeviceContext& ctx,
+                 uint32_t bar_index,
+                 uint64_t offset,
+                 void* data,
+                 size_t len)
+{
+    const auto* bar = find(ctx, bar_index);
+    if (bar == nullptr || !bar->mapped) {
+        return false;
+    }
+    return common::devmem::read(bar->mapped_base, bar->mapped_size, offset, data, len);
+}
+
+inline bool write(const DeviceContext& ctx,
+                  uint32_t bar_index,
+                  uint64_t offset,
+                  const void* data,
+                  size_t len)
+{
+    const auto* bar = find(ctx, bar_index);
+    if (bar == nullptr || !bar->mapped) {
+        return false;
+    }
+    return common::devmem::write(bar->mapped_base, bar->mapped_size, offset, data, len);
+}
+
+inline bool read32(const DeviceContext& ctx,
+                   uint32_t bar_index,
+                   uint64_t offset,
+                   uint32_t& value)
+{
+    return read(ctx, bar_index, offset, &value, sizeof(value));
+}
+
+inline bool write32(const DeviceContext& ctx,
+                    uint32_t bar_index,
+                    uint64_t offset,
+                    uint32_t value)
+{
+    return write(ctx, bar_index, offset, &value, sizeof(value));
 }
 
 }
