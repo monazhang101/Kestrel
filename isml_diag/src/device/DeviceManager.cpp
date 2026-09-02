@@ -135,6 +135,7 @@ DeviceTree DeviceManager::discover()
 
         // Map the matched device BAR through the HAL session.
         auto mapped_ctx = hal_.mmap_bar_space(pci_device);
+        mapped_ctx.tpu_type = policy_entry->tpu_type;
 
         // Bind operation implementations for the matched TPU type.
         auto implementer = std::make_shared<Implementer>(policy_entry->tpu_type);
@@ -223,6 +224,13 @@ void DeviceManager::set_log_level(LogLevel level)
 LogLevel DeviceManager::get_log_level() const
 {
     return logger_.get_level();
+}
+
+DevMem DeviceManager::open_dev_mem(const DeviceContext& ctx,
+                                   DevMemSpec spec,
+                                   Logger* logger)
+{
+    return hal_.open_dev_mem(ctx, spec, logger == nullptr ? &logger_ : logger);
 }
 
 TestResult DeviceManager::run_atomic_test(const std::string& target_name,

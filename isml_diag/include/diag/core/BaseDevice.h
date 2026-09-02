@@ -1,5 +1,6 @@
 #pragma once
 
+#include "diag/core/PlatformPolicy.h"
 #include "diag/core/TestInfo.h"
 
 #include <cstdint>
@@ -29,6 +30,7 @@ struct DeviceContext {
     std::string bdf;
     uint16_t vendor_id = 0;
     uint16_t device_id = 0;
+    TPUType tpu_type = TPUType::Unknown;
 
     void* mapped_bar_base = nullptr;
     uint64_t bar_device_base = 0;

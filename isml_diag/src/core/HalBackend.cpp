@@ -244,6 +244,7 @@ HalBackend::HalBackend(HalType type)
 void HalBackend::reset(HalType type)
 {
     clear_mappings();
+    phal_bridge_.reset();
     type_ = type;
 }
 
@@ -433,6 +434,29 @@ DmaBuffer HalBackend::alloc_host_buffer(HalSession* session,
                      type_ == HalType::iHal ? "iova" : "phal_handle");
 }
 
+DevMem HalBackend::open_dev_mem(const DeviceContext& ctx, DevMemSpec spec, Logger* logger)
+{
+    if (spec.size == 0) {
+        return DevMem::invalid("dev_mem size must be nonzero");
+    }
+
+    if (spec.project == PhalProject::Generic) {
+        spec.project = phal_project_from_tpu_type(ctx.tpu_type);
+    }
+
+    IhalIO ihalIO;
+    ihalIO.device_ctx = &ctx;
+    ihalIO.bar_index = spec.control_bar_index;
+    ihalIO.module_base = spec.control_module_base;
+
+    std::string error;
+    if (!phal_bridge_.init(ihalIO, spec.project, &error)) {
+        return DevMem::invalid("phal init failed: " + error);
+    }
+
+    return DevMem(ctx, spec, &phal_bridge_, logger);
+}
+
 void HalBackend::free_host_buffer(DmaBuffer& buffer)
 {
     buffer.storage_.clear();
@@ -456,6 +480,7 @@ void HalBackend::clear_mappings()
     }
 #endif
     mapped_bar_storage_.clear();
+    phal_bridge_.reset();
 }
 
 HalSession::HalSession(HalType type)
@@ -486,6 +511,11 @@ DmaBuffer HalSession::alloc_host_buffer(const DeviceContext& ctx, uint64_t size_
 void HalSession::free_host_buffer(DmaBuffer& buffer)
 {
     backend_.free_host_buffer(buffer);
+}
+
+DevMem HalSession::open_dev_mem(const DeviceContext& ctx, DevMemSpec spec, Logger* logger)
+{
+    return backend_.open_dev_mem(ctx, spec, logger);
 }
 
 void HalSession::clear()

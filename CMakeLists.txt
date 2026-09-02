@@ -41,6 +41,7 @@ target_include_directories(isml_lib
 add_library(isml_diag
     isml_diag/src/core/CmdQueueMgm.cpp
     isml_diag/src/core/PolicyParser.cpp
+    isml_diag/src/core/PhalBridge.cpp
     isml_diag/src/device/DeviceManager.cpp
     isml_diag/src/device/TPUDevice.cpp
     isml_diag/src/core/HalBackend.cpp
@@ -65,6 +66,8 @@ target_include_directories(isml_diag
     PUBLIC
         ${ISML_DIAG_DIR}/include
         ${ISML_IMPLEMENTER_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/isml_ipc/external/ProtonHal/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/isml_ipc/external/ProtonHal
 )
 
 target_link_libraries(isml_diag

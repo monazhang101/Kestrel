@@ -1,6 +1,7 @@
 #pragma once
 
 #include "diag/core/BaseDevice.h"
+#include "diag/core/PhalBridge.h"
 
 #include <cstdint>
 #include <memory>
@@ -63,6 +64,7 @@ private:
     static constexpr uint64_t DRYRUN_BAR_WINDOW_SIZE = 0x10000;
 
     HalType type_ = HalType::iHal;
+    PhalBridge phal_bridge_;
     std::vector<std::unique_ptr<std::vector<uint8_t>>> mapped_bar_storage_;
     std::vector<std::pair<void*, uint64_t>> mapped_bar_mappings_;
 
@@ -79,6 +81,7 @@ public:
     void reset(HalType type);
     std::vector<DeviceContext> scan_pci_devices() const;
     DeviceContext mmap_bar_space(DeviceContext ctx);
+    DevMem open_dev_mem(const DeviceContext& ctx, DevMemSpec spec, Logger* logger = nullptr);
     void clear_mappings();
 };
 
@@ -97,5 +100,6 @@ public:
     DeviceContext mmap_bar_space(DeviceContext ctx);
     DmaBuffer alloc_host_buffer(const DeviceContext& ctx, uint64_t size_bytes);
     void free_host_buffer(DmaBuffer& buffer);
+    DevMem open_dev_mem(const DeviceContext& ctx, DevMemSpec spec, Logger* logger = nullptr);
     void clear();
 };
