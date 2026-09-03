@@ -21,3 +21,7 @@ tests:
         type: string
         default: incremental
         range: zero, incremental, random
+
+  sequential_aperture_mapping:
+    summary: Configure BAR23/BAR45 apertures sequentially and verify each mapped window.
+    args: {}

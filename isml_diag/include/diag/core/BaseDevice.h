@@ -65,7 +65,7 @@ public:
     virtual TestResult run_atomic_test(const std::string& test_name,
                                        const TestArgs& args = {},
                                        Logger* logger = nullptr,
-                                       HalSession* hal = nullptr)
+                                       HalContext* hal = nullptr)
     {
         std::lock_guard<std::mutex> lock(atomic_test_mutex_);
         Logger default_logger;

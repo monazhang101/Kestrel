@@ -114,7 +114,7 @@ DeviceTree DeviceManager::discover()
     // Start a fresh discovery result and release previous transient mappings.
     clear_discovered_devices();
 
-    // Ask the selected HAL backend for observed PCI devices.
+    // Ask the selected HAL context for observed PCI devices.
     auto pci_devices = hal_.scan_pci_devices();
 
     std::unordered_map<std::string, uint32_t> discovered_product_counts;
@@ -133,7 +133,7 @@ DeviceTree DeviceManager::discover()
             continue;
         }
 
-        // Map the matched device BAR through the HAL session.
+        // Map the matched device BAR through the HAL context.
         auto mapped_ctx = hal_.mmap_bar_space(pci_device);
         mapped_ctx.tpu_type = policy_entry->tpu_type;
 
@@ -226,11 +226,18 @@ LogLevel DeviceManager::get_log_level() const
     return logger_.get_level();
 }
 
-DevMem DeviceManager::open_dev_mem(const DeviceContext& ctx,
-                                   DevMemSpec spec,
-                                   Logger* logger)
+DevMem DeviceManager::open_devmem(const DeviceContext& ctx,
+                                  DevMemSpec spec,
+                                  Logger* logger)
 {
-    return hal_.open_dev_mem(ctx, spec, logger == nullptr ? &logger_ : logger);
+    return hal_.open_devmem(ctx, std::move(spec), logger == nullptr ? &logger_ : logger);
+}
+
+std::vector<DevMem> DeviceManager::open_multi_devmem(const DeviceContext& ctx,
+                                                     std::vector<DevMemSpec> specs,
+                                                     Logger* logger)
+{
+    return hal_.open_multi_devmem(ctx, std::move(specs), logger == nullptr ? &logger_ : logger);
 }
 
 TestResult DeviceManager::run_atomic_test(const std::string& target_name,

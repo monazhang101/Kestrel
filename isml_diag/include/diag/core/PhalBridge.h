@@ -52,6 +52,7 @@ struct DevMemSpec {
     uint64_t size = 0;
     uint64_t aperture_bar_offset = 0;
     bool readonly = false;
+    std::string pattern;
     PhalProject project = PhalProject::Generic;
 };
 
@@ -68,6 +69,7 @@ private:
 
     bool range_ok(uint64_t offset, size_t len) const;
     void log_info(const std::string& message) const;
+    void log_debug(const std::string& message) const;
     void log_error(const std::string& message) const;
 
 public:
@@ -78,6 +80,8 @@ public:
 
     bool valid() const { return valid_; }
     const std::string& error() const { return error_; }
+
+    bool configure();
 
     uint8_t dmem_bar_index() const { return spec_.dmem_bar_index; }
     uint8_t aperture_index() const { return spec_.aperture_index; }

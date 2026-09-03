@@ -44,7 +44,7 @@ add_library(isml_diag
     isml_diag/src/core/PhalBridge.cpp
     isml_diag/src/device/DeviceManager.cpp
     isml_diag/src/device/TPUDevice.cpp
-    isml_diag/src/core/HalBackend.cpp
+    isml_diag/src/core/HalContext.cpp
     isml_diag/src/modules/ddp/DDPModule.cpp
     isml_diag/src/modules/ddp/ddp_dmem_cases.cpp
     isml_diag/src/modules/dmc/DMCModule.cpp
@@ -56,7 +56,7 @@ add_library(isml_diag
     isml_diag/src/modules/pcie/PCIeModule.cpp
     isml_diag/src/modules/pcie/pcie_link_cases.cpp
     isml_diag/src/modules/pcie/pcie_dma_cases.cpp
-    isml_diag/src/modules/pcie/pcie_reg_cases.cpp
+    isml_diag/src/modules/pcie/pcie_bar_cases.cpp
     isml_diag/src/modules/pmu/PMUModule.cpp
     isml_diag/src/modules/pmu/pmu_ipc_cases.cpp
     isml_diag/src/modules/pmu/pmu_reg_cases.cpp

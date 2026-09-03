@@ -20,6 +20,7 @@ private:
     TestResult pcie_link_status_get(TestInfo& ti);
     TestResult pcie_bar_read32(TestInfo& ti);
     TestResult pcie_bar_scan32(TestInfo& ti);
+    TestResult sequential_aperture_mapping(TestInfo& ti);
     TestResult pcie_dma_data_transfer(TestInfo& ti);
     /*
     TestResult PcieEnumCheck(TestInfo& ti);

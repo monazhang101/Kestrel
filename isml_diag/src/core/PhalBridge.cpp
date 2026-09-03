@@ -82,6 +82,52 @@ std::string phal_error(const char* api, phal_status_t status)
     return stream.str();
 }
 
+std::string hex_u64(uint64_t value)
+{
+    std::ostringstream stream;
+    stream << "0x" << std::hex << value;
+    return stream.str();
+}
+
+std::string phal_aperture_call_log(const char* api,
+                                   const phal_ctx_t* phal_ctx,
+                                   uint32_t bar_index,
+                                   uint8_t aperture_index,
+                                   const phal_pcie_aperture_t& apt,
+                                   phal_status_t status)
+{
+    std::ostringstream stream;
+    stream << api
+           << " ctx=" << hex_u64(reinterpret_cast<uintptr_t>(phal_ctx))
+           << " bar_index=" << bar_index
+           << " aperture_index=" << static_cast<uint32_t>(aperture_index)
+           << " identity=" << static_cast<uint32_t>(apt.identity)
+           << " target_addr=" << hex_u64(apt.target_addr)
+           << " size=" << hex_u64(apt.size)
+           << " status=" << static_cast<int>(status);
+    return stream.str();
+}
+
+std::string devmem_log_context(const DevMemSpec& spec,
+                               uint64_t offset,
+                               size_t len,
+                               const char* status)
+{
+    std::ostringstream stream;
+    stream << "dmem_bar=" << static_cast<uint32_t>(spec.dmem_bar_index)
+           << " aperture=" << static_cast<uint32_t>(spec.aperture_index)
+           << " identity=" << static_cast<uint32_t>(spec.identity)
+           << " target_addr=" << hex_u64(spec.target_addr)
+           << " size=" << hex_u64(spec.size)
+           << " aperture_bar_offset=" << hex_u64(spec.aperture_bar_offset)
+           << " offset=" << hex_u64(offset)
+           << " absolute_bar_offset=" << hex_u64(spec.aperture_bar_offset + offset)
+           << " len=" << len
+           << " pattern=" << (spec.pattern.empty() ? "n/a" : spec.pattern)
+           << " status=" << status;
+    return stream.str();
+}
+
 }
 
 PhalProject phal_project_from_tpu_type(TPUType tpu_type)
@@ -252,6 +298,13 @@ void DevMem::log_info(const std::string& message) const
     }
 }
 
+void DevMem::log_debug(const std::string& message) const
+{
+    if (logger_ != nullptr) {
+        logger_->debug(message);
+    }
+}
+
 void DevMem::log_error(const std::string& message) const
 {
     if (logger_ != nullptr) {
@@ -259,15 +312,20 @@ void DevMem::log_error(const std::string& message) const
     }
 }
 
-bool DevMem::read(uint64_t offset, void* data, size_t len) const
+bool DevMem::configure()
 {
-    if (data == nullptr || !range_ok(offset, len)) {
+    if (!valid_) {
+        if (error_.empty()) {
+            error_ = "dev_mem window is invalid";
+        }
         return false;
     }
 
     auto* phal_ctx = static_cast<phal_ctx_t*>(phal_->native_context());
     if (phal_ctx == nullptr) {
-        log_error("dev_mem read aperture_set failed: phal context is not initialized");
+        error_ = "phal context is not initialized";
+        log_error("dev_mem configure failed: " + error_);
+        valid_ = false;
         return false;
     }
 
@@ -280,91 +338,91 @@ bool DevMem::read(uint64_t offset, void* data, size_t len) const
                                          spec_.dmem_bar_index,
                                          spec_.aperture_index,
                                          &apt);
+    log_debug("dev_mem configure " +
+              phal_aperture_call_log("phal_pcie_aperture_set",
+                                     phal_ctx,
+                                     spec_.dmem_bar_index,
+                                     spec_.aperture_index,
+                                     apt,
+                                     status) +
+              " aperture_bar_offset=" + hex_u64(spec_.aperture_bar_offset) +
+              " pattern=" + (spec_.pattern.empty() ? "n/a" : spec_.pattern));
     if (status != PHAL_STATUS_OK) {
-        log_error("dev_mem read aperture_set failed: " +
-                  phal_error("phal_pcie_aperture_set", status));
+        error_ = phal_error("phal_pcie_aperture_set", status);
+        log_error("dev_mem configure aperture_set failed: " + error_);
+        valid_ = false;
         return false;
     }
 
-    apt = {};
+    phal_pcie_aperture_t actual = {};
     status = phal_pcie_aperture_get(phal_ctx,
                                     spec_.dmem_bar_index,
                                     spec_.aperture_index,
-                                    &apt);
+                                    &actual);
+    log_debug("dev_mem configure " +
+              phal_aperture_call_log("phal_pcie_aperture_get",
+                                     phal_ctx,
+                                     spec_.dmem_bar_index,
+                                     spec_.aperture_index,
+                                     actual,
+                                     status) +
+              " aperture_bar_offset=" + hex_u64(spec_.aperture_bar_offset) +
+              " pattern=" + (spec_.pattern.empty() ? "n/a" : spec_.pattern));
     if (status != PHAL_STATUS_OK) {
-        log_error("dev_mem read aperture_get failed: " +
-                  phal_error("phal_pcie_aperture_get", status));
+        error_ = phal_error("phal_pcie_aperture_get", status);
+        log_error("dev_mem configure aperture_get failed: " + error_);
+        valid_ = false;
         return false;
     }
 
-    std::ostringstream stream;
-    stream << "dev_mem read aperture configured: bar="
-           << static_cast<uint32_t>(spec_.dmem_bar_index)
-           << " aperture=" << static_cast<uint32_t>(spec_.aperture_index)
-           << " identity=" << static_cast<uint32_t>(apt.identity)
-           << " target_addr=0x" << std::hex << apt.target_addr
-           << " size=0x" << apt.size
-           << " bar_offset=0x" << spec_.aperture_bar_offset;
-    log_info(stream.str());
+    if (actual.identity != spec_.identity ||
+        actual.target_addr != spec_.target_addr ||
+        actual.size != spec_.size) {
+        std::ostringstream details;
+        details << "aperture get mismatch expected(identity="
+                << static_cast<uint32_t>(spec_.identity)
+                << ", target_addr=" << hex_u64(spec_.target_addr)
+                << ", size=" << hex_u64(spec_.size)
+                << ") actual(identity=" << static_cast<uint32_t>(actual.identity)
+                << ", target_addr=" << hex_u64(actual.target_addr)
+                << ", size=" << hex_u64(actual.size) << ")";
+        error_ = details.str();
+        log_error("dev_mem configure failed: " + error_);
+        valid_ = false;
+        return false;
+    }
 
-    return common::bar::read(ctx_,
-                             spec_.dmem_bar_index,
-                             spec_.aperture_bar_offset + offset,
-                             data,
-                             len);
+    return true;
+}
+
+bool DevMem::read(uint64_t offset, void* data, size_t len) const
+{
+    if (data == nullptr || !range_ok(offset, len)) {
+        log_debug("dev_mem read " + devmem_log_context(spec_, offset, len, "invalid_range"));
+        return false;
+    }
+
+    auto ok = common::bar::read(ctx_,
+                                spec_.dmem_bar_index,
+                                spec_.aperture_bar_offset + offset,
+                                data,
+                                len);
+    log_debug("dev_mem read " + devmem_log_context(spec_, offset, len, ok ? "ok" : "failed"));
+    return ok;
 }
 
 bool DevMem::write(uint64_t offset, const void* data, size_t len) const
 {
     if (data == nullptr || spec_.readonly || !range_ok(offset, len)) {
+        log_debug("dev_mem write " + devmem_log_context(spec_, offset, len, "invalid_range"));
         return false;
     }
 
-    auto* phal_ctx = static_cast<phal_ctx_t*>(phal_->native_context());
-    if (phal_ctx == nullptr) {
-        log_error("dev_mem write aperture_set failed: phal context is not initialized");
-        return false;
-    }
-
-    phal_pcie_aperture_t apt = {};
-    apt.identity = spec_.identity;
-    apt.target_addr = spec_.target_addr;
-    apt.size = spec_.size;
-
-    auto status = phal_pcie_aperture_set(phal_ctx,
-                                         spec_.dmem_bar_index,
-                                         spec_.aperture_index,
-                                         &apt);
-    if (status != PHAL_STATUS_OK) {
-        log_error("dev_mem write aperture_set failed: " +
-                  phal_error("phal_pcie_aperture_set", status));
-        return false;
-    }
-
-    apt = {};
-    status = phal_pcie_aperture_get(phal_ctx,
-                                    spec_.dmem_bar_index,
-                                    spec_.aperture_index,
-                                    &apt);
-    if (status != PHAL_STATUS_OK) {
-        log_error("dev_mem write aperture_get failed: " +
-                  phal_error("phal_pcie_aperture_get", status));
-        return false;
-    }
-
-    std::ostringstream stream;
-    stream << "dev_mem write aperture configured: bar="
-           << static_cast<uint32_t>(spec_.dmem_bar_index)
-           << " aperture=" << static_cast<uint32_t>(spec_.aperture_index)
-           << " identity=" << static_cast<uint32_t>(apt.identity)
-           << " target_addr=0x" << std::hex << apt.target_addr
-           << " size=0x" << apt.size
-           << " bar_offset=0x" << spec_.aperture_bar_offset;
-    log_info(stream.str());
-
-    return common::bar::write(ctx_,
-                              spec_.dmem_bar_index,
-                              spec_.aperture_bar_offset + offset,
-                              data,
-                              len);
+    auto ok = common::bar::write(ctx_,
+                                 spec_.dmem_bar_index,
+                                 spec_.aperture_bar_offset + offset,
+                                 data,
+                                 len);
+    log_debug("dev_mem write " + devmem_log_context(spec_, offset, len, ok ? "ok" : "failed"));
+    return ok;
 }

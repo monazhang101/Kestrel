@@ -1,9 +1,9 @@
 #pragma once
 
 #include "diag/core/BaseDevice.h"
+#include "diag/core/HalContext.h"
 #include "diag/core/PlatformPolicy.h"
 #include "diag/device/TPUDevice.h"
-#include "diag/core/HalBackend.h"
 
 #include <cstdint>
 #include <memory>
@@ -36,7 +36,7 @@ struct DeviceTree {
 
 class DeviceManager {
 private:
-    HalSession hal_;
+    HalContext hal_;
     std::vector<std::unique_ptr<TPUDevice>> devices_;
     std::unordered_map<std::string, BaseDevice*> target_registry_;
     // -------------------------------
@@ -74,6 +74,12 @@ public:
     std::vector<std::string> get_target_names() const;
     void set_log_level(LogLevel level);
     LogLevel get_log_level() const;
+    DevMem open_devmem(const DeviceContext& ctx,
+                       DevMemSpec spec,
+                       Logger* logger = nullptr);
+    std::vector<DevMem> open_multi_devmem(const DeviceContext& ctx,
+                                          std::vector<DevMemSpec> specs,
+                                          Logger* logger = nullptr);
     TestResult run_atomic_test(const std::string& target_name,
                                const std::string& test_name,
                                const TestArgs& args = {});

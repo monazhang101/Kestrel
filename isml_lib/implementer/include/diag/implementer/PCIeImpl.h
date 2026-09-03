@@ -1,6 +1,6 @@
 #pragma once
 
-#include "diag/core/HalBackend.h"
+#include "diag/core/HalContext.h"
 #include "diag/core/TestInfo.h"
 
 #include <cstdint>

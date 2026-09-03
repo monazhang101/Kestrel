@@ -29,13 +29,15 @@ static void print_usage(const char* program)
               << "  " << program << " link-status [--backend phal|ihal|dryrun] [--target <target>]\n"
               << "  " << program << " bar-read [--backend phal|ihal|dryrun] [--target <target>] [--bar <0|2|4>] [--offset <offset>]\n"
               << "  " << program << " bar-scan [--backend phal|ihal|dryrun] [--target <target>] [--bar <0|2|4>] [--offset <offset>] [--words <words>]\n"
+              << "  " << program << " sequential-aperture-mapping [--backend phal|ihal|dryrun] [--target <target>]\n"
               << "\n"
               << "Default backend: ihal\n"
               << "\n"
               << "Examples:\n"
               << "  " << program << " discover --tree\n"
               << "  " << program << " discover --backend phal --tree\n"
-              << "  " << program << " link-status --target PCIE_0_0\n";
+              << "  " << program << " link-status --target PCIE_0_0\n"
+              << "  " << program << " sequential-aperture-mapping --target PCIE_0_0\n";
 }
 
 static void print_bar_map_status(const std::vector<BarMapping>& bars)
@@ -127,7 +129,9 @@ int main(int argc, char** argv)
     }
 
     DeviceManager device_manager(parse_backend(get_option(argc, argv, "--backend", "iHal")));
-    device_manager.set_log_level(LogLevel::Trace);
+
+    // Init log level. Can be changed to Trace, Debug
+    device_manager.set_log_level(LogLevel::Info);
 
     // Pseudocode: discover scans PCI devices, applies VID/DID policy,
     // mmaps BAR space, creates ATLAS parent devices, and registers child modules.
@@ -183,6 +187,13 @@ int main(int argc, char** argv)
         }
         print_test_result(device_manager.run_atomic_test(
             target, "pcie_bar_scan32", args));
+        return 0;
+    }
+
+    if (command == "sequential-aperture-mapping") {
+        auto target = get_option(argc, argv, "--target", "PCIE_0_0");
+        print_test_result(device_manager.run_atomic_test(
+            target, "sequential_aperture_mapping"));
         return 0;
     }
 

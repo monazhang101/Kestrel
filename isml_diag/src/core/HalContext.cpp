@@ -1,4 +1,4 @@
-#include "diag/core/HalBackend.h"
+#include "diag/core/HalContext.h"
 
 #include <array>
 #include <atomic>
@@ -18,7 +18,16 @@
 
 namespace {
 
-constexpr std::array<uint32_t, 3> kProbeBarIndices = {0, 2, 4};
+constexpr std::array<uint32_t, 3> PROBE_BAR_INDICES = {0, 2, 4};
+constexpr uint64_t PHAL_AXICLK_OFFSET = 0x20000;
+
+#ifdef __linux__
+constexpr off_t PCI_COMMAND_OFFSET = 0x04;
+constexpr uint16_t PCI_COMMAND_MEMORY_SPACE = 0x0002;
+constexpr uint16_t PCI_COMMAND_BUS_MASTER = 0x0004;
+constexpr uint16_t PCI_COMMAND_REQUIRED_BITS =
+    PCI_COMMAND_MEMORY_SPACE | PCI_COMMAND_BUS_MASTER;
+#endif
 
 std::string bar_pair_name(uint32_t bar_index)
 {
@@ -112,6 +121,74 @@ uint64_t next_fake_backend_handle()
 }
 
 #ifdef __linux__
+std::string setpci_enable_command(const std::string& bdf)
+{
+    return "sudo setpci -s " + bdf + " COMMAND=0006:0006";
+}
+
+bool is_permission_error(int error_code)
+{
+    return error_code == EACCES || error_code == EPERM;
+}
+
+// Ensure MMIO and bus mastering are enabled before BAR mmap.
+// When sysfs config writes are blocked, report the exact setpci command
+// needed to enable PCI COMMAND.Mem+ and BusMaster for this device.
+bool ensure_pci_mmio_enabled(const std::string& bdf, std::string& error)
+{
+    const auto config_path = "/sys/bus/pci/devices/" + bdf + "/config";
+
+    int fd = open(config_path.c_str(), O_RDONLY);
+    if (fd < 0) {
+        auto open_errno = errno;
+        error = "open PCI config failed for " + bdf + ": " + std::strerror(open_errno);
+        if (is_permission_error(open_errno)) {
+            error += "; run: " + setpci_enable_command(bdf);
+        }
+        return false;
+    }
+
+    uint16_t command = 0;
+    auto bytes = pread(fd, &command, sizeof(command), PCI_COMMAND_OFFSET);
+    auto read_errno = errno;
+    close(fd);
+
+    if (bytes != static_cast<ssize_t>(sizeof(command))) {
+        error = "read PCI COMMAND failed for " + bdf + ": " + std::strerror(read_errno);
+        if (is_permission_error(read_errno)) {
+            error += "; run: " + setpci_enable_command(bdf);
+        }
+        return false;
+    }
+
+    if ((command & PCI_COMMAND_REQUIRED_BITS) == PCI_COMMAND_REQUIRED_BITS) {
+        return true;
+    }
+
+    fd = open(config_path.c_str(), O_RDWR);
+    if (fd < 0) {
+        auto open_errno = errno;
+        error = "PCI COMMAND.Mem+ or BusMaster is disabled for " + bdf +
+                ", and enabling it failed: " + std::strerror(open_errno) +
+                "; run: " + setpci_enable_command(bdf);
+        return false;
+    }
+
+    const uint16_t enabled_command = command | PCI_COMMAND_REQUIRED_BITS;
+    bytes = pwrite(fd, &enabled_command, sizeof(enabled_command), PCI_COMMAND_OFFSET);
+    auto write_errno = errno;
+    close(fd);
+
+    if (bytes != static_cast<ssize_t>(sizeof(enabled_command))) {
+        error = "enable PCI COMMAND.Mem+ and BusMaster failed for " + bdf +
+                ": " + std::strerror(write_errno) +
+                "; run: " + setpci_enable_command(bdf);
+        return false;
+    }
+
+    return true;
+}
+
 bool read_hex_u16(const std::filesystem::path& path, uint16_t& value)
 {
     std::ifstream input(path);
@@ -172,12 +249,12 @@ std::string to_string(HalType type)
     return "unknown";
 }
 
-DmaBuffer::DmaBuffer(HalSession* session,
+DmaBuffer::DmaBuffer(HalContext* context,
                      std::vector<uint8_t> storage,
                      uint64_t device_addr,
                      uint64_t backend_handle,
                      std::string addr_kind)
-    : session_(session),
+    : context_(context),
       storage_(std::move(storage)),
       device_addr_(device_addr),
       size_(static_cast<uint64_t>(storage_.size())),
@@ -192,14 +269,14 @@ DmaBuffer::~DmaBuffer()
 }
 
 DmaBuffer::DmaBuffer(DmaBuffer&& other) noexcept
-    : session_(other.session_),
+    : context_(other.context_),
       storage_(std::move(other.storage_)),
       device_addr_(other.device_addr_),
       size_(other.size_),
       backend_handle_(other.backend_handle_),
       addr_kind_(std::move(other.addr_kind_))
 {
-    other.session_ = nullptr;
+    other.context_ = nullptr;
     other.device_addr_ = 0;
     other.size_ = 0;
     other.backend_handle_ = 0;
@@ -213,14 +290,14 @@ DmaBuffer& DmaBuffer::operator=(DmaBuffer&& other) noexcept
 
     release();
 
-    session_ = other.session_;
+    context_ = other.context_;
     storage_ = std::move(other.storage_);
     device_addr_ = other.device_addr_;
     size_ = other.size_;
     backend_handle_ = other.backend_handle_;
     addr_kind_ = std::move(other.addr_kind_);
 
-    other.session_ = nullptr;
+    other.context_ = nullptr;
     other.device_addr_ = 0;
     other.size_ = 0;
     other.backend_handle_ = 0;
@@ -230,25 +307,25 @@ DmaBuffer& DmaBuffer::operator=(DmaBuffer&& other) noexcept
 
 void DmaBuffer::release()
 {
-    if (session_ == nullptr) {
+    if (context_ == nullptr) {
         return;
     }
-    session_->free_host_buffer(*this);
+    context_->free_host_buffer(*this);
 }
 
-HalBackend::HalBackend(HalType type)
+HalContext::HalContext(HalType type)
     : type_(type)
 {
 }
 
-void HalBackend::reset(HalType type)
+void HalContext::reset(HalType type)
 {
     clear_mappings();
     phal_bridge_.reset();
     type_ = type;
 }
 
-std::vector<DeviceContext> HalBackend::scan_pci_devices() const
+std::vector<DeviceContext> HalContext::scan_pci_devices() const
 {
     if (type_ == HalType::iHal) {
 #ifdef __linux__
@@ -301,7 +378,7 @@ std::vector<DeviceContext> HalBackend::scan_pci_devices() const
     return {tpu0, tpu1, unrelated_device};
 }
 
-DeviceContext HalBackend::mmap_bar_space(DeviceContext ctx)
+DeviceContext HalContext::mmap_bar_space(DeviceContext ctx)
 {
     ctx.bar_mappings.clear();
     ctx.mapped_bar_base = nullptr;
@@ -310,7 +387,17 @@ DeviceContext HalBackend::mmap_bar_space(DeviceContext ctx)
 
     if (type_ == HalType::iHal) {
 #ifdef __linux__
-        for (auto bar_index : kProbeBarIndices) {
+        std::string command_error;
+        if (!ensure_pci_mmio_enabled(ctx.bdf, command_error)) {
+            for (auto bar_index : PROBE_BAR_INDICES) {
+                auto bar = make_bar_mapping(bar_index);
+                bar.error = command_error;
+                ctx.bar_mappings.push_back(std::move(bar));
+            }
+            return ctx;
+        }
+
+        for (auto bar_index : PROBE_BAR_INDICES) {
             auto bar = make_bar_mapping(bar_index);
 
             uint64_t bar_start = 0;
@@ -373,7 +460,7 @@ DeviceContext HalBackend::mmap_bar_space(DeviceContext ctx)
         }
         return ctx;
 #else
-        for (auto bar_index : kProbeBarIndices) {
+        for (auto bar_index : PROBE_BAR_INDICES) {
             auto bar = make_bar_mapping(bar_index);
             bar.error = "BAR mmap is only available on Linux for iHal";
             ctx.bar_mappings.push_back(std::move(bar));
@@ -388,7 +475,7 @@ DeviceContext HalBackend::mmap_bar_space(DeviceContext ctx)
     //   device-visible BAR base, e.g. dev->bars[N].baseAddr -> bar_device_base
     //   BAR length -> bar_size
     // Until that API is wired in, pHal keeps fake BAR mappings for dry-run.
-    for (auto bar_index : kProbeBarIndices) {
+    for (auto bar_index : PROBE_BAR_INDICES) {
         mapped_bar_storage_.push_back(
             std::make_unique<std::vector<uint8_t>>(DRYRUN_BAR_WINDOW_SIZE, 0));
 
@@ -411,14 +498,12 @@ DeviceContext HalBackend::mmap_bar_space(DeviceContext ctx)
     return ctx;
 }
 
-DmaBuffer HalBackend::alloc_host_buffer(HalSession* session,
-                                        const DeviceContext& ctx,
+DmaBuffer HalContext::alloc_host_buffer(const DeviceContext& ctx,
                                         uint64_t size_bytes)
 {
     (void)ctx;
 
-    if (session == nullptr ||
-        size_bytes == 0 ||
+    if (size_bytes == 0 ||
         size_bytes > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
         return {};
     }
@@ -427,14 +512,14 @@ DmaBuffer HalBackend::alloc_host_buffer(HalSession* session,
     // iHal will allocate through its kernel module and mmap the CPU view.
     // pHal will call its own abstract DMA-buffer allocation API.
     std::vector<uint8_t> storage(static_cast<size_t>(size_bytes), 0);
-    return DmaBuffer(session,
+    return DmaBuffer(this,
                      std::move(storage),
                      reserve_fake_dma_addr(size_bytes),
                      next_fake_backend_handle(),
                      type_ == HalType::iHal ? "iova" : "phal_handle");
 }
 
-DevMem HalBackend::open_dev_mem(const DeviceContext& ctx, DevMemSpec spec, Logger* logger)
+DevMem HalContext::open_devmem(const DeviceContext& ctx, DevMemSpec spec, Logger* logger)
 {
     if (spec.size == 0) {
         return DevMem::invalid("dev_mem size must be nonzero");
@@ -447,27 +532,90 @@ DevMem HalBackend::open_dev_mem(const DeviceContext& ctx, DevMemSpec spec, Logge
     IhalIO ihalIO;
     ihalIO.device_ctx = &ctx;
     ihalIO.bar_index = spec.control_bar_index;
-    ihalIO.module_base = spec.control_module_base;
+    // DevMem PHAL aperture programming is rooted at the PCIe AXICLK sub-block.
+    // TODO: Decide the init/base convention for future non-devmem PHAL APIs.
+    ihalIO.module_base = spec.control_module_base + PHAL_AXICLK_OFFSET;
 
     std::string error;
     if (!phal_bridge_.init(ihalIO, spec.project, &error)) {
         return DevMem::invalid("phal init failed: " + error);
     }
 
-    return DevMem(ctx, spec, &phal_bridge_, logger);
+    DevMem devmem(ctx, std::move(spec), &phal_bridge_, logger);
+    if (!devmem.configure()) {
+        return DevMem::invalid(devmem.error());
+    }
+    return devmem;
 }
 
-void HalBackend::free_host_buffer(DmaBuffer& buffer)
+std::vector<DevMem> HalContext::open_multi_devmem(const DeviceContext& ctx,
+                                                  std::vector<DevMemSpec> specs,
+                                                  Logger* logger)
+{
+    std::vector<DevMem> devmems;
+    devmems.reserve(specs.size());
+
+    if (specs.empty()) {
+        return devmems;
+    }
+
+    for (auto& spec : specs) {
+        if (spec.size == 0) {
+            devmems.push_back(DevMem::invalid("dev_mem size must be nonzero"));
+            return devmems;
+        }
+        if (spec.project == PhalProject::Generic) {
+            spec.project = phal_project_from_tpu_type(ctx.tpu_type);
+        }
+    }
+
+    const auto& first = specs.front();
+    for (const auto& spec : specs) {
+        if (spec.control_bar_index != first.control_bar_index ||
+            spec.control_module_base != first.control_module_base ||
+            spec.project != first.project) {
+            devmems.push_back(DevMem::invalid(
+                "open_multi_devmem requires one control BAR, module base, and PHAL project"));
+            return devmems;
+        }
+    }
+
+    IhalIO ihalIO;
+    ihalIO.device_ctx = &ctx;
+    ihalIO.bar_index = first.control_bar_index;
+    // Keep the AXICLK adjustment in the devmem opening path only.
+    ihalIO.module_base = first.control_module_base + PHAL_AXICLK_OFFSET;
+
+    std::string error;
+    if (!phal_bridge_.init(ihalIO, first.project, &error)) {
+        devmems.push_back(DevMem::invalid("phal init failed: " + error));
+        return devmems;
+    }
+
+    for (auto& spec : specs) {
+        DevMem devmem(ctx, std::move(spec), &phal_bridge_, logger);
+        if (!devmem.configure()) {
+            devmems.clear();
+            devmems.push_back(DevMem::invalid(devmem.error()));
+            return devmems;
+        }
+        devmems.push_back(std::move(devmem));
+    }
+
+    return devmems;
+}
+
+void HalContext::free_host_buffer(DmaBuffer& buffer)
 {
     buffer.storage_.clear();
-    buffer.session_ = nullptr;
+    buffer.context_ = nullptr;
     buffer.device_addr_ = 0;
     buffer.size_ = 0;
     buffer.backend_handle_ = 0;
     buffer.addr_kind_.clear();
 }
 
-void HalBackend::clear_mappings()
+void HalContext::clear_mappings()
 {
 #ifdef __linux__
     if (type_ == HalType::iHal) {
@@ -483,42 +631,7 @@ void HalBackend::clear_mappings()
     phal_bridge_.reset();
 }
 
-HalSession::HalSession(HalType type)
-    : backend_(type)
+void HalContext::clear()
 {
-}
-
-void HalSession::reset(HalType type)
-{
-    backend_.reset(type);
-}
-
-std::vector<DeviceContext> HalSession::scan_pci_devices() const
-{
-    return backend_.scan_pci_devices();
-}
-
-DeviceContext HalSession::mmap_bar_space(DeviceContext ctx)
-{
-    return backend_.mmap_bar_space(ctx);
-}
-
-DmaBuffer HalSession::alloc_host_buffer(const DeviceContext& ctx, uint64_t size_bytes)
-{
-    return backend_.alloc_host_buffer(this, ctx, size_bytes);
-}
-
-void HalSession::free_host_buffer(DmaBuffer& buffer)
-{
-    backend_.free_host_buffer(buffer);
-}
-
-DevMem HalSession::open_dev_mem(const DeviceContext& ctx, DevMemSpec spec, Logger* logger)
-{
-    return backend_.open_dev_mem(ctx, spec, logger);
-}
-
-void HalSession::clear()
-{
-    backend_.clear_mappings();
+    clear_mappings();
 }

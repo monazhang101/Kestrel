@@ -48,7 +48,7 @@ TestResult PCIeModule::pcie_dma_data_transfer(TestInfo& ti)
     };
 
     if (ti.hal == nullptr) {
-        return make_result(false, "hal_session_missing", {}, "HAL session is not available");
+        return make_result(false, "hal_context_missing", {}, "HAL context is not available");
     }
 
     auto expected = common::pattern::generate(static_cast<size_t>(size_bytes), pattern);
