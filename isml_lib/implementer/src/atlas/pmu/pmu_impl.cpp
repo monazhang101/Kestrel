@@ -48,8 +48,6 @@ public:
     TestResult PmuRegRead(TestInfo& ti) override
     {
         auto offset = common::args::get_string(ti.args, "offset");
-        (void)ctx_.reg_base;
-        (void)ctx_.reg_size;
         return {"pmu_reg_read", ctx_.target_name, true, {
             {"offset", offset},
             {"value", "0x00000000"},

@@ -19,7 +19,6 @@
 namespace {
 
 constexpr std::array<uint32_t, 3> PROBE_BAR_INDICES = {0, 2, 4};
-constexpr uint64_t PHAL_AXICLK_OFFSET = 0x20000;
 
 #ifdef __linux__
 constexpr off_t PCI_COMMAND_OFFSET = 0x04;
@@ -517,92 +516,6 @@ DmaBuffer HalContext::alloc_host_buffer(const DeviceContext& ctx,
                      reserve_fake_dma_addr(size_bytes),
                      next_fake_backend_handle(),
                      type_ == HalType::iHal ? "iova" : "phal_handle");
-}
-
-DevMem HalContext::open_devmem(const DeviceContext& ctx, DevMemSpec spec, Logger* logger)
-{
-    if (spec.size == 0) {
-        return DevMem::invalid("dev_mem size must be nonzero");
-    }
-
-    if (spec.project == PhalProject::Generic) {
-        spec.project = phal_project_from_tpu_type(ctx.tpu_type);
-    }
-
-    IhalIO ihalIO;
-    ihalIO.device_ctx = &ctx;
-    ihalIO.bar_index = spec.control_bar_index;
-    // DevMem PHAL aperture programming is rooted at the PCIe AXICLK sub-block.
-    // TODO: Decide the init/base convention for future non-devmem PHAL APIs.
-    ihalIO.module_base = spec.control_module_base + PHAL_AXICLK_OFFSET;
-
-    std::string error;
-    if (!phal_bridge_.init(ihalIO, spec.project, &error)) {
-        return DevMem::invalid("phal init failed: " + error);
-    }
-
-    DevMem devmem(ctx, std::move(spec), &phal_bridge_, logger);
-    if (!devmem.configure()) {
-        return DevMem::invalid(devmem.error());
-    }
-    return devmem;
-}
-
-std::vector<DevMem> HalContext::open_multi_devmem(const DeviceContext& ctx,
-                                                  std::vector<DevMemSpec> specs,
-                                                  Logger* logger)
-{
-    std::vector<DevMem> devmems;
-    devmems.reserve(specs.size());
-
-    if (specs.empty()) {
-        return devmems;
-    }
-
-    for (auto& spec : specs) {
-        if (spec.size == 0) {
-            devmems.push_back(DevMem::invalid("dev_mem size must be nonzero"));
-            return devmems;
-        }
-        if (spec.project == PhalProject::Generic) {
-            spec.project = phal_project_from_tpu_type(ctx.tpu_type);
-        }
-    }
-
-    const auto& first = specs.front();
-    for (const auto& spec : specs) {
-        if (spec.control_bar_index != first.control_bar_index ||
-            spec.control_module_base != first.control_module_base ||
-            spec.project != first.project) {
-            devmems.push_back(DevMem::invalid(
-                "open_multi_devmem requires one control BAR, module base, and PHAL project"));
-            return devmems;
-        }
-    }
-
-    IhalIO ihalIO;
-    ihalIO.device_ctx = &ctx;
-    ihalIO.bar_index = first.control_bar_index;
-    // Keep the AXICLK adjustment in the devmem opening path only.
-    ihalIO.module_base = first.control_module_base + PHAL_AXICLK_OFFSET;
-
-    std::string error;
-    if (!phal_bridge_.init(ihalIO, first.project, &error)) {
-        devmems.push_back(DevMem::invalid("phal init failed: " + error));
-        return devmems;
-    }
-
-    for (auto& spec : specs) {
-        DevMem devmem(ctx, std::move(spec), &phal_bridge_, logger);
-        if (!devmem.configure()) {
-            devmems.clear();
-            devmems.push_back(DevMem::invalid(devmem.error()));
-            return devmems;
-        }
-        devmems.push_back(std::move(devmem));
-    }
-
-    return devmems;
 }
 
 void HalContext::free_host_buffer(DmaBuffer& buffer)

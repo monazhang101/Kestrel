@@ -12,3 +12,38 @@ tests:
         type: string
         default: default
         range: default, bringup
+
+  isi_pcie_aperture_context:
+    summary: Verify ISI can use the shared PCIe PHAL aperture context.
+    args:
+      bar_index:
+        type: u32
+        default: "4"
+      aperture_index:
+        type: u32
+        default: "0"
+
+  isi_common_devmem_read:
+    summary: Verify ISI can read device memory through the common PCIe BAR aperture helper.
+    args:
+      bar_index:
+        type: u32
+        default: "4"
+      aperture_index:
+        type: u32
+        default: "0"
+      identity:
+        type: u32
+        default: "0"
+      target_addr:
+        type: u64
+        default: "0x10000000"
+      aperture_size:
+        type: u64
+        default: "0x100000"
+      bar_offset:
+        type: u64
+        default: "0"
+      offset:
+        type: u64
+        default: "0"

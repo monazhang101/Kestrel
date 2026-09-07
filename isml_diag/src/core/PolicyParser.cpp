@@ -186,8 +186,8 @@ std::vector<ModuleInstanceConfig> parse_module_list(const std::vector<YamlLine>&
             module.index = static_cast<uint32_t>(parse_u64(yaml_value(lines[i].text)));
             modules.push_back(module);
             current = &modules.back();
-        } else if (current != nullptr && starts_with(lines[i].text, "reg_offset:")) {
-            current->reg_offset = parse_u64(yaml_value(lines[i].text));
+        } else if (current != nullptr && starts_with(lines[i].text, "reg_base_offset:")) {
+            current->reg_base_offset = parse_u64(yaml_value(lines[i].text));
         } else if (current != nullptr && starts_with(lines[i].text, "reg_size:")) {
             current->reg_size = parse_u64(yaml_value(lines[i].text));
         } else if (current != nullptr && starts_with(lines[i].text, "bar_index:")) {
@@ -212,8 +212,8 @@ std::vector<ModuleInstanceConfig> parse_dmc_list(const std::vector<YamlLine>& li
             module.index = static_cast<uint32_t>(parse_u64(yaml_value(lines[i].text)));
             dmc_modules.push_back(module);
             current = &dmc_modules.back();
-        } else if (current != nullptr && starts_with(lines[i].text, "reg_offset:")) {
-            current->reg_offset = parse_u64(yaml_value(lines[i].text));
+        } else if (current != nullptr && starts_with(lines[i].text, "reg_base_offset:")) {
+            current->reg_base_offset = parse_u64(yaml_value(lines[i].text));
         } else if (current != nullptr && starts_with(lines[i].text, "reg_size:")) {
             current->reg_size = parse_u64(yaml_value(lines[i].text));
         } else if (current != nullptr && starts_with(lines[i].text, "bar_index:")) {
@@ -250,8 +250,8 @@ std::vector<DDPModuleConfig> parse_ddp_list(const std::vector<YamlLine>& lines)
 
         for (size_t j = i + 1; j < next_ddp; ++j) {
             if (lines[j].indent == lines[i].indent + 2 &&
-                starts_with(lines[j].text, "reg_offset:")) {
-                ddp.reg_offset = parse_u64(yaml_value(lines[j].text));
+                starts_with(lines[j].text, "reg_base_offset:")) {
+                ddp.reg_base_offset = parse_u64(yaml_value(lines[j].text));
             } else if (lines[j].indent == lines[i].indent + 2 &&
                        starts_with(lines[j].text, "reg_size:")) {
                 ddp.reg_size = parse_u64(yaml_value(lines[j].text));

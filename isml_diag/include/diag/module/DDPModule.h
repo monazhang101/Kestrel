@@ -15,9 +15,8 @@
 class DDPModule : public BaseDevice {
 private:
     uint32_t ddp_id_ = 0;
-    void* reg_base_ = nullptr;
     uint32_t bar_index_ = 0;
-    uint64_t reg_offset_ = 0;
+    uint64_t reg_base_offset_ = 0;
     uint64_t reg_size_ = 0;
     std::unique_ptr<DDPImpl> impl_;
     std::vector<std::unique_ptr<DMCModule>> dmc_modules_;
@@ -35,7 +34,7 @@ public:
 
     uint32_t ddp_id() const { return ddp_id_; }
     DMCModule* dmc(size_t index) const;
-    uint64_t reg_offset() const { return reg_offset_; }
+    uint64_t reg_base_offset() const { return reg_base_offset_; }
     uint64_t reg_size() const { return reg_size_; }
     uint32_t bar_index() const { return bar_index_; }
     std::vector<BaseDevice*> child_targets() const override;

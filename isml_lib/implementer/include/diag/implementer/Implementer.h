@@ -19,8 +19,7 @@ struct ModuleImplContext {
     uint32_t index = 0;
     uint32_t parent_index = 0;
     uint32_t bar_index = 0;
-    void* reg_base = nullptr;
-    uint64_t reg_offset = 0;
+    uint64_t reg_base_offset = 0;
     uint64_t reg_size = 0;
 };
 

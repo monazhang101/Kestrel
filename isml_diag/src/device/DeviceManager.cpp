@@ -120,7 +120,9 @@ DeviceTree DeviceManager::discover()
     std::unordered_map<std::string, uint32_t> discovered_product_counts;
 
     for (auto& pci_device : pci_devices) {
-        // Match observed VID/DID against all loaded product policies.
+        // FPGA bring-up intentionally matches chips by VID/DID only because
+        // the platform and BDF assignment are not stable yet. Silicon-system
+        // discovery will additionally bind VID/DID/BDF to a stable ATLAS_n.
         const PolicyEntry* policy_entry = nullptr;
         for (const auto& entry : policy_) {
             if (entry.match_vendor_id == pci_device.vendor_id &&
@@ -136,6 +138,11 @@ DeviceTree DeviceManager::discover()
         // Map the matched device BAR through the HAL context.
         auto mapped_ctx = hal_.mmap_bar_space(pci_device);
         mapped_ctx.tpu_type = policy_entry->tpu_type;
+        if (!policy_entry->device_config.pcie_modules.empty()) {
+            const auto& pcie = policy_entry->device_config.pcie_modules.front();
+            mapped_ctx.pcie_control_bar_index = pcie.bar_index;
+            mapped_ctx.pcie_control_base = pcie.reg_base_offset;
+        }
 
         // Bind operation implementations for the matched TPU type.
         auto implementer = std::make_shared<Implementer>(policy_entry->tpu_type);
@@ -224,20 +231,6 @@ void DeviceManager::set_log_level(LogLevel level)
 LogLevel DeviceManager::get_log_level() const
 {
     return logger_.get_level();
-}
-
-DevMem DeviceManager::open_devmem(const DeviceContext& ctx,
-                                  DevMemSpec spec,
-                                  Logger* logger)
-{
-    return hal_.open_devmem(ctx, std::move(spec), logger == nullptr ? &logger_ : logger);
-}
-
-std::vector<DevMem> DeviceManager::open_multi_devmem(const DeviceContext& ctx,
-                                                     std::vector<DevMemSpec> specs,
-                                                     Logger* logger)
-{
-    return hal_.open_multi_devmem(ctx, std::move(specs), logger == nullptr ? &logger_ : logger);
 }
 
 TestResult DeviceManager::run_atomic_test(const std::string& target_name,

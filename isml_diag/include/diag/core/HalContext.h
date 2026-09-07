@@ -70,14 +70,12 @@ public:
     explicit HalContext(HalType type = HalType::iHal);
 
     HalType type() const { return type_; }
+    PhalBridge& phal() { return phal_bridge_; }
+    const PhalBridge& phal() const { return phal_bridge_; }
 
     void reset(HalType type);
     std::vector<DeviceContext> scan_pci_devices() const;
     DeviceContext mmap_bar_space(DeviceContext ctx);
-    DevMem open_devmem(const DeviceContext& ctx, DevMemSpec spec, Logger* logger = nullptr);
-    std::vector<DevMem> open_multi_devmem(const DeviceContext& ctx,
-                                          std::vector<DevMemSpec> specs,
-                                          Logger* logger = nullptr);
     DmaBuffer alloc_host_buffer(const DeviceContext& ctx, uint64_t size_bytes);
     void free_host_buffer(DmaBuffer& buffer);
     void clear();

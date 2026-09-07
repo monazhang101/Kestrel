@@ -82,11 +82,12 @@ TestResult GenericPCIeImpl::bar_read32(TestInfo& ti)
         }};
     }
 
-    if (!common::reg::read(ctx_.reg_base,
-                           ctx_.reg_size,
-                           offset,
-                           &value,
-                           sizeof(value))) {
+    if (offset > ctx_.reg_size ||
+        sizeof(value) > static_cast<size_t>(ctx_.reg_size - offset) ||
+        !common::bar::read32(ctx_.device_ctx,
+                             ctx_.bar_index,
+                             ctx_.reg_base_offset + offset,
+                             value)) {
         return {"pcie_bar_read32", ctx_.target_name, false, {
             {"bar_index", std::to_string(ctx_.bar_index)},
             {"offset", std::to_string(offset)},
@@ -97,7 +98,7 @@ TestResult GenericPCIeImpl::bar_read32(TestInfo& ti)
     return {"pcie_bar_read32", ctx_.target_name, true, {
         {"bar_index", std::to_string(ctx_.bar_index)},
         {"offset", std::to_string(offset)},
-        {"absolute_bar_offset", std::to_string(ctx_.reg_offset + offset)},
+        {"absolute_bar_offset", std::to_string(ctx_.reg_base_offset + offset)},
         {"value", hex32(value)},
         {"value_dec", std::to_string(value)}
     }};
@@ -156,9 +157,11 @@ TestResult GenericPCIeImpl::bar_scan32(TestInfo& ti)
         return {"pcie_bar_scan32", ctx_.target_name, true, metrics};
     }
 
-    if (!common::reg::read(ctx_.reg_base,
-                           ctx_.reg_size,
-                           offset,
+    if (offset > ctx_.reg_size ||
+        bytes > ctx_.reg_size - offset ||
+        !common::bar::read(ctx_.device_ctx,
+                           ctx_.bar_index,
+                           ctx_.reg_base_offset + offset,
                            values.data(),
                            static_cast<size_t>(bytes))) {
         return {"pcie_bar_scan32", ctx_.target_name, false, {
@@ -173,7 +176,7 @@ TestResult GenericPCIeImpl::bar_scan32(TestInfo& ti)
     TestMetrics metrics = {
         {"bar_index", std::to_string(ctx_.bar_index)},
         {"offset", std::to_string(offset)},
-        {"absolute_bar_offset", std::to_string(ctx_.reg_offset + offset)},
+        {"absolute_bar_offset", std::to_string(ctx_.reg_base_offset + offset)},
         {"words", std::to_string(words)}
     };
     for (size_t i = 0; i < values.size(); ++i) {

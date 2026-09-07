@@ -1,7 +1,5 @@
 #include "diag/device/TPUDevice.h"
 
-#include "diag/core/Common.h"
-
 #include <iostream>
 #include <utility>
 
@@ -12,18 +10,16 @@ ModuleImplContext make_impl_context(const std::string& target_name,
                                     uint32_t index,
                                     uint32_t parent_index,
                                     uint32_t bar_index,
-                                    uint64_t reg_offset,
+                                    uint64_t reg_base_offset,
                                     uint64_t reg_size)
 {
-    auto* bar_base = static_cast<uint8_t*>(common::bar::mapped_base(ctx, bar_index));
     return {
         target_name,
         ctx,
         index,
         parent_index,
         bar_index,
-        bar_base == nullptr ? nullptr : bar_base + reg_offset,
-        reg_offset,
+        reg_base_offset,
         reg_size
     };
 }
@@ -104,7 +100,7 @@ TPUDevice::TPUDevice(const std::string& logical_name,
                                           pcie_config.index,
                                           tpu_index_,
                                           pcie_config.bar_index,
-                                          pcie_config.reg_offset,
+                                          pcie_config.reg_base_offset,
                                           pcie_config.reg_size);
         std::unique_ptr<PCIeImpl> pcie_impl;
         if (implementer_ != nullptr) {
@@ -127,7 +123,7 @@ TPUDevice::TPUDevice(const std::string& logical_name,
                                           pmu_config.index,
                                           tpu_index_,
                                           pmu_config.bar_index,
-                                          pmu_config.reg_offset,
+                                          pmu_config.reg_base_offset,
                                           pmu_config.reg_size);
         std::unique_ptr<PMUImpl> pmu_impl;
         if (implementer_ != nullptr) {
@@ -149,7 +145,7 @@ TPUDevice::TPUDevice(const std::string& logical_name,
                                           ddp_config.index,
                                           tpu_index_,
                                           ddp_config.bar_index,
-                                          ddp_config.reg_offset,
+                                          ddp_config.reg_base_offset,
                                           ddp_config.reg_size);
         std::unique_ptr<DDPImpl> ddp_impl;
         if (implementer_ != nullptr) {
@@ -173,7 +169,7 @@ TPUDevice::TPUDevice(const std::string& logical_name,
                                           isi_config.index,
                                           tpu_index_,
                                           isi_config.bar_index,
-                                          isi_config.reg_offset,
+                                          isi_config.reg_base_offset,
                                           isi_config.reg_size);
         std::unique_ptr<ISIImpl> isi_impl;
         if (implementer_ != nullptr) {

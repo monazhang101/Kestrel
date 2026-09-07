@@ -1,7 +1,5 @@
 #include "diag/module/ISIModule.h"
 
-#include "diag/core/Common.h"
-
 #include <utility>
 
 ISIModule::ISIModule(const std::string& name,
@@ -11,13 +9,16 @@ ISIModule::ISIModule(const std::string& name,
     : BaseDevice(name, ctx),
       link_id_(config.index),
       bar_index_(config.bar_index),
-      reg_offset_(config.reg_offset),
+      reg_base_offset_(config.reg_base_offset),
       reg_size_(config.reg_size),
       impl_(std::move(impl))
 {
-    auto* bar_base = static_cast<uint8_t*>(common::bar::mapped_base(ctx_, bar_index_));
-    reg_base_ = bar_base == nullptr ? nullptr : bar_base + reg_offset_;
-
     _add_test("isi_linkup", [this](TestInfo& ti) { return IsiLinkup(ti); });
     _add_test("isi_setup", [this](TestInfo& ti) { return IsiSetup(ti); });
+    _add_test("isi_pcie_aperture_context", [this](TestInfo& ti) {
+        return IsiPcieApertureContext(ti);
+    });
+    _add_test("isi_common_devmem_read", [this](TestInfo& ti) {
+        return IsiCommonDevMemRead(ti);
+    });
 }

@@ -36,6 +36,9 @@ struct DeviceContext {
     uint64_t bar_device_base = 0;
     uint64_t bar_size = 0;
     std::vector<BarMapping> bar_mappings;
+
+    uint32_t pcie_control_bar_index = 0;
+    uint64_t pcie_control_base = 0;
 };
 
 using AtomicTestFunc = std::function<TestResult(TestInfo& ti)>;

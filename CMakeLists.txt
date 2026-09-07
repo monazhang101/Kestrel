@@ -40,6 +40,7 @@ target_include_directories(isml_lib
 
 add_library(isml_diag
     isml_diag/src/core/CmdQueueMgm.cpp
+    isml_diag/src/core/DevMem.cpp
     isml_diag/src/core/PolicyParser.cpp
     isml_diag/src/core/PhalBridge.cpp
     isml_diag/src/device/DeviceManager.cpp
@@ -52,6 +53,7 @@ add_library(isml_diag
     isml_diag/src/modules/dmc/dmc_reg_cases.cpp
     isml_diag/src/modules/isi/ISIModule.cpp
     isml_diag/src/modules/isi/isi_link_cases.cpp
+    isml_diag/src/modules/isi/isi_pcie_aperture_cases.cpp
     isml_diag/src/modules/isi/isi_setup_cases.cpp
     isml_diag/src/modules/pcie/PCIeModule.cpp
     isml_diag/src/modules/pcie/pcie_link_cases.cpp

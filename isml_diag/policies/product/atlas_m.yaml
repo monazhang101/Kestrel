@@ -6,18 +6,18 @@ chip_profile:
   modules:
     pcie:
       - index: 0
-        reg_offset: "0x0000"
+        reg_base_offset: "0x0000"
         reg_size: "0x1000"
     ddp:
       - index: 0
-        reg_offset: "0x2000"
+        reg_base_offset: "0x2000"
         reg_size: "0x1000"
     isi:
       - index: 0
-        reg_offset: "0x4000"
+        reg_base_offset: "0x4000"
         reg_size: "0x1000"
       - index: 1
-        reg_offset: "0x5000"
+        reg_base_offset: "0x5000"
         reg_size: "0x1000"
 
 platform_inventory:

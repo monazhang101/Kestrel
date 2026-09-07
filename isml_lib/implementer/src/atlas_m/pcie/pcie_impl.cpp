@@ -14,9 +14,6 @@ public:
 
     LinkStatus link_status_get() override
     {
-        (void)ctx_.reg_base;
-        (void)ctx_.reg_size;
-
         LinkStatus status;
         status.ok = true;
         status.current_speed = "gen4";

@@ -5,8 +5,6 @@
 // @output: TestResult metrics include current_speed and current_width.
 TestResult PCIeModule::pcie_link_status_get(TestInfo& ti)
 {
-    (void)reg_base_;
-    (void)reg_size_;
     if (impl_ == nullptr) {
         return make_unimplemented_result(ti, "PCIe implementation is not bound");
     }

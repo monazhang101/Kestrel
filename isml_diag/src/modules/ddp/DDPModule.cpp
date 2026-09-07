@@ -1,7 +1,5 @@
 #include "diag/module/DDPModule.h"
 
-#include "diag/core/Common.h"
-
 #include <string>
 #include <utility>
 
@@ -14,29 +12,23 @@ DDPModule::DDPModule(const std::string& name,
     : BaseDevice(name, ctx),
       ddp_id_(config.index),
       bar_index_(config.bar_index),
-      reg_offset_(config.reg_offset),
+      reg_base_offset_(config.reg_base_offset),
       reg_size_(config.reg_size),
       impl_(std::move(impl))
 {
-    auto* bar_base = static_cast<uint8_t*>(common::bar::mapped_base(ctx_, bar_index_));
-    reg_base_ = bar_base == nullptr ? nullptr : bar_base + reg_offset_;
-
     _add_test("ddp_dmem_linkup_verify", [this](TestInfo& ti) { return DdpDmemLinkupVerify(ti); });
 
     for (const auto& dmc_config : config.dmc_modules) {
         auto dmc_name = "DMC_" + std::to_string(tpu_index) + "_" +
                         std::to_string(ddp_id_) + "_" +
                         std::to_string(dmc_config.index);
-        auto* dmc_bar_base = static_cast<uint8_t*>(
-            common::bar::mapped_base(ctx_, dmc_config.bar_index));
         ModuleImplContext dmc_impl_ctx{
             dmc_name,
             ctx_,
             dmc_config.index,
             ddp_id_,
             dmc_config.bar_index,
-            dmc_bar_base == nullptr ? nullptr : dmc_bar_base + dmc_config.reg_offset,
-            dmc_config.reg_offset,
+            dmc_config.reg_base_offset,
             dmc_config.reg_size
         };
 

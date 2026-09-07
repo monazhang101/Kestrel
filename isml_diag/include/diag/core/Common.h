@@ -11,58 +11,12 @@
 #include <string>
 #include <vector>
 
-// ------------------------------------------------------------
-// common::args::get_string() / common::args::get_u64()
-// reads resolved test inputs after CLI/Python has applied YAML defaults.
-// ------------------------------------------------------------
-namespace common::args {
-
-inline std::string get_string(const TestArgs& args,
-                              const std::string& key)
-{
-    auto it = args.find(key);
-    if (it == args.end()) {
-        throw std::invalid_argument("missing required argument: " + key);
-    }
-    return it->second;
-}
-
-inline uint64_t get_u64(const TestArgs& args,
-                        const std::string& key)
-{
-    auto value = get_string(args, key);
-
-    try {
-        return static_cast<uint64_t>(std::stoull(value, nullptr, 0));
-    } catch (const std::exception&) {
-        throw std::invalid_argument("invalid u64 argument: " + key + "=" + value);
-    }
-}
-
-inline uint64_t get_u64(const TestArgs& args,
-                        const std::string& key,
-                        uint64_t default_value)
-{
-    auto it = args.find(key);
-    if (it == args.end()) {
-        return default_value;
-    }
-
-    try {
-        return static_cast<uint64_t>(std::stoull(it->second, nullptr, 0));
-    } catch (const std::exception&) {
-        throw std::invalid_argument("invalid u64 argument: " + key + "=" + it->second);
-    }
-}
-
-}
-
 // -------------------------------------------------------------
-// common::devmem::read() / common::devmem::write()
-// copies byte ranges through a mapped device-memory BAR/window.
-// It checks base/data/offset/len and falls back to byte copy when unaligned.
+// common::mmio::read() / common::mmio::write()
+// is the lowest-level entry for all mapped device IO in this framework.
+// It copies checked byte ranges through an already mapped MMIO window.
 // -------------------------------------------------------------
-namespace common::devmem {
+namespace common::mmio {
 
 inline bool is_valid_range(uint64_t dev_mem_size,
                            uint64_t dev_mem_offset,
@@ -168,8 +122,9 @@ inline bool write(void* dev_mem_base,
 }
 
 // -------------------------------------------------------------
-// common::bar helpers select one mapped PCI BAR window from a
-// discovered DeviceContext and provide checked read/write access.
+// common::bar is the public raw BAR access shared by every module.
+// It selects one mapped PCI BAR from DeviceContext and delegates all
+// data movement to common::mmio.
 // -------------------------------------------------------------
 namespace common::bar {
 
@@ -211,7 +166,7 @@ inline bool read(const DeviceContext& ctx,
     if (bar == nullptr || !bar->mapped) {
         return false;
     }
-    return common::devmem::read(bar->mapped_base, bar->mapped_size, offset, data, len);
+    return common::mmio::read(bar->mapped_base, bar->mapped_size, offset, data, len);
 }
 
 inline bool write(const DeviceContext& ctx,
@@ -224,7 +179,7 @@ inline bool write(const DeviceContext& ctx,
     if (bar == nullptr || !bar->mapped) {
         return false;
     }
-    return common::devmem::write(bar->mapped_base, bar->mapped_size, offset, data, len);
+    return common::mmio::write(bar->mapped_base, bar->mapped_size, offset, data, len);
 }
 
 inline bool read32(const DeviceContext& ctx,
@@ -245,106 +200,61 @@ inline bool write32(const DeviceContext& ctx,
 
 }
 
-// ---------------------------------------------
-// common::reg::read() / common::reg::write()
-// provides 32-bit aligned register range access helpers.
-// ---------------------------------------------
-namespace common::reg {
+// -------------------------------------------------------------
+// BAR-path device-memory read/write shared by every module lives in
+// DevMem.h. common::devmem programs a PHAL PCIe aperture before it
+// accesses the selected data BAR through common::bar.
+// -------------------------------------------------------------
 
-inline bool is_valid_range(uint64_t reg_size,
-                           uint64_t reg_offset,
-                           size_t len)
+// ------------------------------------------------------------
+// common::args::get_string() / common::args::get_u64()
+// reads resolved test inputs after CLI/Python has applied YAML defaults.
+// ------------------------------------------------------------
+namespace common::args {
+
+inline std::string get_string(const TestArgs& args,
+                              const std::string& key)
 {
-    // Reject empty transfers and offsets beyond the register window.
-    if (len == 0 || reg_offset > reg_size) {
-        return false;
+    auto it = args.find(key);
+    if (it == args.end()) {
+        throw std::invalid_argument("missing required argument: " + key);
     }
-
-    // Reject ranges that would cross the register window boundary.
-    return static_cast<uint64_t>(len) <= (reg_size - reg_offset);
+    return it->second;
 }
 
-inline bool is_aligned32(uintptr_t addr, size_t len)
+inline uint64_t get_u64(const TestArgs& args,
+                        const std::string& key)
 {
-    // Register helpers only allow 32-bit aligned accesses.
-    return (addr % sizeof(uint32_t)) == 0 && (len % sizeof(uint32_t)) == 0;
+    auto value = get_string(args, key);
+
+    try {
+        return static_cast<uint64_t>(std::stoull(value, nullptr, 0));
+    } catch (const std::exception&) {
+        throw std::invalid_argument("invalid u64 argument: " + key + "=" + value);
+    }
 }
 
-inline bool read(void* reg_base,
-                 uint64_t reg_size,
-                 uint64_t reg_offset,
-                 uint32_t* data,
-                 size_t len)
+inline uint64_t get_u64(const TestArgs& args,
+                        const std::string& key,
+                        uint64_t default_value)
 {
-    // Validate the mapped register base and output buffer.
-    if (reg_base == nullptr || data == nullptr) {
-        return false;
+    auto it = args.find(key);
+    if (it == args.end()) {
+        return default_value;
     }
 
-    // Validate that the requested registers stay inside the block.
-    if (!is_valid_range(reg_size, reg_offset, len)) {
-        return false;
+    try {
+        return static_cast<uint64_t>(std::stoull(it->second, nullptr, 0));
+    } catch (const std::exception&) {
+        throw std::invalid_argument("invalid u64 argument: " + key + "=" + it->second);
     }
-
-    // Convert the register offset into an absolute mapped address.
-    auto addr = reinterpret_cast<uintptr_t>(
-        static_cast<uint8_t*>(reg_base) + reg_offset);
-
-    // Reject unaligned register reads.
-    if (!is_aligned32(addr, len)) {
-        return false;
-    }
-
-    auto* src = reinterpret_cast<volatile uint32_t*>(addr);
-    auto count = len / sizeof(uint32_t);
-    // Read one 32-bit register at a time.
-    for (size_t i = 0; i < count; ++i) {
-        data[i] = src[i];
-    }
-
-    return true;
-}
-
-inline bool write(void* reg_base,
-                  uint64_t reg_size,
-                  uint64_t reg_offset,
-                  const uint32_t* data,
-                  size_t len)
-{
-    // Validate the mapped register base and input buffer.
-    if (reg_base == nullptr || data == nullptr) {
-        return false;
-    }
-
-    // Validate that the requested registers stay inside the block.
-    if (!is_valid_range(reg_size, reg_offset, len)) {
-        return false;
-    }
-
-    // Convert the register offset into an absolute mapped address.
-    auto addr = reinterpret_cast<uintptr_t>(
-        static_cast<uint8_t*>(reg_base) + reg_offset);
-
-    // Reject unaligned register writes.
-    if (!is_aligned32(addr, len)) {
-        return false;
-    }
-
-    auto* dst = reinterpret_cast<volatile uint32_t*>(addr);
-    auto count = len / sizeof(uint32_t);
-    // Write one 32-bit register at a time.
-    for (size_t i = 0; i < count; ++i) {
-        dst[i] = data[i];
-    }
-
-    return true;
 }
 
 }
 
 // -------------------------------------------------------------
 // common::pattern::generate() / common::pattern::compare()
-// generates and compares simple data payloads for DMA/devmem tests.
+// generates and compares simple data payloads for DMA/window tests.
 // Returns empty vector on error or unsupported pattern.
 // -------------------------------------------------------------    
 namespace common::pattern {

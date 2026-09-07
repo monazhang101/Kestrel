@@ -6,87 +6,87 @@ chip_profile:
   modules:
     pcie:
       - index: 0
-        reg_offset: "0x36000000"
+        reg_base_offset: "0x36000000"
         reg_size: "0x10231c"
     pmu:
       - index: 0
-        reg_offset: "0x38000000"
+        reg_base_offset: "0x38000000"
         reg_size: "0x2108030"
     ddp:
       - index: 0
-        reg_offset: "0x32000000"
+        reg_base_offset: "0x32000000"
         reg_size: "0xd18a44"
         dmc:
           - index: 0
-            reg_offset: "0x32000800"
+            reg_base_offset: "0x32000800"
             reg_size: "0xb009c"
           - index: 1
-            reg_offset: "0x32400800"
+            reg_base_offset: "0x32400800"
             reg_size: "0xb009c"
           - index: 2
-            reg_offset: "0x32800800"
+            reg_base_offset: "0x32800800"
             reg_size: "0xb009c"
       - index: 1
-        reg_offset: "0x33000000"
+        reg_base_offset: "0x33000000"
         reg_size: "0xd18a44"
         dmc:
           - index: 0
-            reg_offset: "0x33000800"
+            reg_base_offset: "0x33000800"
             reg_size: "0xb009c"
           - index: 1
-            reg_offset: "0x33400800"
+            reg_base_offset: "0x33400800"
             reg_size: "0xb009c"
           - index: 2
-            reg_offset: "0x33800800"
+            reg_base_offset: "0x33800800"
             reg_size: "0xb009c"
       - index: 2
-        reg_offset: "0x34000000"
+        reg_base_offset: "0x34000000"
         reg_size: "0xd18a44"
         dmc:
           - index: 0
-            reg_offset: "0x34000800"
+            reg_base_offset: "0x34000800"
             reg_size: "0xb009c"
           - index: 1
-            reg_offset: "0x34400800"
+            reg_base_offset: "0x34400800"
             reg_size: "0xb009c"
           - index: 2
-            reg_offset: "0x34800800"
+            reg_base_offset: "0x34800800"
             reg_size: "0xb009c"
       - index: 3
-        reg_offset: "0x35000000"
+        reg_base_offset: "0x35000000"
         reg_size: "0xd18a44"
         dmc:
           - index: 0
-            reg_offset: "0x35000800"
+            reg_base_offset: "0x35000800"
             reg_size: "0xb009c"
           - index: 1
-            reg_offset: "0x35400800"
+            reg_base_offset: "0x35400800"
             reg_size: "0xb009c"
           - index: 2
-            reg_offset: "0x35800800"
+            reg_base_offset: "0x35800800"
             reg_size: "0xb009c"
     isi:
       - index: 0
-        reg_offset: "0x37000000"
+        reg_base_offset: "0x37000000"
         reg_size: "0x2c"
       - index: 1
-        reg_offset: "0x37200000"
+        reg_base_offset: "0x37200000"
         reg_size: "0x2c"
       - index: 2
-        reg_offset: "0x37400000"
+        reg_base_offset: "0x37400000"
         reg_size: "0x2c"
       - index: 3
-        reg_offset: "0x37600000"
+        reg_base_offset: "0x37600000"
         reg_size: "0x2c"
       - index: 4
-        reg_offset: "0x37800000"
+        reg_base_offset: "0x37800000"
         reg_size: "0x2c"
       - index: 5
-        reg_offset: "0x37a00000"
+        reg_base_offset: "0x37a00000"
         reg_size: "0x2c"
       - index: 6
-        reg_offset: "0x37c00000"
+        reg_base_offset: "0x37c00000"
         reg_size: "0x2c"
       - index: 7
-        reg_offset: "0x37e00000"
+        reg_base_offset: "0x37e00000"
         reg_size: "0x2c"
