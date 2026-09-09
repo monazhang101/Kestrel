@@ -186,16 +186,20 @@ TestResult GenericPCIeImpl::bar_scan32(TestInfo& ti)
     return {"pcie_bar_scan32", ctx_.target_name, true, metrics};
 }
 
-DmaTransferResult GenericPCIeImpl::dma_copy_h2d(const DmaTransferRequest& req)
+DmaTransferResult GenericPCIeImpl::dma_copy_h2d(TestInfo& ti, const DmaTransferRequest& req)
 {
+    (void)ti;
     (void)req;
-    return {false, 0, 0, "UNIMPLEMENTED", "PCIe H2D DMA copy is not implemented for " + ctx_.target_name};
+    return {false, 0, 0, "UNIMPLEMENTED",
+            "PCIe H2D DMA copy is not implemented for " + ctx_.target_name, {}};
 }
 
-DmaTransferResult GenericPCIeImpl::dma_copy_d2h(const DmaTransferRequest& req)
+DmaTransferResult GenericPCIeImpl::dma_copy_d2h(TestInfo& ti, const DmaTransferRequest& req)
 {
+    (void)ti;
     (void)req;
-    return {false, 0, 0, "UNIMPLEMENTED", "PCIe D2H DMA copy is not implemented for " + ctx_.target_name};
+    return {false, 0, 0, "UNIMPLEMENTED",
+            "PCIe D2H DMA copy is not implemented for " + ctx_.target_name, {}};
 }
 
 // Generic PMU impl. Products without a PMU module, or without a specific PMU

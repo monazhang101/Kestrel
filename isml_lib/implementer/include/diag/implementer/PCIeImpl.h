@@ -38,6 +38,6 @@ public:
     virtual LinkStatus link_status_get() = 0;
     virtual TestResult bar_read32(TestInfo& ti) = 0;
     virtual TestResult bar_scan32(TestInfo& ti) = 0;
-    virtual DmaTransferResult dma_copy_h2d(const DmaTransferRequest& req) = 0;
-    virtual DmaTransferResult dma_copy_d2h(const DmaTransferRequest& req) = 0;
+    virtual DmaTransferResult dma_copy_h2d(TestInfo& ti, const DmaTransferRequest& req) = 0;
+    virtual DmaTransferResult dma_copy_d2h(TestInfo& ti, const DmaTransferRequest& req) = 0;
 };

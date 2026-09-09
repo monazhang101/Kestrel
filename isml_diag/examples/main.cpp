@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-static void print_test_result(const TestResult& result)
+static int print_test_result(const TestResult& result)
 {
     std::cout << "["
               << (result.passed ? "PASS" : "FAIL")
@@ -20,6 +20,8 @@ static void print_test_result(const TestResult& result)
         std::cout << "    error_description = " << result.error_description << std::endl;
         std::cout << "    error_details = " << result.error_details << std::endl;
     }
+
+    return result.passed ? 0 : 2;
 }
 
 static void print_usage(const char* program)
@@ -29,6 +31,7 @@ static void print_usage(const char* program)
               << "  " << program << " link-status [--backend phal|ihal|dryrun] [--target <target>]\n"
               << "  " << program << " bar-read [--backend phal|ihal|dryrun] [--target <target>] [--bar <0|2|4>] [--offset <offset>]\n"
               << "  " << program << " bar-scan [--backend phal|ihal|dryrun] [--target <target>] [--bar <0|2|4>] [--offset <offset>] [--words <words>]\n"
+              << "  " << program << " dma [--backend ihal] [--target <target>] [--direction h2d|d2h] [--size <bytes>] [--pattern zero|incremental|random] [--device-offset <offset>] [--timeout-ms <ms>]\n"
               << "  " << program << " sequential-aperture-mapping [--backend phal|ihal|dryrun] [--target <target>]\n"
               << "  " << program << " isi-pcie-aperture-context [--backend phal|ihal|dryrun] [--target <target>] [--bar <2|4>] [--aperture <id>]\n"
               << "  " << program << " isi-common-devmem-read [--backend phal|ihal|dryrun] [--target <target>] [--bar <2|4>] [--aperture <id>] [--identity <id>] [--target-addr <addr>] [--size <bytes>] [--bar-offset <offset>] [--offset <offset>]\n"
@@ -40,6 +43,7 @@ static void print_usage(const char* program)
               << "  " << program << " discover --tree\n"
               << "  " << program << " discover --backend phal --tree\n"
               << "  " << program << " link-status --target PCIE_0_0\n"
+              << "  " << program << " dma --target PCIE_0_0 --direction h2d --size 4096 --pattern incremental\n"
               << "  " << program << " sequential-aperture-mapping --target PCIE_0_0 --log-level debug\n"
               << "  " << program << " isi-pcie-aperture-context --target ISI_0_0\n"
               << "  " << program << " isi-common-devmem-read --target ISI_0_0\n";
@@ -172,9 +176,8 @@ int main(int argc, char** argv)
 
     if (command == "link-status") {
         auto target = get_option(argc, argv, "--target", "PCIE_0_0");
-        print_test_result(device_manager.run_atomic_test(
+        return print_test_result(device_manager.run_atomic_test(
             target, "pcie_link_status_get"));
-        return 0;
     }
 
     if (command == "bar-read") {
@@ -187,9 +190,8 @@ int main(int argc, char** argv)
         if (!bar.empty()) {
             args["bar_index"] = bar;
         }
-        print_test_result(device_manager.run_atomic_test(
+        return print_test_result(device_manager.run_atomic_test(
             target, "pcie_bar_read32", args));
-        return 0;
     }
 
     if (command == "bar-scan") {
@@ -204,16 +206,27 @@ int main(int argc, char** argv)
         if (!bar.empty()) {
             args["bar_index"] = bar;
         }
-        print_test_result(device_manager.run_atomic_test(
+        return print_test_result(device_manager.run_atomic_test(
             target, "pcie_bar_scan32", args));
-        return 0;
+    }
+
+    if (command == "dma") {
+        auto target = get_option(argc, argv, "--target", "PCIE_0_0");
+        TestArgs args = {
+            {"direction", get_option(argc, argv, "--direction", "h2d")},
+            {"size_bytes", get_option(argc, argv, "--size", "4096")},
+            {"pattern", get_option(argc, argv, "--pattern", "incremental")},
+            {"device_offset", get_option(argc, argv, "--device-offset", "0x10200")},
+            {"timeout_ms", get_option(argc, argv, "--timeout-ms", "1000")},
+        };
+        return print_test_result(device_manager.run_atomic_test(
+            target, "pcie_dma_data_transfer", args));
     }
 
     if (command == "sequential-aperture-mapping") {
         auto target = get_option(argc, argv, "--target", "PCIE_0_0");
-        print_test_result(device_manager.run_atomic_test(
+        return print_test_result(device_manager.run_atomic_test(
             target, "sequential_aperture_mapping"));
-        return 0;
     }
 
     if (command == "isi-pcie-aperture-context") {
@@ -222,9 +235,8 @@ int main(int argc, char** argv)
             {"bar_index", get_option(argc, argv, "--bar", "4")},
             {"aperture_index", get_option(argc, argv, "--aperture", "0")},
         };
-        print_test_result(device_manager.run_atomic_test(
+        return print_test_result(device_manager.run_atomic_test(
             target, "isi_pcie_aperture_context", args));
-        return 0;
     }
 
     if (command == "isi-common-devmem-read") {
@@ -238,9 +250,8 @@ int main(int argc, char** argv)
             {"bar_offset", get_option(argc, argv, "--bar-offset", "0")},
             {"offset", get_option(argc, argv, "--offset", "0")},
         };
-        print_test_result(device_manager.run_atomic_test(
+        return print_test_result(device_manager.run_atomic_test(
             target, "isi_common_devmem_read", args));
-        return 0;
     }
 
     std::cerr << "Unknown command: " << command << std::endl;
