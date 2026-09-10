@@ -1,10 +1,6 @@
 module: pcie
 
 tests:
-  pcie_link_status_get:
-    summary: Get current PCIe negotiated speed and link width.
-    args: {}
-
   pcie_dma_data_transfer:
     summary: Run PCIe DMA data movement and compare payload.
     args:

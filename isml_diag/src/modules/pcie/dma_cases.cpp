@@ -12,7 +12,7 @@
 // End-to-end feasibility case for the host DMA allocation + HQC command path.
 // The testcase owns pattern preparation and comparison; the product impl owns
 // HQC command construction and submission.
-TestResult PCIeModule::pcie_dma_data_transfer(TestInfo& ti)
+TestStatus PCIeModule::pcie_dma_data_transfer(TestInfo& ti)
 {
     // HQC DMA command ABI requires source, destination, and transfer length to
     // be 32-byte aligned. The host allocation limit is owned by HalContext.
@@ -38,7 +38,7 @@ TestResult PCIeModule::pcie_dma_data_transfer(TestInfo& ti)
     }();
 
     if (impl_ == nullptr) {
-        return make_unimplemented_result(ti, "PCIe implementation is not bound");
+        return make_unimplemented_status(ti, "PCIe implementation is not bound");
     }
 
     const auto direction = common::args::get_string(ti.args, "direction");
@@ -52,52 +52,46 @@ TestResult PCIeModule::pcie_dma_data_transfer(TestInfo& ti)
     const auto device_offset = common::args::get_u64(
         ti.args, "device_offset", DEFAULT_DEVICE_OFFSET);
 
-    DmaTransferResult dma_result;
-    auto finish = [&](bool passed,
-                      const std::string& compare_status,
-                      const std::string& error = "") {
-        if (ti.logger != nullptr) {
-            if (passed) {
-                ti.logger->info("PCIe DMA " + direction + " data compare passed");
-            } else {
-                ti.logger->error("PCIe DMA " + direction + " failed: " + error);
-            }
-        }
-        TestMetrics metrics = {
-            {"direction", direction},
-            {"size_bytes", std::to_string(size_bytes)},
-            {"pattern", pattern},
-            {"device_offset", std::to_string(device_offset)},
-            {"compare_status", compare_status},
-            {"dma_completion_status", dma_result.completion_status},
-            {"dma_duration_us", std::to_string(dma_result.duration_us)}
-        };
-        for (const auto& item : dma_result.metrics) {
-            metrics[item.first] = item.second;
-        }
-        return TestResult{"pcie_dma_data_transfer", get_name(), passed, metrics, error, ""};
-    };
-
     if (ti.hal == nullptr) {
-        return finish(false, "not_started", "HAL context is not available");
+        if (ti.logger != nullptr) {
+            ti.logger->error("HAL context is not available");
+        }
+        return TestStatus::ERROR;
     }
     if ((direction != "h2d" && direction != "d2h") ||
         size_bytes == 0 || size_bytes > HOST_DMA_MAX_SIZE_BYTES ||
         (size_bytes % DMA_ALIGNMENT) != 0 ||
         (device_offset % DMA_ALIGNMENT) != 0) {
-        return finish(false, "not_started",
-                      "direction must be h2d/d2h and DMA range must be 32-byte aligned and <= 128MiB");
+        if (ti.logger != nullptr) {
+            ti.logger->error(
+                "direction must be h2d/d2h and DMA range must be 32-byte aligned and <= 128MiB");
+        }
+        return TestStatus::INVALID;
+    }
+    if (!common::mmio::is_valid_range(DMEM_WINDOW.size,
+                                      device_offset,
+                                      static_cast<size_t>(size_bytes))) {
+        if (ti.logger != nullptr) {
+            ti.logger->error("DMA range is outside the diagnostic DMEM window");
+        }
+        return TestStatus::INVALID;
     }
 
     auto expected = common::pattern::generate(static_cast<size_t>(size_bytes), pattern);
     if (expected.empty()) {
-        return finish(false, "not_started", "pattern generation failed");
+        if (ti.logger != nullptr) {
+            ti.logger->error("unsupported DMA pattern=" + pattern);
+        }
+        return TestStatus::INVALID;
     }
 
     auto host_buffer = ti.hal->alloc_host_dma_buffer(ctx_, size_bytes);
     if (!host_buffer.valid()) {
-        return finish(false, "not_started",
-                      "host DMA allocation failed; check that the matching /dev/isml_diag device is available");
+        if (ti.logger != nullptr) {
+            ti.logger->error(
+                "host DMA allocation failed; check that the matching /dev/isml_diag device is available");
+        }
+        return TestStatus::ERROR;
     }
     auto* host_base = static_cast<uint8_t*>(host_buffer.cpu_base());
 
@@ -108,39 +102,69 @@ TestResult PCIeModule::pcie_dma_data_transfer(TestInfo& ti)
     request.size_bytes = size_bytes;
     request.timeout_ms = timeout_ms;
 
+    if (ti.logger != nullptr) {
+        ti.logger->info("PCIe DMA begin direction=" + direction +
+                        " size=" + std::to_string(size_bytes) +
+                        " pattern=" + pattern +
+                        " dmem_base=" + std::to_string(DMEM_WINDOW.target_addr) +
+                        " dmem_offset=" + std::to_string(device_offset));
+    }
+
     std::string access_error;
     if (direction == "h2d") {
         std::memcpy(host_base + HOST_OFFSET, expected.data(), expected.size());
-        dma_result = impl_->dma_copy_h2d(ti, request);
-        if (!dma_result.ok) {
-            return finish(false, "dma_failed", dma_result.error);
+        const auto dma_status = impl_->dma_copy_h2d(ti, request);
+        if (dma_status != TestStatus::OK) {
+            return dma_status;
         }
 
         std::vector<uint8_t> actual(static_cast<size_t>(size_bytes));
         if (!common::devmem::read(ti, ctx_, DMEM_WINDOW, device_offset,
                                   actual.data(), actual.size(), &access_error)) {
-            return finish(false, "readback_failed", access_error);
+            if (ti.logger != nullptr) {
+                ti.logger->error("H2D readback failed: " + access_error);
+            }
+            return TestStatus::ERROR;
         }
         const bool match = common::pattern::compare(expected.data(),
                                                      actual.data(),
                                                      actual.size());
-        return finish(match, match ? "match" : "mismatch",
-                      match ? "" : "H2D DMA data mismatch");
+        if (!match) {
+            if (ti.logger != nullptr) {
+                ti.logger->error("H2D DMA data mismatch");
+            }
+            return TestStatus::ERROR;
+        }
+        if (ti.logger != nullptr) {
+            ti.logger->info("H2D DMA data compare passed");
+        }
+        return TestStatus::OK;
     }
 
     if (!common::devmem::write(ti, ctx_, DMEM_WINDOW, device_offset,
                                expected.data(), expected.size(), &access_error)) {
-        return finish(false, "source_write_failed", access_error);
+        if (ti.logger != nullptr) {
+            ti.logger->error("D2H source write failed: " + access_error);
+        }
+        return TestStatus::ERROR;
     }
     std::memset(host_base + HOST_OFFSET, 0, static_cast<size_t>(size_bytes));
-    dma_result = impl_->dma_copy_d2h(ti, request);
-    if (!dma_result.ok) {
-        return finish(false, "dma_failed", dma_result.error);
+    const auto dma_status = impl_->dma_copy_d2h(ti, request);
+    if (dma_status != TestStatus::OK) {
+        return dma_status;
     }
 
     const bool match = common::pattern::compare(expected.data(),
                                                  host_base + HOST_OFFSET,
                                                  static_cast<size_t>(size_bytes));
-    return finish(match, match ? "match" : "mismatch",
-                  match ? "" : "D2H DMA data mismatch");
+    if (!match) {
+        if (ti.logger != nullptr) {
+            ti.logger->error("D2H DMA data mismatch");
+        }
+        return TestStatus::ERROR;
+    }
+    if (ti.logger != nullptr) {
+        ti.logger->info("D2H DMA data compare passed");
+    }
+    return TestStatus::OK;
 }

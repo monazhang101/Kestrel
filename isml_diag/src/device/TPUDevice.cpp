@@ -233,11 +233,11 @@ void TPUDevice::print_tree() const
 
 // identify : To read ATLAS identity registers and report stable hardware facts.
 // @input: none.
-// @output: TestResult metrics include bdf, vendor_id, device_id, chip_id, and revision.
-TestResult TPUDevice::Identify(TestInfo& ti)
+// @output: TestStatus; identity details are written to the testcase log.
+TestStatus TPUDevice::Identify(TestInfo& ti)
 {
     if (impl_ == nullptr) {
-        return make_unimplemented_result(ti, "TPU implementation is not bound");
+        return make_unimplemented_status(ti, "TPU implementation is not bound");
     }
     return impl_->Identify(ti);
 }

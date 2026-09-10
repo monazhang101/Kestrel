@@ -17,10 +17,10 @@ private:
     std::unique_ptr<ISIImpl> impl_;
 
     /* ----------- Register atomic tests here ----------- */
-    TestResult IsiLinkup(TestInfo& ti);
-    TestResult IsiSetup(TestInfo& ti);
-    TestResult IsiPcieApertureContext(TestInfo& ti);
-    TestResult IsiCommonDevMemRead(TestInfo& ti);
+    TestStatus IsiLinkup(TestInfo& ti);
+    TestStatus IsiSetup(TestInfo& ti);
+    TestStatus IsiPcieApertureContext(TestInfo& ti);
+    TestStatus IsiCommonDevMemRead(TestInfo& ti);
 
 public:
     ISIModule(const std::string& name,

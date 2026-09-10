@@ -4,31 +4,16 @@
 #include <string>
 #include <vector>
 
-static int print_test_result(const TestResult& result)
+static int print_test_status(TestStatus status)
 {
-    std::cout << "["
-              << (result.passed ? "PASS" : "FAIL")
-              << "] " << result.target_name
-              << "::" << result.test_name
-              << std::endl;
-
-    for (const auto& metric : result.metrics) {
-        std::cout << "    " << metric.first << " = " << metric.second << std::endl;
-    }
-
-    if (!result.error_description.empty()) {
-        std::cout << "    error_description = " << result.error_description << std::endl;
-        std::cout << "    error_details = " << result.error_details << std::endl;
-    }
-
-    return result.passed ? 0 : 2;
+    std::cout << "[" << test_status_name(status) << "]" << std::endl;
+    return static_cast<int>(status);
 }
 
 static void print_usage(const char* program)
 {
     std::cout << "Usage:\n"
               << "  " << program << " discover [--backend phal|ihal|dryrun] [--tree]\n"
-              << "  " << program << " link-status [--backend phal|ihal|dryrun] [--target <target>]\n"
               << "  " << program << " bar-read [--backend phal|ihal|dryrun] [--target <target>] [--bar <0|2|4>] [--offset <offset>]\n"
               << "  " << program << " bar-scan [--backend phal|ihal|dryrun] [--target <target>] [--bar <0|2|4>] [--offset <offset>] [--words <words>]\n"
               << "  " << program << " dma [--backend ihal] [--target <target>] [--direction h2d|d2h] [--size <bytes>] [--pattern zero|incremental|random] [--device-offset <offset>] [--timeout-ms <ms>]\n"
@@ -42,7 +27,6 @@ static void print_usage(const char* program)
               << "Examples:\n"
               << "  " << program << " discover --tree\n"
               << "  " << program << " discover --backend phal --tree\n"
-              << "  " << program << " link-status --target PCIE_0_0\n"
               << "  " << program << " dma --target PCIE_0_0 --direction h2d --size 4096 --pattern incremental\n"
               << "  " << program << " sequential-aperture-mapping --target PCIE_0_0 --log-level debug\n"
               << "  " << program << " isi-pcie-aperture-context --target ISI_0_0\n"
@@ -174,12 +158,6 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    if (command == "link-status") {
-        auto target = get_option(argc, argv, "--target", "PCIE_0_0");
-        return print_test_result(device_manager.run_atomic_test(
-            target, "pcie_link_status_get"));
-    }
-
     if (command == "bar-read") {
         auto target = get_option(argc, argv, "--target", "PCIE_0_0");
         auto offset = get_option(argc, argv, "--offset", "0x0");
@@ -190,7 +168,7 @@ int main(int argc, char** argv)
         if (!bar.empty()) {
             args["bar_index"] = bar;
         }
-        return print_test_result(device_manager.run_atomic_test(
+        return print_test_status(device_manager.run_atomic_test(
             target, "pcie_bar_read32", args));
     }
 
@@ -206,7 +184,7 @@ int main(int argc, char** argv)
         if (!bar.empty()) {
             args["bar_index"] = bar;
         }
-        return print_test_result(device_manager.run_atomic_test(
+        return print_test_status(device_manager.run_atomic_test(
             target, "pcie_bar_scan32", args));
     }
 
@@ -219,13 +197,13 @@ int main(int argc, char** argv)
             {"device_offset", get_option(argc, argv, "--device-offset", "0x10200")},
             {"timeout_ms", get_option(argc, argv, "--timeout-ms", "1000")},
         };
-        return print_test_result(device_manager.run_atomic_test(
+        return print_test_status(device_manager.run_atomic_test(
             target, "pcie_dma_data_transfer", args));
     }
 
     if (command == "sequential-aperture-mapping") {
         auto target = get_option(argc, argv, "--target", "PCIE_0_0");
-        return print_test_result(device_manager.run_atomic_test(
+        return print_test_status(device_manager.run_atomic_test(
             target, "sequential_aperture_mapping"));
     }
 
@@ -235,7 +213,7 @@ int main(int argc, char** argv)
             {"bar_index", get_option(argc, argv, "--bar", "4")},
             {"aperture_index", get_option(argc, argv, "--aperture", "0")},
         };
-        return print_test_result(device_manager.run_atomic_test(
+        return print_test_status(device_manager.run_atomic_test(
             target, "isi_pcie_aperture_context", args));
     }
 
@@ -250,7 +228,7 @@ int main(int argc, char** argv)
             {"bar_offset", get_option(argc, argv, "--bar-offset", "0")},
             {"offset", get_option(argc, argv, "--offset", "0")},
         };
-        return print_test_result(device_manager.run_atomic_test(
+        return print_test_status(device_manager.run_atomic_test(
             target, "isi_common_devmem_read", args));
     }
 

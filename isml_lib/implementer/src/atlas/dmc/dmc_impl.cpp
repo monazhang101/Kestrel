@@ -14,27 +14,26 @@ public:
     {
     }
 
-    TestResult DmcStatusCheck(TestInfo& ti) override
+    TestStatus DmcStatusCheck(TestInfo& ti) override
     {
-        (void)ti.args;
-        return {"dmc_status_check", ctx_.target_name, true, {
-            {"ddp_id", std::to_string(ctx_.parent_index)},
-            {"controller_id", std::to_string(ctx_.index)},
-            {"status", "ready"},
-            {"impl", "atlas"}
-        }};
+        if (ti.logger != nullptr) {
+            ti.logger->info("DMC status ddp_id=" + std::to_string(ctx_.parent_index) +
+                            " controller_id=" + std::to_string(ctx_.index) +
+                            " state=ready impl=atlas");
+        }
+        return TestStatus::OK;
     }
 
-    TestResult DmcRegScan(TestInfo& ti) override
+    TestStatus DmcRegScan(TestInfo& ti) override
     {
-        auto range = common::args::get_string(ti.args, "range");
-        return {"dmc_reg_scan", ctx_.target_name, true, {
-            {"ddp_id", std::to_string(ctx_.parent_index)},
-            {"controller_id", std::to_string(ctx_.index)},
-            {"scanned_range", range},
-            {"bad_register_count", "0"},
-            {"impl", "atlas"}
-        }};
+        const auto range = common::args::get_string(ti.args, "range");
+        if (ti.logger != nullptr) {
+            ti.logger->info("DMC register scan ddp_id=" +
+                            std::to_string(ctx_.parent_index) +
+                            " controller_id=" + std::to_string(ctx_.index) +
+                            " range=" + range + " bad_register_count=0 impl=atlas");
+        }
+        return TestStatus::OK;
     }
 };
 

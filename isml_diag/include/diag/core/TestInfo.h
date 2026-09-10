@@ -1,13 +1,40 @@
 #pragma once
 
+#include <cstdint>
 #include <iostream>
 #include <string>
 #include <unordered_map>
 
 using TestArgs = std::unordered_map<std::string, std::string>;
-using TestMetrics = std::unordered_map<std::string, std::string>;
 
 class HalContext;
+
+// Keep the public testcase contract intentionally small and PHAL-like: one
+// integer status is returned, while diagnostic details go to the testcase log.
+enum class TestStatus : int {
+    OK = 0,
+    TIMEOUT = 1u << 0,
+    ERROR = 1u << 1,
+    UNIMPLEMENTED = 1u << 2,
+    INVALID = 1u << 3,
+};
+
+inline const char* test_status_name(TestStatus status)
+{
+    switch (status) {
+    case TestStatus::OK:
+        return "OK";
+    case TestStatus::TIMEOUT:
+        return "TIMEOUT";
+    case TestStatus::ERROR:
+        return "ERROR";
+    case TestStatus::UNIMPLEMENTED:
+        return "UNIMPLEMENTED";
+    case TestStatus::INVALID:
+        return "INVALID";
+    }
+    return "UNKNOWN";
+}
 
 enum class LogLevel {
     Error = 0,
@@ -64,24 +91,11 @@ struct TestInfo {
     HalContext* hal = nullptr;
 };
 
-struct TestResult {
-    std::string test_name;
-    std::string target_name;
-    bool passed = false;
-    TestMetrics metrics;
-    std::string error_description;
-    std::string error_details;
-};
-
-inline TestResult make_unimplemented_result(const TestInfo& ti,
-                                            const std::string& reason)
+inline TestStatus make_unimplemented_status(const TestInfo& ti,
+                                             const std::string& reason)
 {
-    return {
-        ti.test_name,
-        ti.target_name,
-        false,
-        {{"status", "UNIMPLEMENTED"}},
-        "UNIMPLEMENTED",
-        reason
-    };
+    if (ti.logger != nullptr) {
+        ti.logger->error(reason);
+    }
+    return TestStatus::UNIMPLEMENTED;
 }

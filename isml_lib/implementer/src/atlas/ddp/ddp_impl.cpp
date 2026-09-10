@@ -14,14 +14,13 @@ public:
     {
     }
 
-    TestResult DdpDmemLinkupVerify(TestInfo& ti) override
+    TestStatus DdpDmemLinkupVerify(TestInfo& ti) override
     {
-        auto link = common::args::get_string(ti.args, "link");
-        return {"ddp_dmem_linkup_verify", ctx_.target_name, true, {
-            {"link", link},
-            {"linkup_status", "up"},
-            {"impl", "atlas"}
-        }};
+        const auto link = common::args::get_string(ti.args, "link");
+        if (ti.logger != nullptr) {
+            ti.logger->info("DDP DMEM link=" + link + " state=up impl=atlas");
+        }
+        return TestStatus::OK;
     }
 };
 

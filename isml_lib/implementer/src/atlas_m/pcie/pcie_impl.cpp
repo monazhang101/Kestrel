@@ -12,16 +12,6 @@ public:
     {
     }
 
-    LinkStatus link_status_get() override
-    {
-        LinkStatus status;
-        status.ok = true;
-        status.current_speed = "gen4";
-        status.current_width = "x16";
-        status.metrics = {{"impl", "atlas_m"}};
-        return status;
-    }
-
 };
 
 }

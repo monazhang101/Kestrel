@@ -233,20 +233,15 @@ LogLevel DeviceManager::get_log_level() const
     return logger_.get_level();
 }
 
-TestResult DeviceManager::run_atomic_test(const std::string& target_name,
+TestStatus DeviceManager::run_atomic_test(const std::string& target_name,
                                           const std::string& test_name,
                                           const TestArgs& args)
 {
     auto* target = get_target(target_name);
     if (target == nullptr) {
-        return {
-            test_name,
-            target_name,
-            false,
-            {},
-            "target device not found",
-            "target=" + target_name + " is not registered; call discover() before running tests"
-        };
+        logger_.error("target=" + target_name +
+                      " is not registered; call discover() before running tests");
+        return TestStatus::INVALID;
     }
 
     // -------------------------------

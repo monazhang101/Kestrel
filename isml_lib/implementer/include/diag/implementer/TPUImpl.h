@@ -6,5 +6,5 @@ class TPUImpl {
 public:
     virtual ~TPUImpl() = default;
 
-    virtual TestResult Identify(TestInfo& ti) = 0;
+    virtual TestStatus Identify(TestInfo& ti) = 0;
 };

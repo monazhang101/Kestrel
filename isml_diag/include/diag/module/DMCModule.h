@@ -18,8 +18,8 @@ private:
     std::unique_ptr<DMCImpl> impl_;
 
     /* ----------- Register atomic tests here ----------- */
-    TestResult DmcStatusCheck(TestInfo& ti);
-    TestResult DmcRegScan(TestInfo& ti);
+    TestStatus DmcStatusCheck(TestInfo& ti);
+    TestStatus DmcRegScan(TestInfo& ti);
 
 public:
     DMCModule(const std::string& name,

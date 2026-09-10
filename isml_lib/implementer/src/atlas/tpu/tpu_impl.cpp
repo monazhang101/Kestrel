@@ -12,17 +12,15 @@ public:
     {
     }
 
-    TestResult Identify(TestInfo& ti) override
+    TestStatus Identify(TestInfo& ti) override
     {
-        (void)ti.args;
-        return {"identify", ctx_.target_name, true, {
-            {"product", "ATLAS"},
-            {"bdf", ctx_.device_ctx.bdf},
-            {"vendor_id", "0x" + std::to_string(ctx_.device_ctx.vendor_id)},
-            {"device_id", "0x" + std::to_string(ctx_.device_ctx.device_id)},
-            {"chip_id", "ATLAS_CHIP_PSEUDO"},
-            {"revision", "A0"}
-        }};
+        if (ti.logger != nullptr) {
+            ti.logger->info("TPU identify product=ATLAS bdf=" + ctx_.device_ctx.bdf +
+                            " vendor_id=" + std::to_string(ctx_.device_ctx.vendor_id) +
+                            " device_id=" + std::to_string(ctx_.device_ctx.device_id) +
+                            " chip_id=ATLAS_CHIP_PSEUDO revision=A0");
+        }
+        return TestStatus::OK;
     }
 };
 

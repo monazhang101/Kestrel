@@ -74,8 +74,8 @@ public:
     std::vector<std::string> get_target_names() const;
     void set_log_level(LogLevel level);
     LogLevel get_log_level() const;
-    TestResult run_atomic_test(const std::string& target_name,
-                               const std::string& test_name,
-                               const TestArgs& args = {});
+    TestStatus run_atomic_test(const std::string& target_name,
+                              const std::string& test_name,
+                              const TestArgs& args = {});
     void print_tree() const;
 };
