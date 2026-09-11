@@ -1,0 +1,7 @@
+# Generated build directories
+/build/
+/build-*/
+
+# Local source archives
+/*.tar
+/*.zip
