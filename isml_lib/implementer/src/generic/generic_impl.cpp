@@ -21,6 +21,13 @@ std::string hex32(uint32_t value)
     return stream.str();
 }
 
+std::string hex64(uint64_t value)
+{
+    std::ostringstream stream;
+    stream << "0x" << std::hex << value;
+    return stream.str();
+}
+
 }
 
 namespace generic_impl {
@@ -53,7 +60,7 @@ TestStatus GenericPCIeImpl::bar_read32(TestInfo& ti)
     if ((offset % sizeof(uint32_t)) != 0) {
         if (ti.logger != nullptr) {
             ti.logger->error("BAR read offset must be 4-byte aligned: offset=" +
-                             std::to_string(offset));
+                             hex64(offset));
         }
         return TestStatus::INVALID;
     }
@@ -68,10 +75,12 @@ TestStatus GenericPCIeImpl::bar_read32(TestInfo& ti)
         if (!common::bar::read32(ctx_.device_ctx, bar_index, offset, value)) {
             const auto* bar = common::bar::find(ctx_.device_ctx, bar_index);
             if (ti.logger != nullptr) {
-                ti.logger->error("BAR read failed: bar=" + std::to_string(bar_index) +
-                                 " offset=" + std::to_string(offset) +
-                                 " mapped_size=" +
-                                 std::to_string(bar == nullptr ? 0 : bar->mapped_size));
+                ti.logger->error(
+                    "BAR read failed\n"
+                    "       bar_index           = " + std::to_string(bar_index) +
+                    "\n       bar_offset          = " + hex64(offset) +
+                    "\n       mapped_size         = " +
+                    hex64(bar == nullptr ? 0 : bar->mapped_size));
             }
             return TestStatus::ERROR;
         }
@@ -79,9 +88,10 @@ TestStatus GenericPCIeImpl::bar_read32(TestInfo& ti)
         if (offset > ctx_.reg_size ||
             sizeof(value) > static_cast<size_t>(ctx_.reg_size - offset)) {
             if (ti.logger != nullptr) {
-                ti.logger->error("BAR read is outside module range: offset=" +
-                                 std::to_string(offset) +
-                                 " reg_size=" + std::to_string(ctx_.reg_size));
+                ti.logger->error(
+                    "BAR read is outside module range\n"
+                    "       module_offset       = " + hex64(offset) +
+                    "\n       module_size         = " + hex64(ctx_.reg_size));
             }
             return TestStatus::INVALID;
         }
@@ -91,18 +101,25 @@ TestStatus GenericPCIeImpl::bar_read32(TestInfo& ti)
                                  absolute_offset,
                                  value)) {
             if (ti.logger != nullptr) {
-                ti.logger->error("BAR read failed: bar=" + std::to_string(bar_index) +
-                                 " absolute_offset=" + std::to_string(absolute_offset));
+                ti.logger->error(
+                    "BAR read failed\n"
+                    "       bar_index           = " + std::to_string(bar_index) +
+                    "\n       absolute_bar_offset = " + hex64(absolute_offset));
             }
             return TestStatus::ERROR;
         }
     }
 
     if (ti.logger != nullptr) {
-        ti.logger->info("BAR read completed: bar=" + std::to_string(bar_index) +
-                        " offset=" + std::to_string(offset) +
-                        " absolute_offset=" + std::to_string(absolute_offset) +
-                        " value=" + hex32(value));
+        ti.logger->info(
+            "BAR read completed\n"
+            "       bar_index           = " + std::to_string(bar_index) +
+            "\n       offset              = " + hex64(offset) +
+            " (" + std::to_string(offset) + ")" +
+            "\n       absolute_bar_offset = " + hex64(absolute_offset) +
+            " (" + std::to_string(absolute_offset) + ")" +
+            "\n       value               = " + hex32(value) +
+            " (" + std::to_string(value) + ")");
     }
     return TestStatus::OK;
 }
@@ -118,7 +135,7 @@ TestStatus GenericPCIeImpl::bar_scan32(TestInfo& ti)
     if ((offset % sizeof(uint32_t)) != 0) {
         if (ti.logger != nullptr) {
             ti.logger->error("BAR scan offset must be 4-byte aligned: offset=" +
-                             std::to_string(offset));
+                             hex64(offset));
         }
         return TestStatus::INVALID;
     }
@@ -145,21 +162,24 @@ TestStatus GenericPCIeImpl::bar_scan32(TestInfo& ti)
                                static_cast<size_t>(bytes))) {
             const auto* bar = common::bar::find(ctx_.device_ctx, bar_index);
             if (ti.logger != nullptr) {
-                ti.logger->error("BAR scan failed: bar=" + std::to_string(bar_index) +
-                                 " offset=" + std::to_string(offset) +
-                                 " bytes=" + std::to_string(bytes) +
-                                 " mapped_size=" +
-                                 std::to_string(bar == nullptr ? 0 : bar->mapped_size));
+                ti.logger->error(
+                    "BAR scan failed\n"
+                    "       bar_index           = " + std::to_string(bar_index) +
+                    "\n       bar_offset          = " + hex64(offset) +
+                    "\n       size_bytes          = " + std::to_string(bytes) +
+                    "\n       mapped_size         = " +
+                    hex64(bar == nullptr ? 0 : bar->mapped_size));
             }
             return TestStatus::ERROR;
         }
     } else {
         if (offset > ctx_.reg_size || bytes > ctx_.reg_size - offset) {
             if (ti.logger != nullptr) {
-                ti.logger->error("BAR scan is outside module range: offset=" +
-                                 std::to_string(offset) +
-                                 " bytes=" + std::to_string(bytes) +
-                                 " reg_size=" + std::to_string(ctx_.reg_size));
+                ti.logger->error(
+                    "BAR scan is outside module range\n"
+                    "       module_offset       = " + hex64(offset) +
+                    "\n       size_bytes          = " + std::to_string(bytes) +
+                    "\n       module_size         = " + hex64(ctx_.reg_size));
             }
             return TestStatus::INVALID;
         }
@@ -170,21 +190,30 @@ TestStatus GenericPCIeImpl::bar_scan32(TestInfo& ti)
                                values.data(),
                                static_cast<size_t>(bytes))) {
             if (ti.logger != nullptr) {
-                ti.logger->error("BAR scan failed: bar=" + std::to_string(bar_index) +
-                                 " absolute_offset=" + std::to_string(absolute_offset) +
-                                 " bytes=" + std::to_string(bytes));
+                ti.logger->error(
+                    "BAR scan failed\n"
+                    "       bar_index           = " + std::to_string(bar_index) +
+                    "\n       absolute_bar_offset = " + hex64(absolute_offset) +
+                    "\n       size_bytes          = " + std::to_string(bytes));
             }
             return TestStatus::ERROR;
         }
     }
 
     if (ti.logger != nullptr) {
-        ti.logger->info("BAR scan completed: bar=" + std::to_string(bar_index) +
-                        " absolute_offset=" + std::to_string(absolute_offset) +
-                        " words=" + std::to_string(words));
+        ti.logger->info(
+            "BAR scan completed\n"
+            "       bar_index           = " + std::to_string(bar_index) +
+            "\n       offset              = " + hex64(offset) +
+            " (" + std::to_string(offset) + ")" +
+            "\n       absolute_bar_offset = " + hex64(absolute_offset) +
+            " (" + std::to_string(absolute_offset) + ")" +
+            "\n       word_count          = " + std::to_string(words));
         for (size_t i = 0; i < values.size(); ++i) {
-            ti.logger->debug("BAR scan word[" + std::to_string(i) + "]=" +
-                             hex32(values[i]));
+            ti.logger->debug(
+                "BAR scan word[" + std::to_string(i) + "]" +
+                " address=" + hex64(absolute_offset + i * sizeof(uint32_t)) +
+                " value=" + hex32(values[i]));
         }
     }
     return TestStatus::OK;

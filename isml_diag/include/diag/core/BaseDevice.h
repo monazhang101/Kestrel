@@ -86,13 +86,11 @@ public:
         ti.hal = hal;
         ti.logger->set_log_path(ti.log_path);
 
-        ti.logger->info("atomic test begin target=" + name_ + " test=" + test_name);
-
         auto it = registered_tests_.find(test_name);
         if (it == registered_tests_.end()) {
             ti.end_time = "end_time_pseudocode";
-            ti.logger->error("atomic test is not registered");
-            ti.logger->info("atomic test end status=UNIMPLEMENTED");
+            ti.logger->error("atomic test is not registered: target=" + name_ +
+                             " test=" + test_name);
             return TestStatus::UNIMPLEMENTED;
         }
 
@@ -110,7 +108,6 @@ public:
             status = TestStatus::ERROR;
         }
         ti.end_time = "end_time_pseudocode";
-        ti.logger->info("atomic test end status=" + std::string(test_status_name(status)));
         return status;
     }
 

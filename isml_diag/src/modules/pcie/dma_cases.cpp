@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -103,11 +104,20 @@ TestStatus PCIeModule::pcie_dma_data_transfer(TestInfo& ti)
     request.timeout_ms = timeout_ms;
 
     if (ti.logger != nullptr) {
-        ti.logger->info("PCIe DMA begin direction=" + direction +
-                        " size=" + std::to_string(size_bytes) +
-                        " pattern=" + pattern +
-                        " dmem_base=" + std::to_string(DMEM_WINDOW.target_addr) +
-                        " dmem_offset=" + std::to_string(device_offset));
+        std::ostringstream message;
+        message << "PCIe DMA request"
+                << "\n       direction        = " << direction
+                << "\n       size_bytes       = " << size_bytes
+                << "\n       pattern          = " << pattern
+                << "\n       host_dma_addr    = 0x" << std::hex
+                << host_buffer.device_addr()
+                << "\n       address_kind     = " << host_buffer.addr_kind()
+                << "\n       dmem_window_base = 0x" << DMEM_WINDOW.target_addr
+                << "\n       dmem_offset      = 0x" << device_offset
+                << "\n       dmem_target_addr = 0x"
+                << (DMEM_WINDOW.target_addr + device_offset)
+                << "\n       timeout_ms       = " << std::dec << timeout_ms;
+        ti.logger->info(message.str());
     }
 
     std::string access_error;
@@ -135,36 +145,38 @@ TestStatus PCIeModule::pcie_dma_data_transfer(TestInfo& ti)
             }
             return TestStatus::ERROR;
         }
-        if (ti.logger != nullptr) {
-            ti.logger->info("H2D DMA data compare passed");
+    } else {
+        if (!common::devmem::write(ti, ctx_, DMEM_WINDOW, device_offset,
+                                   expected.data(), expected.size(), &access_error)) {
+            if (ti.logger != nullptr) {
+                ti.logger->error("D2H source write failed: " + access_error);
+            }
+            return TestStatus::ERROR;
         }
-        return TestStatus::OK;
+        std::memset(host_base + HOST_OFFSET, 0, static_cast<size_t>(size_bytes));
+        const auto dma_status = impl_->dma_copy_d2h(ti, request);
+        if (dma_status != TestStatus::OK) {
+            return dma_status;
+        }
+
+        const bool match = common::pattern::compare(
+            expected.data(),
+            host_base + HOST_OFFSET,
+            static_cast<size_t>(size_bytes));
+        if (!match) {
+            if (ti.logger != nullptr) {
+                ti.logger->error("D2H DMA data mismatch");
+            }
+            return TestStatus::ERROR;
+        }
     }
 
-    if (!common::devmem::write(ti, ctx_, DMEM_WINDOW, device_offset,
-                               expected.data(), expected.size(), &access_error)) {
-        if (ti.logger != nullptr) {
-            ti.logger->error("D2H source write failed: " + access_error);
-        }
-        return TestStatus::ERROR;
-    }
-    std::memset(host_base + HOST_OFFSET, 0, static_cast<size_t>(size_bytes));
-    const auto dma_status = impl_->dma_copy_d2h(ti, request);
-    if (dma_status != TestStatus::OK) {
-        return dma_status;
-    }
-
-    const bool match = common::pattern::compare(expected.data(),
-                                                 host_base + HOST_OFFSET,
-                                                 static_cast<size_t>(size_bytes));
-    if (!match) {
-        if (ti.logger != nullptr) {
-            ti.logger->error("D2H DMA data mismatch");
-        }
-        return TestStatus::ERROR;
-    }
     if (ti.logger != nullptr) {
-        ti.logger->info("D2H DMA data compare passed");
+        ti.logger->info(
+            "DMA data verification\n"
+            "       direction      = " + direction +
+            "\n       size_bytes     = " + std::to_string(size_bytes) +
+            "\n       compare_status = match");
     }
     return TestStatus::OK;
 }

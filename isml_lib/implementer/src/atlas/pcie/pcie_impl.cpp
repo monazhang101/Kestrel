@@ -11,6 +11,10 @@ namespace {
 
 // Atlas HQC DMA ABI alignment for both addresses and transfer length.
 constexpr uint64_t DMA_ALIGNMENT = 32;
+// Relative to PCIe TOP, not BAR0. Atlas TOP is at BAR0 + 0x36000000,
+// so the host-visible HQC SRAM window starts at BAR0 + 0x36d00000.
+constexpr uint64_t ATL_HQC_SRAM_PCIE_OFFSET = 0xd00000;
+
 TestStatus fail(TestInfo& ti, TestStatus status, const std::string& message)
 {
     if (ti.logger != nullptr) {
@@ -93,15 +97,21 @@ private:
         const char* direction = host_to_device ? "h2d" : "d2h";
         if (ti.logger != nullptr) {
             std::ostringstream message;
-            message << "submit HQC DMA " << direction
-                    << " size=" << req.size_bytes
-                    << " host_addr=0x" << std::hex << host_addr
-                    << " dmem_offset=0x" << req.device_offset;
-            ti.logger->info(message.str());
+            message << "HQC DMA command"
+                    << "\n       direction              = " << direction
+                    << "\n       descriptor_source      = 0x" << std::hex
+                    << dma.src_offset
+                    << "\n       descriptor_destination = 0x"
+                    << dma.dst_offset
+                    << "\n       size_bytes             = " << std::dec
+                    << req.size_bytes;
+            ti.logger->debug(message.str());
         }
 
         const auto start = std::chrono::steady_clock::now();
-        HqcAdminQueue queue(ctx_.device_ctx, ti.logger);
+        HqcAdminQueue queue(ctx_.device_ctx,
+                            ctx_.reg_base_offset + ATL_HQC_SRAM_PCIE_OFFSET,
+                            ti.logger);
         int status = queue.push(command, req.timeout_ms);
         if (status != HQC_STATUS_OK) {
             return fail(ti, hqc_status(status),
@@ -127,10 +137,14 @@ private:
         }
 
         if (ti.logger != nullptr) {
-            ti.logger->info(std::string("HQC DMA ") + direction +
-                            " completed size=" + std::to_string(req.size_bytes) +
-                            " duration_us=" + std::to_string(duration) +
-                            " addr_kind=" + req.host_buffer->addr_kind());
+            std::ostringstream message;
+            message << "HQC DMA completed"
+                    << "\n       direction      = " << direction
+                    << "\n       size_bytes     = " << req.size_bytes
+                    << "\n       duration_us    = " << duration
+                    << "\n       address_kind   = "
+                    << req.host_buffer->addr_kind();
+            ti.logger->info(message.str());
         }
         return TestStatus::OK;
     }
