@@ -103,19 +103,12 @@ PYBIND11_MODULE(tpu_hal, m)
                 ctx.mapped_bar_base = reinterpret_cast<void*>(addr);
             });
 
-    py::class_<TestResult>(m, "TestResult")
-        .def(py::init<>())
-        .def_readwrite("test_name", &TestResult::test_name)
-        .def_readwrite("target_name", &TestResult::target_name)
-        .def_readwrite("passed", &TestResult::passed)
-        .def_readwrite("metrics", &TestResult::metrics)
-        .def_readwrite("error_description", &TestResult::error_description)
-        .def_readwrite("error_details", &TestResult::error_details)
-        .def("__repr__", [](const TestResult& result) {
-            return "<TestResult test_name='" + result.test_name +
-                   "' target_name='" + result.target_name +
-                   "' passed=" + (result.passed ? "true" : "false") + ">";
-        });
+    py::enum_<TestStatus>(m, "TestStatus")
+        .value("OK", TestStatus::OK)
+        .value("TIMEOUT", TestStatus::TIMEOUT)
+        .value("ERROR", TestStatus::ERROR)
+        .value("UNIMPLEMENTED", TestStatus::UNIMPLEMENTED)
+        .value("INVALID", TestStatus::INVALID);
 
     py::enum_<LogLevel>(m, "LogLevel")
         .value("ERROR", LogLevel::Error)

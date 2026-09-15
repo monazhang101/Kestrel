@@ -8,6 +8,10 @@
 #include <string>
 #include <vector>
 
+// Public C++ view of the per-allocation host DMA limit. HalContext.cpp checks
+// this against the authoritative Linux UAPI constant at compile time.
+inline constexpr uint64_t HOST_DMA_MAX_SIZE_BYTES = 128ull * 1024ull * 1024ull;
+
 enum class HalType {
     pHal,
     iHal,
@@ -21,17 +25,20 @@ class DmaBuffer {
 private:
     friend class HalContext;
 
-    HalContext* context_ = nullptr;
-    std::vector<uint8_t> storage_;
+    HalContext* alloc_ctx_ = nullptr;
+    void* cpu_base_ = nullptr;
     uint64_t device_addr_ = 0;
     uint64_t size_ = 0;
-    uint64_t backend_handle_ = 0;
+    uint64_t handle_ = 0;
+    int backend_fd_ = -1;
     std::string addr_kind_;
 
-    DmaBuffer(HalContext* context,
-              std::vector<uint8_t> storage,
+    DmaBuffer(HalContext* alloc_ctx,
+              void* cpu_base,
+              uint64_t size,
               uint64_t device_addr,
-              uint64_t backend_handle,
+              uint64_t handle,
+              int backend_fd,
               std::string addr_kind);
 
 public:
@@ -46,12 +53,12 @@ public:
 
     void release();
 
-    bool valid() const { return context_ != nullptr && !storage_.empty(); }
-    void* cpu_base() { return storage_.empty() ? nullptr : storage_.data(); }
-    const void* cpu_base() const { return storage_.empty() ? nullptr : storage_.data(); }
+    bool valid() const { return alloc_ctx_ != nullptr && cpu_base_ != nullptr && size_ != 0; }
+    void* cpu_base() { return cpu_base_; }
+    const void* cpu_base() const { return cpu_base_; }
     uint64_t device_addr() const { return device_addr_; }
     uint64_t size() const { return size_; }
-    uint64_t backend_handle() const { return backend_handle_; }
+    uint64_t handle() const { return handle_; }
     const std::string& addr_kind() const { return addr_kind_; }
 };
 
@@ -76,7 +83,7 @@ public:
     void reset(HalType type);
     std::vector<DeviceContext> scan_pci_devices() const;
     DeviceContext mmap_bar_space(DeviceContext ctx);
-    DmaBuffer alloc_host_buffer(const DeviceContext& ctx, uint64_t size_bytes);
-    void free_host_buffer(DmaBuffer& buffer);
+    DmaBuffer alloc_host_dma_buffer(const DeviceContext& ctx, uint64_t size_bytes);
+    void free_host_dma_buffer(DmaBuffer& buffer);
     void clear();
 };

@@ -14,70 +14,67 @@ public:
     {
     }
 
-    TestResult PmuIpcRequestStart(TestInfo& ti) override
+    TestStatus PmuIpcRequestStart(TestInfo& ti) override
     {
-        auto request_id = common::args::get_string(ti.args, "request_id");
-        return {"pmu_ipc_request_start", ctx_.target_name, true, {
-            {"request_id", request_id},
-            {"ipc_state", "started"},
-            {"impl", "atlas"}
-        }};
+        const auto request_id = common::args::get_string(ti.args, "request_id");
+        if (ti.logger != nullptr) {
+            ti.logger->info("PMU IPC request_id=" + request_id +
+                            " state=started impl=atlas");
+        }
+        return TestStatus::OK;
     }
 
-    TestResult PmuIpcRequestExec(TestInfo& ti) override
+    TestStatus PmuIpcRequestExec(TestInfo& ti) override
     {
-        auto opcode = common::args::get_string(ti.args, "opcode");
-        return {"pmu_ipc_request_exec", ctx_.target_name, true, {
-            {"opcode", opcode},
-            {"completion_state", "accepted"},
-            {"impl", "atlas"}
-        }};
+        const auto opcode = common::args::get_string(ti.args, "opcode");
+        if (ti.logger != nullptr) {
+            ti.logger->info("PMU IPC opcode=" + opcode +
+                            " state=accepted impl=atlas");
+        }
+        return TestStatus::OK;
     }
 
-    TestResult PmuIpcRequestFinish(TestInfo& ti) override
+    TestStatus PmuIpcRequestFinish(TestInfo& ti) override
     {
-        auto timeout_ms = common::args::get_string(ti.args, "timeout_ms");
-        return {"pmu_ipc_request_finish", ctx_.target_name, true, {
-            {"timeout_ms", timeout_ms},
-            {"completion_state", "done"},
-            {"pmu_status", "ok"},
-            {"impl", "atlas"}
-        }};
+        const auto timeout_ms = common::args::get_string(ti.args, "timeout_ms");
+        if (ti.logger != nullptr) {
+            ti.logger->info("PMU IPC timeout_ms=" + timeout_ms +
+                            " state=done pmu_status=ok impl=atlas");
+        }
+        return TestStatus::OK;
     }
 
-    TestResult PmuRegRead(TestInfo& ti) override
+    TestStatus PmuRegRead(TestInfo& ti) override
     {
-        auto offset = common::args::get_string(ti.args, "offset");
-        return {"pmu_reg_read", ctx_.target_name, true, {
-            {"offset", offset},
-            {"value", "0x00000000"},
-            {"impl", "atlas"}
-        }};
+        const auto offset = common::args::get_string(ti.args, "offset");
+        if (ti.logger != nullptr) {
+            ti.logger->info("PMU register read offset=" + offset +
+                            " value=0x00000000 impl=atlas");
+        }
+        return TestStatus::OK;
     }
 
-    TestResult PmuRegWrite(TestInfo& ti) override
+    TestStatus PmuRegWrite(TestInfo& ti) override
     {
-        auto offset = common::args::get_string(ti.args, "offset");
-        auto value = common::args::get_string(ti.args, "value");
-        return {"pmu_reg_write", ctx_.target_name, true, {
-            {"offset", offset},
-            {"value", value},
-            {"write_status", "done"},
-            {"impl", "atlas"}
-        }};
+        const auto offset = common::args::get_string(ti.args, "offset");
+        const auto value = common::args::get_string(ti.args, "value");
+        if (ti.logger != nullptr) {
+            ti.logger->info("PMU register write offset=" + offset +
+                            " value=" + value + " state=done impl=atlas");
+        }
+        return TestStatus::OK;
     }
 
-    TestResult PmuRegCheck(TestInfo& ti) override
+    TestStatus PmuRegCheck(TestInfo& ti) override
     {
-        auto offset = common::args::get_string(ti.args, "offset");
-        auto expected = common::args::get_string(ti.args, "expected");
-        return {"pmu_reg_check", ctx_.target_name, true, {
-            {"offset", offset},
-            {"actual", expected},
-            {"expected", expected},
-            {"check_status", "match"},
-            {"impl", "atlas"}
-        }};
+        const auto offset = common::args::get_string(ti.args, "offset");
+        const auto expected = common::args::get_string(ti.args, "expected");
+        if (ti.logger != nullptr) {
+            ti.logger->info("PMU register check offset=" + offset +
+                            " actual=" + expected + " expected=" + expected +
+                            " state=match impl=atlas");
+        }
+        return TestStatus::OK;
     }
 };
 

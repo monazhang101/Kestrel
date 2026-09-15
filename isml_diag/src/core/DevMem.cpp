@@ -104,12 +104,13 @@ bool prepare_window(TestInfo& ti,
 
     if (ti.logger != nullptr) {
         std::ostringstream stream;
-        stream << "devmem aperture configured"
-               << " bar=" << window.bar_index
-               << " aperture=" << static_cast<uint32_t>(window.aperture_index)
-               << " target=" << hex_u64(window.target_addr)
-               << " size=" << hex_u64(window.size)
-               << " bar_offset=" << hex_u64(window.bar_offset);
+        stream << "Device-memory aperture configured"
+               << "\n       bar_index        = " << window.bar_index
+               << "\n       aperture_index   = "
+               << static_cast<uint32_t>(window.aperture_index)
+               << "\n       target_addr      = " << hex_u64(window.target_addr)
+               << "\n       window_size      = " << hex_u64(window.size)
+               << "\n       data_bar_offset  = " << hex_u64(window.bar_offset);
         ti.logger->debug(stream.str());
     }
     return true;

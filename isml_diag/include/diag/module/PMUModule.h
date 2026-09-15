@@ -16,12 +16,12 @@ private:
     std::unique_ptr<PMUImpl> impl_;
 
     /* ----------- Register atomic tests here ----------- */
-    TestResult PmuIpcRequestStart(TestInfo& ti);
-    TestResult PmuIpcRequestExec(TestInfo& ti);
-    TestResult PmuIpcRequestFinish(TestInfo& ti);
-    TestResult PmuRegRead(TestInfo& ti);
-    TestResult PmuRegWrite(TestInfo& ti);
-    TestResult PmuRegCheck(TestInfo& ti);
+    TestStatus PmuIpcRequestStart(TestInfo& ti);
+    TestStatus PmuIpcRequestExec(TestInfo& ti);
+    TestStatus PmuIpcRequestFinish(TestInfo& ti);
+    TestStatus PmuRegRead(TestInfo& ti);
+    TestStatus PmuRegWrite(TestInfo& ti);
+    TestStatus PmuRegCheck(TestInfo& ti);
 
 public:
     PMUModule(const std::string& name,

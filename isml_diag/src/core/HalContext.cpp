@@ -1,32 +1,35 @@
 #include "diag/core/HalContext.h"
 
 #include <array>
-#include <atomic>
+#include <cerrno>
+#include <cstdio>
+#include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <sstream>
 
-#ifdef __linux__
 #include <fcntl.h>
+#include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include <cerrno>
-#include <cstring>
-#include <filesystem>
-#endif
+#include "isml_diag_uapi.h"
+
+static_assert(HOST_DMA_MAX_SIZE_BYTES == ISML_DIAG_HOST_DMA_MAX_SIZE_BYTES,
+              "HAL and kernel UAPI host DMA limits must match");
 
 namespace {
 
 constexpr std::array<uint32_t, 3> PROBE_BAR_INDICES = {0, 2, 4};
 
-#ifdef __linux__
+// PCI configuration-space Command register and the bits required before the
+// CPU maps BARs or the device initiates DMA. Values come from the PCI spec.
 constexpr off_t PCI_COMMAND_OFFSET = 0x04;
 constexpr uint16_t PCI_COMMAND_MEMORY_SPACE = 0x0002;
 constexpr uint16_t PCI_COMMAND_BUS_MASTER = 0x0004;
 constexpr uint16_t PCI_COMMAND_REQUIRED_BITS =
     PCI_COMMAND_MEMORY_SPACE | PCI_COMMAND_BUS_MASTER;
-#endif
 
 std::string bar_pair_name(uint32_t bar_index)
 {
@@ -100,26 +103,6 @@ uint64_t fake_bar_device_base_for_bdf(const std::string& bdf, uint32_t bar_index
     return device_base == 0 ? 0 : device_base + static_cast<uint64_t>(bar_index) * 0x100000;
 }
 
-uint64_t align_up(uint64_t value, uint64_t alignment)
-{
-    return (value + alignment - 1) / alignment * alignment;
-}
-
-uint64_t reserve_fake_dma_addr(uint64_t size_bytes)
-{
-    // Temporary dry-run address allocator; real backends should return HAL-owned addresses.
-    static std::atomic<uint64_t> next_addr{0x10000000};
-    return next_addr.fetch_add(align_up(size_bytes, 0x1000));
-}
-
-uint64_t next_fake_backend_handle()
-{
-    // Temporary dry-run handle generator; real backends should return backend resource handles.
-    static std::atomic<uint64_t> next_handle{1};
-    return next_handle.fetch_add(1);
-}
-
-#ifdef __linux__
 std::string setpci_enable_command(const std::string& bdf)
 {
     return "sudo setpci -s " + bdf + " COMMAND=0006:0006";
@@ -233,7 +216,49 @@ bool read_resource_info(const std::string& bdf,
     size = end - start + 1;
     return size != 0;
 }
-#endif
+
+// Open the isml_diag character device bound to bdf. This function only finds
+// and opens the matching device node; DMA allocation and mmap are performed by
+// HalContext::alloc_host_dma_buffer() after it returns the file descriptor.
+int open_device(const std::string& bdf)
+{
+    unsigned int domain = 0;
+    unsigned int bus = 0;
+    unsigned int device = 0;
+    unsigned int function = 0;
+    if (std::sscanf(bdf.c_str(), "%x:%x:%x.%x",
+                    &domain, &bus, &device, &function) != 4) {
+        return -1;
+    }
+
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::directory_iterator("/dev", ec)) {
+        if (ec) {
+            break;
+        }
+        const auto name = entry.path().filename().string();
+        if (name.rfind("isml_diag", 0) != 0) {
+            continue;
+        }
+
+        int fd = open(entry.path().c_str(), O_RDWR | O_CLOEXEC);
+        if (fd < 0) {
+            continue;
+        }
+
+        isml_diag_device_info info = {};
+        if (ioctl(fd, ISML_DIAG_IOCTL_GET_DEVICE_INFO, &info) == 0 &&
+            info.abi_version == ISML_DIAG_ABI_VERSION &&
+            info.domain == domain &&
+            info.bus == bus &&
+            (info.devfn >> 3) == device &&
+            (info.devfn & 0x7) == function) {
+            return fd;
+        }
+        close(fd);
+    }
+    return -1;
+}
 
 }
 
@@ -248,16 +273,19 @@ std::string to_string(HalType type)
     return "unknown";
 }
 
-DmaBuffer::DmaBuffer(HalContext* context,
-                     std::vector<uint8_t> storage,
+DmaBuffer::DmaBuffer(HalContext* alloc_ctx,
+                     void* cpu_base,
+                     uint64_t size,
                      uint64_t device_addr,
-                     uint64_t backend_handle,
+                     uint64_t handle,
+                     int backend_fd,
                      std::string addr_kind)
-    : context_(context),
-      storage_(std::move(storage)),
+    : alloc_ctx_(alloc_ctx),
+      cpu_base_(cpu_base),
       device_addr_(device_addr),
-      size_(static_cast<uint64_t>(storage_.size())),
-      backend_handle_(backend_handle),
+      size_(size),
+      handle_(handle),
+      backend_fd_(backend_fd),
       addr_kind_(std::move(addr_kind))
 {
 }
@@ -268,17 +296,20 @@ DmaBuffer::~DmaBuffer()
 }
 
 DmaBuffer::DmaBuffer(DmaBuffer&& other) noexcept
-    : context_(other.context_),
-      storage_(std::move(other.storage_)),
+    : alloc_ctx_(other.alloc_ctx_),
+      cpu_base_(other.cpu_base_),
       device_addr_(other.device_addr_),
       size_(other.size_),
-      backend_handle_(other.backend_handle_),
+      handle_(other.handle_),
+      backend_fd_(other.backend_fd_),
       addr_kind_(std::move(other.addr_kind_))
 {
-    other.context_ = nullptr;
+    other.alloc_ctx_ = nullptr;
+    other.cpu_base_ = nullptr;
     other.device_addr_ = 0;
     other.size_ = 0;
-    other.backend_handle_ = 0;
+    other.handle_ = 0;
+    other.backend_fd_ = -1;
 }
 
 DmaBuffer& DmaBuffer::operator=(DmaBuffer&& other) noexcept
@@ -289,27 +320,30 @@ DmaBuffer& DmaBuffer::operator=(DmaBuffer&& other) noexcept
 
     release();
 
-    context_ = other.context_;
-    storage_ = std::move(other.storage_);
+    alloc_ctx_ = other.alloc_ctx_;
+    cpu_base_ = other.cpu_base_;
     device_addr_ = other.device_addr_;
     size_ = other.size_;
-    backend_handle_ = other.backend_handle_;
+    handle_ = other.handle_;
+    backend_fd_ = other.backend_fd_;
     addr_kind_ = std::move(other.addr_kind_);
 
-    other.context_ = nullptr;
+    other.alloc_ctx_ = nullptr;
+    other.cpu_base_ = nullptr;
     other.device_addr_ = 0;
     other.size_ = 0;
-    other.backend_handle_ = 0;
+    other.handle_ = 0;
+    other.backend_fd_ = -1;
 
     return *this;
 }
 
 void DmaBuffer::release()
 {
-    if (context_ == nullptr) {
+    if (alloc_ctx_ == nullptr) {
         return;
     }
-    context_->free_host_buffer(*this);
+    alloc_ctx_->free_host_dma_buffer(*this);
 }
 
 HalContext::HalContext(HalType type)
@@ -327,7 +361,6 @@ void HalContext::reset(HalType type)
 std::vector<DeviceContext> HalContext::scan_pci_devices() const
 {
     if (type_ == HalType::iHal) {
-#ifdef __linux__
         std::vector<DeviceContext> devices;
         const std::filesystem::path sysfs_devices("/sys/bus/pci/devices");
 
@@ -351,9 +384,6 @@ std::vector<DeviceContext> HalContext::scan_pci_devices() const
             devices.push_back(ctx);
         }
         return devices;
-#else
-        return {};
-#endif
     }
 
     // Pseudocode:
@@ -385,7 +415,6 @@ DeviceContext HalContext::mmap_bar_space(DeviceContext ctx)
     ctx.bar_size = 0;
 
     if (type_ == HalType::iHal) {
-#ifdef __linux__
         std::string command_error;
         if (!ensure_pci_mmio_enabled(ctx.bdf, command_error)) {
             for (auto bar_index : PROBE_BAR_INDICES) {
@@ -458,14 +487,6 @@ DeviceContext HalContext::mmap_bar_space(DeviceContext ctx)
             ctx.bar_mappings.push_back(std::move(bar));
         }
         return ctx;
-#else
-        for (auto bar_index : PROBE_BAR_INDICES) {
-            auto bar = make_bar_mapping(bar_index);
-            bar.error = "BAR mmap is only available on Linux for iHal";
-            ctx.bar_mappings.push_back(std::move(bar));
-        }
-        return ctx;
-#endif
     }
 
     // Pseudocode:
@@ -497,40 +518,77 @@ DeviceContext HalContext::mmap_bar_space(DeviceContext ctx)
     return ctx;
 }
 
-DmaBuffer HalContext::alloc_host_buffer(const DeviceContext& ctx,
-                                        uint64_t size_bytes)
+DmaBuffer HalContext::alloc_host_dma_buffer(const DeviceContext& ctx,
+                                            uint64_t size_bytes)
 {
-    (void)ctx;
-
     if (size_bytes == 0 ||
+        size_bytes > HOST_DMA_MAX_SIZE_BYTES ||
         size_bytes > static_cast<uint64_t>(std::numeric_limits<size_t>::max())) {
         return {};
     }
 
-    // Pseudocode:
-    // iHal will allocate through its kernel module and mmap the CPU view.
-    // pHal will call its own abstract DMA-buffer allocation API.
-    std::vector<uint8_t> storage(static_cast<size_t>(size_bytes), 0);
-    return DmaBuffer(this,
-                     std::move(storage),
-                     reserve_fake_dma_addr(size_bytes),
-                     next_fake_backend_handle(),
-                     type_ == HalType::iHal ? "iova" : "phal_handle");
+    if (type_ == HalType::iHal) {
+        int fd = open_device(ctx.bdf);
+        if (fd < 0) {
+            return {};
+        }
+
+        isml_diag_dma_alloc request = {};
+        request.size = size_bytes;
+        if (ioctl(fd, ISML_DIAG_IOCTL_DMA_ALLOC, &request) != 0) {
+            close(fd);
+            return {};
+        }
+
+        void* cpu_base = mmap(nullptr,
+                              static_cast<size_t>(request.size),
+                              PROT_READ | PROT_WRITE,
+                              MAP_SHARED,
+                              fd,
+                              static_cast<off_t>(request.mmap_offset));
+        if (cpu_base == MAP_FAILED) {
+            isml_diag_dma_free release = {request.handle};
+            ioctl(fd, ISML_DIAG_IOCTL_DMA_FREE, &release);
+            close(fd);
+            return {};
+        }
+
+        return DmaBuffer(this,
+                         cpu_base,
+                         request.size,
+                         request.device_addr,
+                         request.handle,
+                         fd,
+                         "dma_addr");
+    }
+
+    // pHal host-DMA allocation must come from the ProtonHal VFIO driver so its
+    // device address is valid in that driver's IOMMU domain. That integration
+    // is intentionally unimplemented; do not fabricate a DMA-capable address.
+    return {};
 }
 
-void HalContext::free_host_buffer(DmaBuffer& buffer)
+void HalContext::free_host_dma_buffer(DmaBuffer& buffer)
 {
-    buffer.storage_.clear();
-    buffer.context_ = nullptr;
+    if (buffer.backend_fd_ >= 0) {
+        if (buffer.cpu_base_ != nullptr && buffer.size_ != 0) {
+            munmap(buffer.cpu_base_, static_cast<size_t>(buffer.size_));
+        }
+        isml_diag_dma_free request = {buffer.handle_};
+        ioctl(buffer.backend_fd_, ISML_DIAG_IOCTL_DMA_FREE, &request);
+        close(buffer.backend_fd_);
+    }
+    buffer.alloc_ctx_ = nullptr;
+    buffer.cpu_base_ = nullptr;
     buffer.device_addr_ = 0;
     buffer.size_ = 0;
-    buffer.backend_handle_ = 0;
+    buffer.handle_ = 0;
+    buffer.backend_fd_ = -1;
     buffer.addr_kind_.clear();
 }
 
 void HalContext::clear_mappings()
 {
-#ifdef __linux__
     if (type_ == HalType::iHal) {
         for (const auto& mapping : mapped_bar_mappings_) {
             if (mapping.first != nullptr && mapping.second != 0) {
@@ -539,7 +597,6 @@ void HalContext::clear_mappings()
         }
         mapped_bar_mappings_.clear();
     }
-#endif
     mapped_bar_storage_.clear();
     phal_bridge_.reset();
 }

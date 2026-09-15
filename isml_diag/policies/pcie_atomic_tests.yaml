@@ -1,10 +1,6 @@
 module: pcie
 
 tests:
-  pcie_link_status_get:
-    summary: Get current PCIe negotiated speed and link width.
-    args: {}
-
   pcie_dma_data_transfer:
     summary: Run PCIe DMA data movement and compare payload.
     args:
@@ -15,12 +11,21 @@ tests:
       size_bytes:
         type: u64
         default: 4096
-        range: 1-4294967296
+        # 128 MiB: mirrors ISML_DIAG_HOST_DMA_MAX_SIZE_BYTES in the kernel UAPI.
+        range: 32-134217728
         unit: bytes
       pattern:
         type: string
         default: incremental
         range: zero, incremental, random
+      device_offset:
+        type: u64
+        default: 0x10200
+        unit: bytes
+      timeout_ms:
+        type: u64
+        default: 1000
+        unit: ms
 
   sequential_aperture_mapping:
     summary: Configure BAR23/BAR45 apertures sequentially and verify each mapped window.

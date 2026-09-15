@@ -58,6 +58,8 @@ std::vector<ApertureCase> make_aperture_cases()
                 static_cast<uint64_t>(aperture - 1) * APERTURE_SIZE,
             DMEM_BASE + global_index * APERTURE_SIZE,
             static_cast<uint8_t>(0x20 | aperture),
+            {},
+            {},
         });
     }
 
@@ -69,6 +71,8 @@ std::vector<ApertureCase> make_aperture_cases()
             static_cast<uint64_t>(aperture) * APERTURE_SIZE,
             DMEM_BASE + global_index * APERTURE_SIZE,
             static_cast<uint8_t>(0x40 | aperture),
+            {},
+            {},
         });
     }
 
@@ -87,19 +91,16 @@ public:
           pcie_base_(pcie_base),
           cases_(make_aperture_cases())
     {
-        metrics_["aperture_count"] = std::to_string(cases_.size());
-        metrics_["aperture_size"] = hex_u64(APERTURE_SIZE);
-        metrics_["verify_bytes_per_edge"] = std::to_string(VERIFY_BYTES);
     }
 
-    TestResult run();
+    TestStatus run();
 
 private:
     bool configure_all();
     bool save_originals_all();
-    void write_patterns_all();
-    void readback_compare_all();
-    void restore_all();
+    bool write_patterns_all();
+    bool readback_compare_all();
+    bool restore_all();
 
     bool configure_aperture(const ApertureCase& aperture_case,
                             std::string& error);
@@ -117,28 +118,9 @@ private:
                       const std::vector<uint8_t>& actual,
                       std::string& failure_details) const;
 
-    TestResult make_result(bool passed,
-                           const std::string& description = {},
-                           const std::string& details = {}) const;
-    void record_failure(const std::string& description,
-                        const std::string& details);
-    void log_context() const;
-    void log_phase(const char* phase, const char* state) const;
-    void log_aperture(const char* phase,
-                      const ApertureCase& aperture_case,
-                      const std::string& details = {}) const;
-    void log_edge(const char* phase,
-                  const ApertureCase& aperture_case,
-                  const Edge& edge,
-                  const std::vector<uint8_t>& data,
-                  bool ok) const;
-
     static std::string aperture_name(const ApertureCase& aperture_case);
     static std::string data_sample(const std::vector<uint8_t>& data);
     static std::string hex_u64(uint64_t value);
-    static std::string pattern_name(uint8_t pattern_byte);
-    static std::string phal_status_string(const char* api,
-                                          phal_status_t status);
 
     TestInfo& ti_;
     const DeviceContext& ctx_;
@@ -146,15 +128,15 @@ private:
     uint64_t pcie_base_ = 0;
     phal_ctx_t* phal_ = nullptr;
     std::vector<ApertureCase> cases_;
-    TestMetrics metrics_;
-    std::string failure_description_;
-    std::string failure_details_;
 };
 
-TestResult SequentialApertureMappingRun::run()
+TestStatus SequentialApertureMappingRun::run()
 {
     if (ti_.hal == nullptr) {
-        return make_result(false, "HAL context is not available");
+        if (ti_.logger != nullptr) {
+            ti_.logger->error("HAL context is not available");
+        }
+        return TestStatus::ERROR;
     }
 
     std::string phal_error;
@@ -165,22 +147,25 @@ TestResult SequentialApertureMappingRun::run()
         phal_project_from_tpu_type(ctx_.tpu_type),
         &phal_error));
     if (phal_ == nullptr) {
-        return make_result(false, "PHAL context init failed", phal_error);
+        if (ti_.logger != nullptr) {
+            ti_.logger->error("PHAL context init failed: " + phal_error);
+        }
+        return TestStatus::ERROR;
     }
 
-    log_context();
     if (!configure_all()) {
-        return make_result(false);
+        return TestStatus::ERROR;
     }
     if (!save_originals_all()) {
-        metrics_["restore_status"] = "not_needed";
-        return make_result(false);
+        return TestStatus::ERROR;
     }
 
-    write_patterns_all();
-    readback_compare_all();
-    restore_all();
-    return make_result(failure_description_.empty());
+    const bool write_ok = write_patterns_all();
+    const bool compare_ok = write_ok && readback_compare_all();
+    const bool restore_ok = restore_all();
+    return write_ok && compare_ok && restore_ok
+               ? TestStatus::OK
+               : TestStatus::ERROR;
 }
 
 // Add future MultiApertureAccessRun and ApertureStressRun classes beside this
@@ -190,7 +175,7 @@ TestResult SequentialApertureMappingRun::run()
 
 // Configure every aperture, save all original edges, write all patterns,
 // read and compare all patterns, then restore every modified edge.
-TestResult PCIeModule::sequential_aperture_mapping(TestInfo& ti)
+TestStatus PCIeModule::sequential_aperture_mapping(TestInfo& ti)
 {
     return SequentialApertureMappingRun{
         ti,
@@ -204,153 +189,139 @@ namespace {
 
 bool SequentialApertureMappingRun::configure_all()
 {
-    log_phase("configure_all", "begin");
-    size_t configured = 0;
-
     for (const auto& aperture_case : cases_) {
         std::string error;
         if (!configure_aperture(aperture_case, error)) {
-            metrics_["configured"] = std::to_string(configured);
-            record_failure("aperture configure failed", error);
-            log_phase("configure_all", "failed");
+            if (ti_.logger != nullptr) {
+                ti_.logger->error("aperture configure failed: " + error);
+            }
             return false;
         }
-        ++configured;
     }
 
-    metrics_["configured"] = std::to_string(configured);
-    log_phase("configure_all", "complete");
+    if (ti_.logger != nullptr) {
+        ti_.logger->info("configured apertures=" +
+                         std::to_string(cases_.size()));
+    }
     return true;
 }
 
 bool SequentialApertureMappingRun::save_originals_all()
 {
-    log_phase("save_originals_all", "begin");
-    size_t originals_saved = 0;
-
     for (auto& aperture_case : cases_) {
-        bool aperture_saved = true;
         for (size_t edge_index = 0; edge_index < EDGES.size(); ++edge_index) {
             const auto& edge = EDGES[edge_index];
             auto& original = aperture_case.originals[edge_index];
-            const auto ok = read_edge(aperture_case, edge, original);
-            log_edge("read_original", aperture_case, edge, original, ok);
-            aperture_saved = ok && aperture_saved;
-        }
-
-        if (aperture_saved) {
-            ++originals_saved;
-        } else {
-            record_failure("aperture original read failed",
-                           aperture_name(aperture_case));
+            if (!read_edge(aperture_case, edge, original)) {
+                if (ti_.logger != nullptr) {
+                    ti_.logger->error(
+                        "aperture original read failed: " +
+                        aperture_name(aperture_case) +
+                        " edge=" + edge.name +
+                        " bar_offset=" +
+                        hex_u64(aperture_case.bar_offset + edge.offset));
+                }
+                return false;
+            }
         }
     }
 
-    metrics_["originals_saved"] = std::to_string(originals_saved);
-    const auto all_saved = originals_saved == cases_.size();
-    log_phase("save_originals_all", all_saved ? "complete" : "failed");
-    return all_saved;
+    if (ti_.logger != nullptr) {
+        ti_.logger->info("saved aperture originals=" +
+                         std::to_string(cases_.size()));
+    }
+    return true;
 }
 
-void SequentialApertureMappingRun::write_patterns_all()
+bool SequentialApertureMappingRun::write_patterns_all()
 {
-    log_phase("write_patterns_all", "begin");
-    size_t written = 0;
-
     for (auto& aperture_case : cases_) {
         const std::vector<uint8_t> expected(VERIFY_BYTES,
                                             aperture_case.pattern_byte);
-        bool aperture_written = true;
 
         for (size_t edge_index = 0; edge_index < EDGES.size(); ++edge_index) {
             const auto& edge = EDGES[edge_index];
             const auto ok = write_edge(aperture_case, edge, expected);
             aperture_case.written[edge_index] = ok;
-            log_edge("write_pattern", aperture_case, edge, expected, ok);
-            aperture_written = ok && aperture_written;
-        }
-
-        if (aperture_written) {
-            ++written;
-        } else {
-            record_failure("aperture pattern write failed",
-                           aperture_name(aperture_case));
+            if (!ok) {
+                if (ti_.logger != nullptr) {
+                    ti_.logger->error(
+                        "aperture pattern write failed: " +
+                        aperture_name(aperture_case) +
+                        " edge=" + edge.name +
+                        " bar_offset=" +
+                        hex_u64(aperture_case.bar_offset + edge.offset));
+                }
+                return false;
+            }
         }
     }
 
-    metrics_["written"] = std::to_string(written);
-    log_phase("write_patterns_all",
-              written == cases_.size() ? "complete" : "failed");
+    if (ti_.logger != nullptr) {
+        ti_.logger->info("wrote aperture patterns=" +
+                         std::to_string(cases_.size()));
+    }
+    return true;
 }
 
-void SequentialApertureMappingRun::readback_compare_all()
+bool SequentialApertureMappingRun::readback_compare_all()
 {
-    log_phase("readback_compare_all", "begin");
-    size_t verified = 0;
-    size_t aperture_verify_failures = 0;
-    size_t read_failures = 0;
-    size_t compare_failures = 0;
-
     for (const auto& aperture_case : cases_) {
         std::string aperture_error;
         if (!verify_aperture(aperture_case, aperture_error)) {
-            ++aperture_verify_failures;
-            record_failure("aperture configuration changed before readback",
-                           aperture_error);
-            continue;
+            if (ti_.logger != nullptr) {
+                ti_.logger->error(
+                    "aperture configuration changed before readback: " +
+                    aperture_error);
+            }
+            return false;
         }
 
         std::array<std::vector<uint8_t>, EDGES.size()> actual;
-        bool read_ok = true;
         for (size_t edge_index = 0; edge_index < EDGES.size(); ++edge_index) {
             const auto& edge = EDGES[edge_index];
-            const auto ok = read_edge(aperture_case, edge, actual[edge_index]);
-            log_edge("readback", aperture_case, edge, actual[edge_index], ok);
-            read_ok = ok && read_ok;
-        }
-
-        if (!read_ok) {
-            ++read_failures;
-            record_failure("aperture pattern read failed",
-                           aperture_name(aperture_case));
-            continue;
+            if (!read_edge(aperture_case, edge, actual[edge_index])) {
+                if (ti_.logger != nullptr) {
+                    ti_.logger->error(
+                        "aperture pattern read failed: " +
+                        aperture_name(aperture_case) +
+                        " edge=" + edge.name +
+                        " bar_offset=" +
+                        hex_u64(aperture_case.bar_offset + edge.offset));
+                }
+                return false;
+            }
         }
 
         const std::vector<uint8_t> expected(VERIFY_BYTES,
                                             aperture_case.pattern_byte);
-        bool aperture_matches = true;
         for (size_t edge_index = 0; edge_index < EDGES.size(); ++edge_index) {
             std::string mismatch;
-            const auto matches = compare_edge(aperture_case,
-                                              EDGES[edge_index],
-                                              expected,
-                                              actual[edge_index],
-                                              mismatch);
-            if (!matches) {
-                ++compare_failures;
-                record_failure("aperture pattern compare failed", mismatch);
+            if (!compare_edge(aperture_case,
+                              EDGES[edge_index],
+                              expected,
+                              actual[edge_index],
+                              mismatch)) {
+                if (ti_.logger != nullptr) {
+                    ti_.logger->error(
+                        "aperture pattern compare failed: " + mismatch);
+                }
+                return false;
             }
-            aperture_matches = matches && aperture_matches;
-        }
-
-        if (aperture_matches) {
-            ++verified;
         }
     }
 
-    metrics_["verified"] = std::to_string(verified);
-    metrics_["aperture_verify_failures"] =
-        std::to_string(aperture_verify_failures);
-    metrics_["read_failures"] = std::to_string(read_failures);
-    metrics_["compare_failures"] = std::to_string(compare_failures);
-    log_phase("readback_compare_all",
-              verified == cases_.size() ? "complete" : "failed");
+    if (ti_.logger != nullptr) {
+        ti_.logger->info("verified aperture patterns=" +
+                         std::to_string(cases_.size()));
+    }
+    return true;
 }
 
-void SequentialApertureMappingRun::restore_all()
+bool SequentialApertureMappingRun::restore_all()
 {
-    log_phase("restore_all", "begin");
     bool restore_ok = true;
+    size_t restored_edges = 0;
 
     for (const auto& aperture_case : cases_) {
         for (size_t edge_index = 0; edge_index < EDGES.size(); ++edge_index) {
@@ -361,18 +332,27 @@ void SequentialApertureMappingRun::restore_all()
             const auto& edge = EDGES[edge_index];
             const auto& original = aperture_case.originals[edge_index];
             const auto restored = write_edge(aperture_case, edge, original);
-            log_edge("restore", aperture_case, edge, original, restored);
             restore_ok = restored && restore_ok;
             if (!restored) {
-                record_failure("aperture restore failed",
-                               aperture_name(aperture_case) +
-                                   " edge=" + edge.name);
+                if (ti_.logger != nullptr) {
+                    ti_.logger->error(
+                        "aperture restore failed: " +
+                        aperture_name(aperture_case) +
+                        " edge=" + edge.name +
+                        " bar_offset=" +
+                        hex_u64(aperture_case.bar_offset + edge.offset));
+                }
+            } else {
+                ++restored_edges;
             }
         }
     }
 
-    metrics_["restore_status"] = restore_ok ? "ok" : "failed";
-    log_phase("restore_all", restore_ok ? "complete" : "failed");
+    if (ti_.logger != nullptr) {
+        ti_.logger->info("restored aperture edges=" +
+                         std::to_string(restored_edges));
+    }
+    return restore_ok;
 }
 
 bool SequentialApertureMappingRun::configure_aperture(
@@ -384,21 +364,14 @@ bool SequentialApertureMappingRun::configure_aperture(
     aperture.target_addr = aperture_case.target_addr;
     aperture.size = APERTURE_SIZE;
 
-    log_aperture("aperture_set",
-                 aperture_case,
-                 "identity=" + std::to_string(IDENTITY) +
-                     " size=" + hex_u64(APERTURE_SIZE));
-
     const auto status = phal_pcie_aperture_set(phal_,
                                                aperture_case.bar_index,
                                                aperture_case.aperture_index,
                                                &aperture);
-    log_aperture("aperture_set_result",
-                 aperture_case,
-                 "status=" + std::to_string(static_cast<int>(status)));
     if (status != PHAL_STATUS_OK) {
-        error = aperture_name(aperture_case) + ": " +
-                phal_status_string("phal_pcie_aperture_set", status);
+        error = aperture_name(aperture_case) +
+                " phal_pcie_aperture_set status=" +
+                std::to_string(static_cast<int>(status));
         return false;
     }
 
@@ -415,16 +388,10 @@ bool SequentialApertureMappingRun::verify_aperture(
                                                aperture_case.aperture_index,
                                                &actual);
 
-    std::ostringstream details;
-    details << "status=" << static_cast<int>(status)
-            << " actual_identity=" << static_cast<uint32_t>(actual.identity)
-            << " actual_target=" << hex_u64(actual.target_addr)
-            << " actual_size=" << hex_u64(actual.size);
-    log_aperture("aperture_get", aperture_case, details.str());
-
     if (status != PHAL_STATUS_OK) {
-        error = aperture_name(aperture_case) + ": " +
-                phal_status_string("phal_pcie_aperture_get", status);
+        error = aperture_name(aperture_case) +
+                " phal_pcie_aperture_get status=" +
+                std::to_string(static_cast<int>(status));
         return false;
     }
     if (actual.identity == IDENTITY &&
@@ -482,7 +449,6 @@ bool SequentialApertureMappingRun::compare_edge(
                                         expected.end(),
                                         actual.begin());
     if (mismatch.first == expected.end()) {
-        log_edge("compared", aperture_case, edge, actual, true);
         return true;
     }
 
@@ -501,101 +467,7 @@ bool SequentialApertureMappingRun::compare_edge(
             << " expected_sample=" << data_sample(expected)
             << " actual_sample=" << data_sample(actual);
     failure_details = details.str();
-    log_aperture("compare_failed", aperture_case, failure_details);
     return false;
-}
-
-TestResult SequentialApertureMappingRun::make_result(
-    bool passed,
-    const std::string& description,
-    const std::string& details) const
-{
-    return {
-        ti_.test_name,
-        ti_.target_name,
-        passed,
-        metrics_,
-        description.empty() ? failure_description_ : description,
-        details.empty() ? failure_details_ : details,
-    };
-}
-
-void SequentialApertureMappingRun::record_failure(
-    const std::string& description,
-    const std::string& details)
-{
-    if (failure_description_.empty()) {
-        failure_description_ = description;
-    }
-    if (!failure_details_.empty()) {
-        failure_details_ += "; ";
-    }
-    failure_details_ += details;
-}
-
-void SequentialApertureMappingRun::log_context() const
-{
-    if (ti_.logger == nullptr) {
-        return;
-    }
-
-    std::ostringstream stream;
-    stream << "sequential_aperture_mapping context"
-           << " control_bar=" << control_bar_index_
-           << " pcie_base=" << hex_u64(pcie_base_)
-           << " phal_base=" << hex_u64(pcie_base_)
-           << " aperture_count=" << cases_.size();
-    ti_.logger->debug(stream.str());
-}
-
-void SequentialApertureMappingRun::log_phase(const char* phase,
-                                              const char* state) const
-{
-    if (ti_.logger != nullptr) {
-        ti_.logger->info(std::string("sequential_aperture_mapping phase=") +
-                         phase + " state=" + state);
-    }
-}
-
-void SequentialApertureMappingRun::log_aperture(
-    const char* phase,
-    const ApertureCase& aperture_case,
-    const std::string& details) const
-{
-    if (ti_.logger == nullptr) {
-        return;
-    }
-
-    std::ostringstream stream;
-    stream << "sequential_aperture_mapping " << phase
-           << " aperture bar_id=" << aperture_case.bar_index
-           << " apt_id="
-           << static_cast<uint32_t>(aperture_case.aperture_index)
-           << " target_addr=" << hex_u64(aperture_case.target_addr)
-           << " bar_offset=" << hex_u64(aperture_case.bar_offset)
-           << " pattern=" << pattern_name(aperture_case.pattern_byte);
-    if (!details.empty()) {
-        stream << " " << details;
-    }
-    ti_.logger->debug(stream.str());
-}
-
-void SequentialApertureMappingRun::log_edge(
-    const char* phase,
-    const ApertureCase& aperture_case,
-    const Edge& edge,
-    const std::vector<uint8_t>& data,
-    bool ok) const
-{
-    std::ostringstream details;
-    details << "edge=" << edge.name
-            << " edge_offset=" << hex_u64(edge.offset)
-            << " absolute_bar_offset="
-            << hex_u64(aperture_case.bar_offset + edge.offset)
-            << " len=" << data.size()
-            << " sample=" << data_sample(data)
-            << " status=" << (ok ? "ok" : "failed");
-    log_aperture(phase, aperture_case, details.str());
 }
 
 std::string SequentialApertureMappingRun::aperture_name(
@@ -629,21 +501,5 @@ std::string SequentialApertureMappingRun::hex_u64(uint64_t value)
     return stream.str();
 }
 
-std::string SequentialApertureMappingRun::pattern_name(uint8_t pattern_byte)
-{
-    std::ostringstream stream;
-    stream << "byte=0x" << std::hex << std::setw(2) << std::setfill('0')
-           << static_cast<uint32_t>(pattern_byte);
-    return stream.str();
-}
-
-std::string SequentialApertureMappingRun::phal_status_string(
-    const char* api,
-    phal_status_t status)
-{
-    std::ostringstream stream;
-    stream << api << " status=" << static_cast<int>(status);
-    return stream.str();
-}
 
 }

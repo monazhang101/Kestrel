@@ -27,7 +27,7 @@ private:
     std::vector<std::unique_ptr<ISIModule>> isi_modules_;
     std::vector<std::unique_ptr<DDPModule>> ddp_modules_;
 
-    TestResult Identify(TestInfo& ti);
+    TestStatus Identify(TestInfo& ti);
 
 public:
     TPUDevice(const std::string& logical_name,

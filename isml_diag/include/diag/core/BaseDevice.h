@@ -7,6 +7,7 @@
 #include <exception>
 #include <functional>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -41,7 +42,7 @@ struct DeviceContext {
     uint64_t pcie_control_base = 0;
 };
 
-using AtomicTestFunc = std::function<TestResult(TestInfo& ti)>;
+using AtomicTestFunc = std::function<TestStatus(TestInfo& ti)>;
 
 class BaseDevice {
 private:
@@ -65,7 +66,7 @@ public:
 
     virtual ~BaseDevice() = default;
 
-    virtual TestResult run_atomic_test(const std::string& test_name,
+    virtual TestStatus run_atomic_test(const std::string& test_name,
                                        const TestArgs& args = {},
                                        Logger* logger = nullptr,
                                        HalContext* hal = nullptr)
@@ -88,31 +89,26 @@ public:
         auto it = registered_tests_.find(test_name);
         if (it == registered_tests_.end()) {
             ti.end_time = "end_time_pseudocode";
-            return {
-                test_name,
-                name_,
-                false,
-                {},
-                "atomic test not found",
-                "target=" + name_ + ", test=" + test_name
-            };
+            ti.logger->error("atomic test is not registered: target=" + name_ +
+                             " test=" + test_name);
+            return TestStatus::UNIMPLEMENTED;
         }
 
-        TestResult result;
+        TestStatus status = TestStatus::ERROR;
         try {
-            result = it->second(ti);
+            status = it->second(ti);
+        } catch (const std::invalid_argument& e) {
+            ti.logger->error(std::string("invalid test argument: ") + e.what());
+            status = TestStatus::INVALID;
+        } catch (const std::out_of_range& e) {
+            ti.logger->error(std::string("test argument is out of range: ") + e.what());
+            status = TestStatus::INVALID;
         } catch (const std::exception& e) {
-            result = {
-                test_name,
-                name_,
-                false,
-                {},
-                "atomic test failed before execution completed",
-                e.what()
-            };
+            ti.logger->error(std::string("atomic test exception: ") + e.what());
+            status = TestStatus::ERROR;
         }
         ti.end_time = "end_time_pseudocode";
-        return result;
+        return status;
     }
 
     const std::string& get_name() const { return name_; }

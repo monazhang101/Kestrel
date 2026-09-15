@@ -22,7 +22,7 @@ private:
     std::vector<std::unique_ptr<DMCModule>> dmc_modules_;
 
     /* ----------- Register atomic tests here ----------- */
-    TestResult DdpDmemLinkupVerify(TestInfo& ti);
+    TestStatus DdpDmemLinkupVerify(TestInfo& ti);
 
 public:
     DDPModule(const std::string& name,

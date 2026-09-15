@@ -6,5 +6,5 @@ class DDPImpl {
 public:
     virtual ~DDPImpl() = default;
 
-    virtual TestResult DdpDmemLinkupVerify(TestInfo& ti) = 0;
+    virtual TestStatus DdpDmemLinkupVerify(TestInfo& ti) = 0;
 };

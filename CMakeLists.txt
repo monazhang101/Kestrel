@@ -1,39 +1,53 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(KestrelDiag LANGUAGES C CXX)
+project(IsmlDiag LANGUAGES C CXX)
+
+# The production runtime depends on Linux PCI sysfs, mmap/ioctl, and the
+# isml_diag kernel UAPI. Unsupported hosts should fail at configure time
+# instead of compiling an iHal backend that can only fail at runtime.
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "IsmlDiag supports Linux only")
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(KESTREL_BUILD_EXAMPLES "Build Kestrel diagnostic examples" ON)
-option(KESTREL_BUILD_PYTHON_BINDINGS "Build pybind11 Python bindings" OFF)
-option(KESTREL_USE_MOCK_PHAL "Use the bundled compile/smoke PHAL mock" OFF)
+option(ISML_BUILD_EXAMPLES "Build ISML diagnostic examples" ON)
+option(ISML_BUILD_PYTHON_BINDINGS "Build pybind11 Python bindings" OFF)
+option(ISML_USE_MOCK_PHAL "Use the bundled compile/smoke PHAL mock" OFF)
 
 set(ISML_DIAG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/isml_diag)
 set(ISML_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/isml_lib)
 set(ISML_IMPLEMENTER_DIR ${ISML_LIB_DIR}/implementer)
 
-# Keep the same PHAL target contract in real and local-mock builds. Tester
-# builds use the in-tree ProtonHal submodule; source-only workspaces fall back
-# to a small API-compatible mock outside isml_diag and isml_lib.
+# Keep the same PHAL target contract in real and local-mock builds. Hardware
+# builds require the in-tree ProtonHal; the small API-compatible mock must be
+# explicitly enabled and is only for local compile/smoke testing.
 set(PHAL_REAL_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/isml_ipc/external/ProtonHal)
 set(PHAL_MOCK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/mock/ProtonHal)
 
-if(KESTREL_USE_MOCK_PHAL OR
-   NOT EXISTS "${PHAL_REAL_ROOT}/src/phal/init.c" OR
-   NOT EXISTS "${PHAL_REAL_ROOT}/include/phal/components/pcie/pcie.h")
+if(ISML_USE_MOCK_PHAL)
     set(PHAL_ROOT ${PHAL_MOCK_ROOT})
-    set(KESTREL_USING_MOCK_PHAL ON)
+    set(ISML_USING_MOCK_PHAL ON)
     set(PHAL_CORE_SOURCES
         ${PHAL_ROOT}/src/phal/init.c
         ${PHAL_ROOT}/src/components/pcie/pcie.c
     )
     set(PHAL_PROJECT_IMPL_SOURCES)
-    message(STATUS "PHAL backend: bundled mock (${PHAL_ROOT})")
+    message(WARNING
+        "PHAL backend: bundled mock (${PHAL_ROOT}); "
+        "compile/smoke testing only, hardware validation is unsupported")
+elseif(NOT EXISTS "${PHAL_REAL_ROOT}/src/phal/init.c" OR
+       NOT EXISTS "${PHAL_REAL_ROOT}/include/phal/components/pcie/pcie.h")
+    message(FATAL_ERROR
+        "Real ProtonHal is missing or incomplete at ${PHAL_REAL_ROOT}. "
+        "Hardware builds must provide the complete ProtonHal tree. "
+        "For local compile/smoke testing only, explicitly set "
+        "-DISML_USE_MOCK_PHAL=ON.")
 else()
     set(PHAL_ROOT ${PHAL_REAL_ROOT})
-    set(KESTREL_USING_MOCK_PHAL OFF)
+    set(ISML_USING_MOCK_PHAL OFF)
 
     if(NOT DEFINED FLOWRA_SOURCES_DIR)
         set(FLOWRA_SOURCES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../.flowra_sources)
@@ -86,7 +100,7 @@ target_include_directories(phal
         ${PHAL_ROOT}/include
 )
 
-if(NOT KESTREL_USING_MOCK_PHAL)
+if(NOT ISML_USING_MOCK_PHAL)
     target_include_directories(phal PRIVATE ${PHAL_CSR_INCLUDE_DIRS})
 endif()
 
@@ -110,6 +124,7 @@ add_library(isml_lib
     isml_lib/implementer/src/atlas/ddp/ddp_impl.cpp
     isml_lib/implementer/src/atlas/dmc/dmc_impl.cpp
     isml_lib/implementer/src/atlas/isi/isi_impl.cpp
+    isml_lib/implementer/src/atlas/pcie/hqc_admin_queue.cpp
     isml_lib/implementer/src/atlas/pcie/pcie_impl.cpp
     isml_lib/implementer/src/atlas/pmu/pmu_impl.cpp
     isml_lib/implementer/src/atlas/tpu/tpu_impl.cpp
@@ -130,7 +145,6 @@ target_include_directories(isml_lib
 )
 
 add_library(isml_diag
-    isml_diag/src/core/CmdQueueMgm.cpp
     isml_diag/src/core/DevMem.cpp
     isml_diag/src/core/PolicyParser.cpp
     isml_diag/src/core/PhalBridge.cpp
@@ -158,6 +172,8 @@ target_include_directories(isml_diag
     PUBLIC
         ${ISML_DIAG_DIR}/include
         ${ISML_IMPLEMENTER_DIR}/include
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/isml_kmod/include/uapi
 )
 
 target_link_libraries(isml_diag
@@ -166,24 +182,28 @@ target_link_libraries(isml_diag
         phal
 )
 
+# GCC 8 and earlier ship std::filesystem in a separate compatibility library.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+   CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
+    target_link_libraries(isml_diag PUBLIC stdc++fs)
+endif()
+
 set_target_properties(isml_diag PROPERTIES
-    OUTPUT_NAME kestrel_diag
+    OUTPUT_NAME isml_diag
 )
 
-add_library(kestrel_diag ALIAS isml_diag)
-
-if(KESTREL_BUILD_EXAMPLES)
-    add_executable(kestrel_diag_example
+if(ISML_BUILD_EXAMPLES)
+    add_executable(isml_diag_example
         isml_diag/examples/main.cpp
     )
 
-    target_link_libraries(kestrel_diag_example
+    target_link_libraries(isml_diag_example
         PRIVATE
             isml_diag
     )
 endif()
 
-if(KESTREL_BUILD_PYTHON_BINDINGS)
+if(ISML_BUILD_PYTHON_BINDINGS)
     find_package(pybind11 CONFIG REQUIRED)
 
     pybind11_add_module(tpu_hal

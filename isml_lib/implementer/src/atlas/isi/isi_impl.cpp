@@ -14,27 +14,23 @@ public:
     {
     }
 
-    TestResult IsiLinkup(TestInfo& ti) override
+    TestStatus IsiLinkup(TestInfo& ti) override
     {
-        (void)ti.args;
-        return {"isi_linkup", ctx_.target_name, true, {
-            {"link_id", std::to_string(ctx_.index)},
-            {"link_status", "up"},
-            {"lane_ready_bitmap", "0xff"},
-            {"error_count", "0"},
-            {"impl", "atlas"}
-        }};
+        if (ti.logger != nullptr) {
+            ti.logger->info("ISI link status link_id=" + std::to_string(ctx_.index) +
+                            " state=up lane_ready_bitmap=0xff error_count=0 impl=atlas");
+        }
+        return TestStatus::OK;
     }
 
-    TestResult IsiSetup(TestInfo& ti) override
+    TestStatus IsiSetup(TestInfo& ti) override
     {
-        auto mode = common::args::get_string(ti.args, "mode");
-        return {"isi_setup", ctx_.target_name, true, {
-            {"link_id", std::to_string(ctx_.index)},
-            {"mode", mode},
-            {"setup_status", "done"},
-            {"impl", "atlas"}
-        }};
+        const auto mode = common::args::get_string(ti.args, "mode");
+        if (ti.logger != nullptr) {
+            ti.logger->info("ISI setup link_id=" + std::to_string(ctx_.index) +
+                            " mode=" + mode + " state=done impl=atlas");
+        }
+        return TestStatus::OK;
     }
 };
 
