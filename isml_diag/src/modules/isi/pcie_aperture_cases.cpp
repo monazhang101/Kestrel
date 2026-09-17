@@ -50,9 +50,9 @@ TestStatus ISIModule::IsiPcieApertureContext(TestInfo& ti)
     }
 
     const auto bar_index = static_cast<uint32_t>(
-        common::args::get_u64(ti.args, "bar_index", 4));
+        common::args::get_u64(ti.args, "bar_index"));
     const auto aperture_index = static_cast<uint8_t>(
-        common::args::get_u64(ti.args, "aperture_index", 0));
+        common::args::get_u64(ti.args, "aperture_index"));
 
     phal_pcie_aperture_t apt = {};
     auto status = phal_pcie_aperture_get(phal, bar_index, aperture_index, &apt);
@@ -84,15 +84,15 @@ TestStatus ISIModule::IsiCommonDevMemRead(TestInfo& ti)
 {
     common::devmem::Window window;
     window.bar_index = static_cast<uint32_t>(
-        common::args::get_u64(ti.args, "bar_index", 4));
+        common::args::get_u64(ti.args, "bar_index"));
     window.aperture_index = static_cast<uint8_t>(
-        common::args::get_u64(ti.args, "aperture_index", 0));
+        common::args::get_u64(ti.args, "aperture_index"));
     window.identity = static_cast<uint8_t>(
-        common::args::get_u64(ti.args, "identity", 0));
-    window.target_addr = common::args::get_u64(ti.args, "target_addr", 0x10000000);
-    window.size = common::args::get_u64(ti.args, "aperture_size", 0x100000);
-    window.bar_offset = common::args::get_u64(ti.args, "bar_offset", 0);
-    const auto offset = common::args::get_u64(ti.args, "offset", 0);
+        common::args::get_u64(ti.args, "identity"));
+    window.target_addr = common::args::get_u64(ti.args, "target_addr");
+    window.size = common::args::get_u64(ti.args, "aperture_size");
+    window.bar_offset = common::args::get_u64(ti.args, "bar_offset");
+    const auto offset = common::args::get_u64(ti.args, "offset");
 
     uint32_t value = 0;
     std::string error;

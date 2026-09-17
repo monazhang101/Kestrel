@@ -25,8 +25,7 @@ public:
 
     TestStatus bar_read32(TestInfo& ti) override;
     TestStatus bar_scan32(TestInfo& ti) override;
-    TestStatus dma_copy_h2d(TestInfo& ti, const DmaTransferRequest& req) override;
-    TestStatus dma_copy_d2h(TestInfo& ti, const DmaTransferRequest& req) override;
+    TestStatus dma_copy(TestInfo& ti, const DmaTransferRequest& req) override;
 };
 
 class GenericPMUImpl : public PMUImpl {

@@ -39,6 +39,7 @@ private:
     HalContext hal_;
     std::vector<std::unique_ptr<TPUDevice>> devices_;
     std::unordered_map<std::string, BaseDevice*> target_registry_;
+    std::unordered_map<std::string, const AtomicTestPolicies*> target_policy_registry_;
     // -------------------------------
     // Future per-device execution locks.
     //
@@ -51,12 +52,14 @@ private:
     // Example shape:
     // std::unordered_map<std::string, std::mutex> device_execution_mutexes_;
     // -------------------------------
+    AtomicTestPolicies atomic_test_policy_;
     std::vector<PolicyEntry> policy_;
     DeviceTree device_tree_;
     Logger logger_;
 
     void clear_discovered_devices();
-    void register_device_tree(BaseDevice* target);
+    void register_device_tree(BaseDevice* target,
+                              const AtomicTestPolicies* atomic_tests);
     void add_child_to_tree(const BaseDevice& child,
                            const BaseDevice& parent);
 

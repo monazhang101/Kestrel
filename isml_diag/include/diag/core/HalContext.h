@@ -35,7 +35,7 @@ private:
 
     DmaBuffer(HalContext* alloc_ctx,
               void* cpu_base,
-              uint64_t size,
+              uint64_t size_bytes,
               uint64_t device_addr,
               uint64_t handle,
               int backend_fd,

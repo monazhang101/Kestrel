@@ -16,7 +16,8 @@ DDPModule::DDPModule(const std::string& name,
       reg_size_(config.reg_size),
       impl_(std::move(impl))
 {
-    _add_test("ddp_dmem_linkup_verify", [this](TestInfo& ti) { return DdpDmemLinkupVerify(ti); });
+    _add_test("ddp_dmem_linkup_verify", {{"link", "all", "string"}},
+              [this](TestInfo& ti) { return DdpDmemLinkupVerify(ti); });
 
     for (const auto& dmc_config : config.dmc_modules) {
         auto dmc_name = "DMC_" + std::to_string(tpu_index) + "_" +

@@ -15,6 +15,8 @@ DMCModule::DMCModule(const std::string& name,
       reg_size_(config.reg_size),
       impl_(std::move(impl))
 {
-    _add_test("dmc_status_check", [this](TestInfo& ti) { return DmcStatusCheck(ti); });
-    _add_test("dmc_reg_scan", [this](TestInfo& ti) { return DmcRegScan(ti); });
+    _add_test("dmc_status_check", {},
+              [this](TestInfo& ti) { return DmcStatusCheck(ti); });
+    _add_test("dmc_reg_scan", {{"range", "all", "string"}},
+              [this](TestInfo& ti) { return DmcRegScan(ti); });
 }

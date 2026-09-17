@@ -45,28 +45,30 @@ void print_child_tree(const BaseDevice& target, const std::string& prefix)
 
 void print_bar_map_status(const DeviceContext& ctx)
 {
+    if (ctx.bar_mappings.empty()) {
+        return;
+    }
+
+    std::cout << "  BAR mappings:" << std::endl;
     for (const auto& bar : ctx.bar_mappings) {
-        std::cout << " " << bar.name << "=" << (bar.mapped ? "ok" : "fail");
-        std::cout << "(expected=0x" << std::hex << bar.expected_size
-                  << " resource=0x" << bar.resource_size
-                  << " mapped=0x" << bar.mapped_size;
+        std::cout << "    " << bar.name
+                  << " [" << (bar.mapped ? "ok" : "fail") << "]" << std::endl;
+        std::cout << "      expected_size = 0x" << std::hex << bar.expected_size << std::endl
+                  << "      resource_size = 0x" << bar.resource_size << std::endl
+                  << "      mapped_size   = 0x" << bar.mapped_size << std::endl;
         if (bar.mapped) {
-            std::cout << " base=0x" << bar.device_base;
+            std::cout << "      device_base   = 0x" << bar.device_base << std::endl;
         }
         std::cout << std::dec;
         if (!bar.layout.empty()) {
-            std::cout << " layout=";
-            for (size_t i = 0; i < bar.layout.size(); ++i) {
-                if (i != 0) {
-                    std::cout << "|";
-                }
-                std::cout << bar.layout[i];
+            std::cout << "      layout:" << std::endl;
+            for (const auto& item : bar.layout) {
+                std::cout << "        - " << item << std::endl;
             }
         }
         if (!bar.error.empty()) {
-            std::cout << " error=" << bar.error;
+            std::cout << "      error         = " << bar.error << std::endl;
         }
-        std::cout << ")";
     }
 }
 
@@ -88,7 +90,7 @@ TPUDevice::TPUDevice(const std::string& logical_name,
     }
 
     // ----------------- Atomic Tests -----------------
-    _add_test("identify", [this](TestInfo& ti) { return Identify(ti); });
+    _add_test("identify", {}, [this](TestInfo& ti) { return Identify(ti); });
 
     // Create the policy-defined PCIe module, if this TPU type exposes one.
     if (!config_.pcie_modules.empty()) {
@@ -223,10 +225,10 @@ void TPUDevice::print_tree() const
               << " bdf=" << ctx_.bdf
               << " vid=0x" << std::hex << ctx_.vendor_id
               << " did=0x" << ctx_.device_id
-              << std::dec;
-    print_bar_map_status(ctx_);
-    std::cout << " impl=" << (implementer_ == nullptr ? "unknown" : to_string(implementer_->tpu_type()))
+              << std::dec
+              << " impl=" << (implementer_ == nullptr ? "unknown" : to_string(implementer_->tpu_type()))
               << std::endl;
+    print_bar_map_status(ctx_);
 
     print_child_tree(*this, "");
 }

@@ -20,8 +20,15 @@ constexpr int HQC_QUEUE_EMPTY = -3;
 // These are wire values, not framework-local enum ordinals; replace them with
 // a shared versioned FW header when one is available.
 constexpr uint8_t HQC_ADMIN_CMD_TEST = 8;
+// test_type_id values from the FW definition supplied for DMA bring-up.
+constexpr uint32_t HQC_TEST_DMA_DMEM_TO_IMEM = 1;
+constexpr uint32_t HQC_TEST_DMA_DMEM_TO_VMEM = 2;
+constexpr uint32_t HQC_TEST_DMA_VMEM_TO_DMEM = 3;
+constexpr uint32_t HQC_TEST_DMA_IMEM_TO_DMEM = 4;
 constexpr uint32_t HQC_TEST_DMA_HOST_TO_DMEM = 6;
 constexpr uint32_t HQC_TEST_DMA_DMEM_TO_HOST = 7;
+constexpr uint32_t HQC_TEST_DMA_SMEM_TO_DMEM = 8;
+constexpr uint32_t HQC_TEST_DMA_DMEM_TO_SMEM = 9;
 
 #pragma pack(push, 1)
 struct HqcAdminHeader {

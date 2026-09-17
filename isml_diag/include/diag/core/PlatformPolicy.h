@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 enum class TPUType {
@@ -50,6 +51,16 @@ struct TPUDeviceConfig {
     std::vector<DDPModuleConfig> ddp_modules;
 };
 
+struct TestArgumentPolicy {
+    std::vector<std::string> range;
+};
+
+struct AtomicTestPolicy {
+    std::unordered_map<std::string, TestArgumentPolicy> arguments;
+};
+
+using AtomicTestPolicies = std::unordered_map<std::string, AtomicTestPolicy>;
+
 struct PolicyEntry {
     uint16_t match_vendor_id = 0;
     uint16_t match_device_id = 0;
@@ -59,3 +70,4 @@ struct PolicyEntry {
 };
 
 std::vector<PolicyEntry> load_product_policy(const std::vector<std::string>& paths);
+AtomicTestPolicies load_atomic_test_policy(const std::vector<std::string>& paths);

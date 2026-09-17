@@ -44,6 +44,9 @@ std::string default_tpu_name(TPUType tpu_type, uint32_t index)
 
 DeviceManager::DeviceManager(HalType hal_type)
     : hal_(hal_type),
+      atomic_test_policy_(load_atomic_test_policy({
+          "isml_diag/policies/pcie_atomic_tests.yaml",
+      })),
       policy_(load_product_policy({
           "isml_diag/policies/product/atlas_ubb.yaml",
           "isml_diag/policies/product/atlas_m.yaml",
@@ -59,12 +62,14 @@ DeviceManager::~DeviceManager()
 void DeviceManager::clear_discovered_devices()
 {
     target_registry_.clear();
+    target_policy_registry_.clear();
     devices_.clear();
     hal_.clear();
     device_tree_ = {};
 }
 
-void DeviceManager::register_device_tree(BaseDevice* target)
+void DeviceManager::register_device_tree(BaseDevice* target,
+                                         const AtomicTestPolicies* atomic_tests)
 {
     if (target == nullptr) {
         return;
@@ -72,8 +77,9 @@ void DeviceManager::register_device_tree(BaseDevice* target)
 
     // Register this target and all descendants for run_atomic_test lookup.
     target_registry_[target->get_name()] = target;
+    target_policy_registry_[target->get_name()] = atomic_tests;
     for (auto* child : target->child_targets()) {
-        register_device_tree(child);
+        register_device_tree(child, atomic_tests);
     }
 }
 
@@ -165,7 +171,7 @@ DeviceTree DeviceManager::discover()
         auto* tpu = tpu_device.get();
 
         // Register the TPU and child targets for run_atomic_test lookup.
-        register_device_tree(tpu);
+        register_device_tree(tpu, &atomic_test_policy_);
 
         // Add the discovered TPU and its module hierarchy to the public topology.
         const auto& ctx = tpu->get_context();
@@ -262,8 +268,16 @@ TestStatus DeviceManager::run_atomic_test(const std::string& target_name,
     // This intentionally serializes all modules under one TPU while allowing
     // different TPU devices, such as ATLAS_0 and ATLAS_1, to run in parallel.
     // -------------------------------
-    // TODO: Resolve YAML policy defaults/ranges for this target/test before dispatch.
-    return target->run_atomic_test(test_name, args, &logger_, &hal_);
+    const AtomicTestPolicy* test_policy = nullptr;
+    auto target_policy = target_policy_registry_.find(target_name);
+    if (target_policy != target_policy_registry_.end() &&
+        target_policy->second != nullptr) {
+        auto policy = target_policy->second->find(test_name);
+        if (policy != target_policy->second->end()) {
+            test_policy = &policy->second;
+        }
+    }
+    return target->run_atomic_test(test_name, args, &logger_, &hal_, test_policy);
 }
 
 void DeviceManager::print_tree() const

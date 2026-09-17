@@ -1,32 +1,20 @@
 module: pcie
 
-tests:
-  pcie_dma_data_transfer:
-    summary: Run PCIe DMA data movement and compare payload.
-    args:
+atomic_tests:
+  dma_data_transfer:
+    arguments:
       direction:
-        type: string
-        default: h2d
-        range: h2d, d2h
+        range: [h2d, d2h, d2i2d, d2s2d, d2v2d]
       size_bytes:
-        type: u64
-        default: 4096
-        # 128 MiB: mirrors ISML_DIAG_HOST_DMA_MAX_SIZE_BYTES in the kernel UAPI.
-        range: 32-134217728
-        unit: bytes
+        range: [32, 134217728]
       pattern:
-        type: string
-        default: incremental
-        range: zero, incremental, random
+        range: [zero, incremental, random]
       device_offset:
-        type: u64
-        default: 0x10200
-        unit: bytes
+        range: [0, 268435455]
+      return_offset:
+        range: [0, 268435455]
+      intermediate_offset:
+        # Direction-dependent bring-up bounds are checked by the testcase.
+        range: [0, 255]
       timeout_ms:
-        type: u64
-        default: 1000
-        unit: ms
-
-  sequential_aperture_mapping:
-    summary: Configure BAR23/BAR45 apertures sequentially and verify each mapped window.
-    args: {}
+        range: [1, 60000]

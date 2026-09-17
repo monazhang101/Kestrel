@@ -190,7 +190,7 @@ bool read_hex_u16(const std::filesystem::path& path, uint16_t& value)
 bool read_resource_info(const std::string& bdf,
                         uint32_t bar_index,
                         uint64_t& start,
-                        uint64_t& size)
+                        uint64_t& size_bytes)
 {
     std::ifstream input("/sys/bus/pci/devices/" + bdf + "/resource");
     std::string line;
@@ -213,8 +213,8 @@ bool read_resource_info(const std::string& bdf,
         return false;
     }
 
-    size = end - start + 1;
-    return size != 0;
+    size_bytes = end - start + 1;
+    return size_bytes != 0;
 }
 
 // Open the isml_diag character device bound to bdf. This function only finds
@@ -275,7 +275,7 @@ std::string to_string(HalType type)
 
 DmaBuffer::DmaBuffer(HalContext* alloc_ctx,
                      void* cpu_base,
-                     uint64_t size,
+                     uint64_t size_bytes,
                      uint64_t device_addr,
                      uint64_t handle,
                      int backend_fd,
@@ -283,7 +283,7 @@ DmaBuffer::DmaBuffer(HalContext* alloc_ctx,
     : alloc_ctx_(alloc_ctx),
       cpu_base_(cpu_base),
       device_addr_(device_addr),
-      size_(size),
+      size_(size_bytes),
       handle_(handle),
       backend_fd_(backend_fd),
       addr_kind_(std::move(addr_kind))

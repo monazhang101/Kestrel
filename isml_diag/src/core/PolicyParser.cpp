@@ -3,6 +3,7 @@
 #include <cctype>
 #include <fstream>
 #include <iterator>
+#include <sstream>
 #include <utility>
 
 namespace {
@@ -83,6 +84,26 @@ uint64_t parse_u64(const std::string& value)
 uint16_t parse_u16(const std::string& value)
 {
     return static_cast<uint16_t>(parse_u64(value));
+}
+
+std::vector<std::string> parse_inline_list(std::string value)
+{
+    value = trim(value);
+    if (value.size() < 2 || value.front() != '[' || value.back() != ']') {
+        return {};
+    }
+
+    value = value.substr(1, value.size() - 2);
+    std::vector<std::string> items;
+    std::stringstream stream(value);
+    std::string item;
+    while (std::getline(stream, item, ',')) {
+        item = strip_quotes(item);
+        if (!item.empty()) {
+            items.push_back(std::move(item));
+        }
+    }
+    return items;
 }
 
 TPUType tpu_type_from_product(const std::string& product)
@@ -310,6 +331,56 @@ std::vector<PolicyDeviceInventory> parse_inventory(const std::vector<YamlLine>& 
     return inventory;
 }
 
+AtomicTestPolicies parse_atomic_test_policies(const std::vector<YamlLine>& lines)
+{
+    AtomicTestPolicies policies;
+    const auto section = find_line(lines, "atomic_tests:");
+    if (section == lines.size()) {
+        return policies;
+    }
+
+    const auto end = section_end(lines, section);
+    const auto test_indent = lines[section].indent + 2;
+    for (size_t i = section + 1; i < end; ++i) {
+        if (lines[i].indent != test_indent ||
+            lines[i].text.empty() || lines[i].text.back() != ':') {
+            continue;
+        }
+
+        const auto test_name = lines[i].text.substr(0, lines[i].text.size() - 1);
+        const auto test_end = section_end(lines, i);
+        const auto arguments = find_line(lines, "arguments:", i + 1, test_end);
+        if (arguments == lines.size()) {
+            i = test_end - 1;
+            continue;
+        }
+
+        auto& test_policy = policies[test_name];
+        const auto arguments_end = section_end(lines, arguments);
+        const auto argument_indent = lines[arguments].indent + 2;
+        for (size_t j = arguments + 1; j < arguments_end; ++j) {
+            if (lines[j].indent != argument_indent ||
+                lines[j].text.empty() || lines[j].text.back() != ':') {
+                continue;
+            }
+
+            const auto argument_name =
+                lines[j].text.substr(0, lines[j].text.size() - 1);
+            const auto argument_end = section_end(lines, j);
+            for (size_t k = j + 1; k < argument_end; ++k) {
+                if (starts_with(lines[k].text, "range:")) {
+                    test_policy.arguments[argument_name].range =
+                        parse_inline_list(yaml_value(lines[k].text));
+                    break;
+                }
+            }
+            j = argument_end - 1;
+        }
+        i = test_end - 1;
+    }
+    return policies;
+}
+
 std::vector<PolicyEntry> load_one_policy(const std::string& path)
 {
     auto lines = read_yaml_lines(path);
@@ -369,5 +440,17 @@ std::vector<PolicyEntry> load_product_policy(const std::vector<std::string>& pat
                       std::make_move_iterator(entries.end()));
     }
 
+    return policy;
+}
+
+AtomicTestPolicies load_atomic_test_policy(const std::vector<std::string>& paths)
+{
+    AtomicTestPolicies policy;
+    for (const auto& path : paths) {
+        auto parsed = parse_atomic_test_policies(read_yaml_lines(path));
+        for (auto& test : parsed) {
+            policy[test.first] = std::move(test.second);
+        }
+    }
     return policy;
 }

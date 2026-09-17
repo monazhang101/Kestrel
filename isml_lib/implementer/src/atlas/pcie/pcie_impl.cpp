@@ -9,8 +9,11 @@
 namespace atlas_impl {
 namespace {
 
-// Atlas HQC DMA ABI alignment for both addresses and transfer length.
+// FW length is in 32-byte units; host addresses must also be 32-byte aligned.
 constexpr uint64_t DMA_ALIGNMENT = 32;
+// FW converts device byte offsets to 44-bit word offsets (4 bytes per word).
+// This is descriptor representability, not the physical memory capacity.
+constexpr uint64_t DEVICE_ADDRESS_LIMIT = uint64_t{1} << 46;
 // Relative to PCIe TOP, not BAR0. Atlas TOP is at BAR0 + 0x36000000,
 // so the host-visible HQC SRAM window starts at BAR0 + 0x36d00000.
 constexpr uint64_t ATL_HQC_SRAM_PCIE_OFFSET = 0xd00000;
@@ -36,65 +39,94 @@ public:
     {
     }
 
-    TestStatus dma_copy_h2d(TestInfo& ti,
-                            const DmaTransferRequest& req) override
-    {
-        return dma_copy(ti, req, true);
-    }
-
-    TestStatus dma_copy_d2h(TestInfo& ti,
-                            const DmaTransferRequest& req) override
-    {
-        return dma_copy(ti, req, false);
-    }
-
-private:
     TestStatus dma_copy(TestInfo& ti,
-                        const DmaTransferRequest& req,
-                        bool host_to_device)
+                        const DmaTransferRequest& req) override
     {
-        if (req.host_buffer == nullptr || !req.host_buffer->valid()) {
-            return fail(ti, TestStatus::INVALID, "host DMA buffer is invalid");
+        uint32_t test_type = 0;
+        const char* direction = nullptr;
+        switch (req.type) {
+        case DmaTransferType::H2D:
+            test_type = HQC_TEST_DMA_HOST_TO_DMEM; direction = "h2d"; break;
+        case DmaTransferType::D2H:
+            test_type = HQC_TEST_DMA_DMEM_TO_HOST; direction = "d2h"; break;
+        case DmaTransferType::D2I:
+            test_type = HQC_TEST_DMA_DMEM_TO_IMEM; direction = "d2i"; break;
+        case DmaTransferType::I2D:
+            test_type = HQC_TEST_DMA_IMEM_TO_DMEM; direction = "i2d"; break;
+        case DmaTransferType::D2S:
+            test_type = HQC_TEST_DMA_DMEM_TO_SMEM; direction = "d2s"; break;
+        case DmaTransferType::S2D:
+            test_type = HQC_TEST_DMA_SMEM_TO_DMEM; direction = "s2d"; break;
+        case DmaTransferType::D2V:
+        case DmaTransferType::V2D:
+            // VMEM cannot be tested on the current platform. Keep the paths
+            // and ABI constants, but never submit a placeholder to hardware.
+            return make_unimplemented_status(ti, "VMEM DMA is not enabled");
+        default:
+            return fail(ti, TestStatus::INVALID, "unknown DMA transfer type");
         }
-        if (req.host_buffer->addr_kind() != "dma_addr") {
-            return fail(ti, TestStatus::INVALID,
-                        "HQC DMA requires a buffer allocated by isml_kmod");
-        }
-        if (req.size_bytes == 0 || req.size_bytes > HOST_DMA_MAX_SIZE_BYTES ||
+        if (req.size_bytes == 0 ||
             req.size_bytes > std::numeric_limits<uint32_t>::max() ||
-            req.host_offset > req.host_buffer->size() ||
-            req.size_bytes > req.host_buffer->size() - req.host_offset) {
-            return fail(ti, TestStatus::INVALID, "DMA request range is invalid");
-        }
-        if (req.host_buffer->device_addr() >
-            std::numeric_limits<uint64_t>::max() - req.host_offset) {
-            return fail(ti, TestStatus::INVALID, "host DMA address overflow");
-        }
-        if (req.device_offset >
-            std::numeric_limits<uint64_t>::max() - req.size_bytes) {
-            return fail(ti, TestStatus::INVALID, "device DMA range overflow");
+            (req.size_bytes % DMA_ALIGNMENT) != 0 || req.timeout_ms == 0) {
+            return fail(ti, TestStatus::INVALID,
+                        "DMA size must fit uint32 and be a nonzero multiple of 32; timeout must be nonzero");
         }
 
-        const uint64_t host_addr = req.host_buffer->device_addr() + req.host_offset;
-        if ((host_addr % DMA_ALIGNMENT) != 0 ||
-            (req.device_offset % DMA_ALIGNMENT) != 0 ||
-            (req.size_bytes % DMA_ALIGNMENT) != 0) {
+        const bool host_source = req.type == DmaTransferType::H2D;
+        const bool host_destination = req.type == DmaTransferType::D2H;
+        // Device endpoints are byte offsets. Reject low bits that FW would
+        // otherwise silently discard during byte-to-word conversion.
+        const auto valid_device_range = [&](uint64_t offset) {
+            return offset % 4 == 0 && offset < DEVICE_ADDRESS_LIMIT &&
+                   req.size_bytes <= DEVICE_ADDRESS_LIMIT - offset;
+        };
+        if ((!host_source && !valid_device_range(req.src_offset)) ||
+            (!host_destination && !valid_device_range(req.dst_offset))) {
             return fail(ti, TestStatus::INVALID,
-                        "HQC DMA addresses and size must be 32-byte aligned");
+                        "device DMA range must be 4-byte aligned and fit the FW word address");
+        }
+
+        uint64_t source = req.src_offset;
+        uint64_t destination = req.dst_offset;
+        if (host_source || host_destination) {
+            if (req.host_buffer == nullptr || !req.host_buffer->valid() ||
+                req.host_buffer->addr_kind() != "dma_addr") {
+                return fail(ti, TestStatus::INVALID,
+                            "host DMA requires a valid isml_kmod buffer");
+            }
+            const auto host_offset = host_source ? req.src_offset : req.dst_offset;
+            if (req.size_bytes > HOST_DMA_MAX_SIZE_BYTES ||
+                host_offset > req.host_buffer->size() ||
+                req.size_bytes > req.host_buffer->size() - host_offset ||
+                req.host_buffer->device_addr() >
+                    std::numeric_limits<uint64_t>::max() - host_offset) {
+                return fail(ti, TestStatus::INVALID, "host DMA range is invalid");
+            }
+            const auto host_addr = req.host_buffer->device_addr() + host_offset;
+            if (host_addr % DMA_ALIGNMENT != 0 ||
+                req.size_bytes - 1 > std::numeric_limits<uint64_t>::max() - host_addr) {
+                return fail(ti, TestStatus::INVALID,
+                            "host DMA address must be 32-byte aligned and not overflow");
+            }
+            if (host_source) {
+                source = host_addr;
+            } else {
+                destination = host_addr;
+            }
+        } else if (req.host_buffer != nullptr) {
+            return fail(ti, TestStatus::INVALID,
+                        "device-only DMA must not carry a host buffer");
         }
 
         HqcAdminCommand command = {};
         command.header.cmd_type = HQC_ADMIN_CMD_TEST;
         command.header.cmd_id = 0; // TODO: allocate and correlate cmd_id for concurrent requests.
-        command.payload.test.test_type = host_to_device
-                                             ? HQC_TEST_DMA_HOST_TO_DMEM
-                                             : HQC_TEST_DMA_DMEM_TO_HOST;
+        command.payload.test.test_type = test_type;
         auto& dma = command.payload.test.submit.dma;
-        dma.src_offset = host_to_device ? host_addr : req.device_offset;
-        dma.dst_offset = host_to_device ? req.device_offset : host_addr;
+        dma.src_offset = source;
+        dma.dst_offset = destination;
         dma.size = static_cast<uint32_t>(req.size_bytes);
 
-        const char* direction = host_to_device ? "h2d" : "d2h";
         if (ti.logger != nullptr) {
             std::ostringstream message;
             message << "HQC DMA command"
@@ -143,7 +175,8 @@ private:
                     << "\n       size_bytes     = " << req.size_bytes
                     << "\n       duration_us    = " << duration
                     << "\n       address_kind   = "
-                    << req.host_buffer->addr_kind();
+                    << (req.host_buffer != nullptr ? req.host_buffer->addr_kind()
+                                                   : "device_byte_offset");
             ti.logger->info(message.str());
         }
         return TestStatus::OK;

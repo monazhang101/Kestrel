@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <iomanip>
+#include <limits>
 #include <sstream>
 #include <utility>
 #include <vector>
@@ -54,8 +55,7 @@ GenericPCIeImpl::GenericPCIeImpl(ModuleImplContext ctx)
 
 TestStatus GenericPCIeImpl::bar_read32(TestInfo& ti)
 {
-    const auto offset = common::args::get_u64(ti.args, "offset", 0);
-    const auto requested_bar = ti.args.find("bar_index");
+    const auto offset = common::args::get_u64(ti.args, "offset");
 
     if ((offset % sizeof(uint32_t)) != 0) {
         if (ti.logger != nullptr) {
@@ -66,55 +66,45 @@ TestStatus GenericPCIeImpl::bar_read32(TestInfo& ti)
     }
 
     uint32_t value = 0;
-    uint32_t bar_index = ctx_.bar_index;
-    uint64_t absolute_offset = 0;
-    if (requested_bar != ti.args.end()) {
-        bar_index = static_cast<uint32_t>(
-            common::args::get_u64(ti.args, "bar_index", ctx_.bar_index));
-        absolute_offset = offset;
-        if (!common::bar::read32(ctx_.device_ctx, bar_index, offset, value)) {
-            const auto* bar = common::bar::find(ctx_.device_ctx, bar_index);
-            if (ti.logger != nullptr) {
-                ti.logger->error(
-                    "BAR read failed\n"
-                    "       bar_index           = " + std::to_string(bar_index) +
-                    "\n       bar_offset          = " + hex64(offset) +
-                    "\n       mapped_size         = " +
-                    hex64(bar == nullptr ? 0 : bar->mapped_size));
-            }
-            return TestStatus::ERROR;
+    const uint32_t bar_index = ctx_.bar_index;
+    if (offset > ctx_.reg_size ||
+        sizeof(value) > static_cast<size_t>(ctx_.reg_size - offset)) {
+        if (ti.logger != nullptr) {
+            ti.logger->error(
+                "BAR read is outside module range\n"
+                "       module_offset       = " + hex64(offset) +
+                "\n       module_size         = " + hex64(ctx_.reg_size));
         }
-    } else {
-        if (offset > ctx_.reg_size ||
-            sizeof(value) > static_cast<size_t>(ctx_.reg_size - offset)) {
-            if (ti.logger != nullptr) {
-                ti.logger->error(
-                    "BAR read is outside module range\n"
-                    "       module_offset       = " + hex64(offset) +
-                    "\n       module_size         = " + hex64(ctx_.reg_size));
-            }
-            return TestStatus::INVALID;
+        return TestStatus::INVALID;
+    }
+
+    if (ctx_.reg_base_offset >
+        std::numeric_limits<uint64_t>::max() - offset) {
+        if (ti.logger != nullptr) {
+            ti.logger->error("BAR read module offset overflow");
         }
-        absolute_offset = ctx_.reg_base_offset + offset;
-        if (!common::bar::read32(ctx_.device_ctx,
-                                 bar_index,
-                                 absolute_offset,
-                                 value)) {
-            if (ti.logger != nullptr) {
-                ti.logger->error(
-                    "BAR read failed\n"
-                    "       bar_index           = " + std::to_string(bar_index) +
-                    "\n       absolute_bar_offset = " + hex64(absolute_offset));
-            }
-            return TestStatus::ERROR;
+        return TestStatus::INVALID;
+    }
+    const uint64_t absolute_offset = ctx_.reg_base_offset + offset;
+    if (!common::bar::read32(ctx_.device_ctx,
+                             bar_index,
+                             absolute_offset,
+                             value)) {
+        if (ti.logger != nullptr) {
+            ti.logger->error(
+                "BAR read failed\n"
+                "       bar_index           = " + std::to_string(bar_index) +
+                "\n       module_offset       = " + hex64(offset) +
+                "\n       absolute_bar_offset = " + hex64(absolute_offset));
         }
+        return TestStatus::ERROR;
     }
 
     if (ti.logger != nullptr) {
         ti.logger->info(
             "BAR read completed\n"
             "       bar_index           = " + std::to_string(bar_index) +
-            "\n       offset              = " + hex64(offset) +
+            "\n       module_offset       = " + hex64(offset) +
             " (" + std::to_string(offset) + ")" +
             "\n       absolute_bar_offset = " + hex64(absolute_offset) +
             " (" + std::to_string(absolute_offset) + ")" +
@@ -128,9 +118,8 @@ TestStatus GenericPCIeImpl::bar_scan32(TestInfo& ti)
 {
     constexpr uint64_t MAX_WORDS = 256;
 
-    const auto offset = common::args::get_u64(ti.args, "offset", 0);
-    const auto words = common::args::get_u64(ti.args, "words", 16);
-    const auto requested_bar = ti.args.find("bar_index");
+    const auto offset = common::args::get_u64(ti.args, "offset");
+    const auto words = common::args::get_u64(ti.args, "words");
 
     if ((offset % sizeof(uint32_t)) != 0) {
         if (ti.logger != nullptr) {
@@ -149,62 +138,47 @@ TestStatus GenericPCIeImpl::bar_scan32(TestInfo& ti)
 
     std::vector<uint32_t> values(static_cast<size_t>(words), 0);
     const auto bytes = words * sizeof(uint32_t);
-    uint32_t bar_index = ctx_.bar_index;
-    uint64_t absolute_offset = 0;
-    if (requested_bar != ti.args.end()) {
-        bar_index = static_cast<uint32_t>(
-            common::args::get_u64(ti.args, "bar_index", ctx_.bar_index));
-        absolute_offset = offset;
-        if (!common::bar::read(ctx_.device_ctx,
-                               bar_index,
-                               offset,
-                               values.data(),
-                               static_cast<size_t>(bytes))) {
-            const auto* bar = common::bar::find(ctx_.device_ctx, bar_index);
-            if (ti.logger != nullptr) {
-                ti.logger->error(
-                    "BAR scan failed\n"
-                    "       bar_index           = " + std::to_string(bar_index) +
-                    "\n       bar_offset          = " + hex64(offset) +
-                    "\n       size_bytes          = " + std::to_string(bytes) +
-                    "\n       mapped_size         = " +
-                    hex64(bar == nullptr ? 0 : bar->mapped_size));
-            }
-            return TestStatus::ERROR;
+    const uint32_t bar_index = ctx_.bar_index;
+    if (offset > ctx_.reg_size || bytes > ctx_.reg_size - offset) {
+        if (ti.logger != nullptr) {
+            ti.logger->error(
+                "BAR scan is outside module range\n"
+                "       module_offset       = " + hex64(offset) +
+                "\n       size_bytes          = " + std::to_string(bytes) +
+                "\n       module_size         = " + hex64(ctx_.reg_size));
         }
-    } else {
-        if (offset > ctx_.reg_size || bytes > ctx_.reg_size - offset) {
-            if (ti.logger != nullptr) {
-                ti.logger->error(
-                    "BAR scan is outside module range\n"
-                    "       module_offset       = " + hex64(offset) +
-                    "\n       size_bytes          = " + std::to_string(bytes) +
-                    "\n       module_size         = " + hex64(ctx_.reg_size));
-            }
-            return TestStatus::INVALID;
+        return TestStatus::INVALID;
+    }
+
+    if (ctx_.reg_base_offset >
+        std::numeric_limits<uint64_t>::max() - offset) {
+        if (ti.logger != nullptr) {
+            ti.logger->error("BAR scan module offset overflow");
         }
-        absolute_offset = ctx_.reg_base_offset + offset;
-        if (!common::bar::read(ctx_.device_ctx,
-                               bar_index,
-                               absolute_offset,
-                               values.data(),
-                               static_cast<size_t>(bytes))) {
-            if (ti.logger != nullptr) {
-                ti.logger->error(
-                    "BAR scan failed\n"
-                    "       bar_index           = " + std::to_string(bar_index) +
-                    "\n       absolute_bar_offset = " + hex64(absolute_offset) +
-                    "\n       size_bytes          = " + std::to_string(bytes));
-            }
-            return TestStatus::ERROR;
+        return TestStatus::INVALID;
+    }
+    const uint64_t absolute_offset = ctx_.reg_base_offset + offset;
+    if (!common::bar::read(ctx_.device_ctx,
+                           bar_index,
+                           absolute_offset,
+                           values.data(),
+                           static_cast<size_t>(bytes))) {
+        if (ti.logger != nullptr) {
+            ti.logger->error(
+                "BAR scan failed\n"
+                "       bar_index           = " + std::to_string(bar_index) +
+                "\n       module_offset       = " + hex64(offset) +
+                "\n       absolute_bar_offset = " + hex64(absolute_offset) +
+                "\n       size_bytes          = " + std::to_string(bytes));
         }
+        return TestStatus::ERROR;
     }
 
     if (ti.logger != nullptr) {
         ti.logger->info(
             "BAR scan completed\n"
             "       bar_index           = " + std::to_string(bar_index) +
-            "\n       offset              = " + hex64(offset) +
+            "\n       module_offset       = " + hex64(offset) +
             " (" + std::to_string(offset) + ")" +
             "\n       absolute_bar_offset = " + hex64(absolute_offset) +
             " (" + std::to_string(absolute_offset) + ")" +
@@ -219,20 +193,12 @@ TestStatus GenericPCIeImpl::bar_scan32(TestInfo& ti)
     return TestStatus::OK;
 }
 
-TestStatus GenericPCIeImpl::dma_copy_h2d(TestInfo& ti,
+TestStatus GenericPCIeImpl::dma_copy(TestInfo& ti,
                                          const DmaTransferRequest& req)
 {
     (void)req;
     return make_unimplemented_status(
-        ti, "PCIe H2D DMA copy is not implemented for " + ctx_.target_name);
-}
-
-TestStatus GenericPCIeImpl::dma_copy_d2h(TestInfo& ti,
-                                         const DmaTransferRequest& req)
-{
-    (void)req;
-    return make_unimplemented_status(
-        ti, "PCIe D2H DMA copy is not implemented for " + ctx_.target_name);
+        ti, "PCIe DMA copy is not implemented for " + ctx_.target_name);
 }
 
 // Generic PMU impl. Products without a PMU module, or without a specific PMU

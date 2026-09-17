@@ -16,10 +16,10 @@ private:
     std::unique_ptr<PCIeImpl> impl_;
 
     /* ----------- Register atomic tests here ----------- */
-    TestStatus pcie_bar_read32(TestInfo& ti);
-    TestStatus pcie_bar_scan32(TestInfo& ti);
+    TestStatus bar_read32(TestInfo& ti);
+    TestStatus bar_scan32(TestInfo& ti);
     TestStatus sequential_aperture_mapping(TestInfo& ti);
-    TestStatus pcie_dma_data_transfer(TestInfo& ti);
+    TestStatus dma_data_transfer(TestInfo& ti);
     /*
     TestStatus PcieEnumCheck(TestInfo& ti);
     TestStatus PcieCapListCheck(TestInfo& ti);

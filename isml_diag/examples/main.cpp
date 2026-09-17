@@ -22,12 +22,7 @@ static void print_usage(const char* program)
 {
     std::cout << "Usage:\n"
               << "  " << program << " discover [--backend phal|ihal|dryrun] [--tree]\n"
-              << "  " << program << " bar-read [--backend phal|ihal|dryrun] [--target <target>] [--bar <0|2|4>] [--offset <offset>]\n"
-              << "  " << program << " bar-scan [--backend phal|ihal|dryrun] [--target <target>] [--bar <0|2|4>] [--offset <offset>] [--words <words>]\n"
-              << "  " << program << " dma-transfer [--backend ihal] [--target <target>] [--direction h2d|d2h] [--size <bytes>] [--pattern zero|incremental|random] [--device-offset <offset>] [--timeout-ms <ms>]\n"
-              << "  " << program << " sequential-aperture-mapping [--backend phal|ihal|dryrun] [--target <target>]\n"
-              << "  " << program << " isi-pcie-aperture-context [--backend phal|ihal|dryrun] [--target <target>] [--bar <2|4>] [--aperture <id>]\n"
-              << "  " << program << " isi-common-devmem-read [--backend phal|ihal|dryrun] [--target <target>] [--bar <2|4>] [--aperture <id>] [--identity <id>] [--target-addr <addr>] [--size <bytes>] [--bar-offset <offset>] [--offset <offset>]\n"
+              << "  " << program << " <test_name> --target <target> [--<argument> <value>]...\n"
               << "\n"
               << "Default backend: ihal\n"
               << "Global logging: --log-level error|info|debug|trace (default: info)\n"
@@ -35,36 +30,37 @@ static void print_usage(const char* program)
               << "Examples:\n"
               << "  " << program << " discover --tree\n"
               << "  " << program << " discover --backend phal --tree\n"
-              << "  " << program << " dma-transfer --target PCIE_0_0 --direction h2d --size 4096 --pattern incremental\n"
-              << "  " << program << " sequential-aperture-mapping --target PCIE_0_0 --log-level debug\n"
-              << "  " << program << " isi-pcie-aperture-context --target ISI_0_0\n"
-              << "  " << program << " isi-common-devmem-read --target ISI_0_0\n";
+              << "  " << program << " bar_read32 --target PCIE_0_0 --offset 0x20f80\n"
+              << "  " << program << " dma_data_transfer --target PCIE_0_0 --direction h2d --pattern incremental\n"
+              << "  " << program << " sequential_aperture_mapping --target PCIE_0_0 --log-level debug\n";
 }
 
 static void print_bar_map_status(const std::vector<BarMapping>& bars)
 {
+    if (bars.empty()) {
+        return;
+    }
+
+    std::cout << "  BAR mappings:" << std::endl;
     for (const auto& bar : bars) {
-        std::cout << " " << bar.name << "=" << (bar.mapped ? "ok" : "fail");
-        std::cout << "(expected=0x" << std::hex << bar.expected_size
-                  << " resource=0x" << bar.resource_size
-                  << " mapped=0x" << bar.mapped_size;
+        std::cout << "    " << bar.name
+                  << " [" << (bar.mapped ? "ok" : "fail") << "]" << std::endl;
+        std::cout << "      expected_size = 0x" << std::hex << bar.expected_size << std::endl
+                  << "      resource_size = 0x" << bar.resource_size << std::endl
+                  << "      mapped_size   = 0x" << bar.mapped_size << std::endl;
         if (bar.mapped) {
-            std::cout << " base=0x" << bar.device_base;
+            std::cout << "      device_base   = 0x" << bar.device_base << std::endl;
         }
         std::cout << std::dec;
         if (!bar.layout.empty()) {
-            std::cout << " layout=";
-            for (size_t i = 0; i < bar.layout.size(); ++i) {
-                if (i != 0) {
-                    std::cout << "|";
-                }
-                std::cout << bar.layout[i];
+            std::cout << "      layout:" << std::endl;
+            for (const auto& item : bar.layout) {
+                std::cout << "        - " << item << std::endl;
             }
         }
         if (!bar.error.empty()) {
-            std::cout << " error=" << bar.error;
+            std::cout << "      error         = " << bar.error << std::endl;
         }
-        std::cout << ")";
     }
 }
 
@@ -79,9 +75,11 @@ static void print_discovery_summary(const DeviceTree& tree)
                   << " bdf=" << device.bdf
                   << " vid=0x" << std::hex << device.vendor_id
                   << " did=0x" << device.device_id
-                  << std::dec;
+                  << std::dec << std::endl;
         print_bar_map_status(device.bars);
-        std::cout << std::endl;
+        if (!device.bars.empty()) {
+            std::cout << std::endl;
+        }
     }
 }
 
@@ -106,6 +104,42 @@ static bool has_flag(int argc, char** argv, const std::string& name)
         }
     }
     return false;
+}
+
+static bool parse_test_args(int argc,
+                            char** argv,
+                            TestArgs& args,
+                            std::string& error)
+{
+    for (int i = 2; i < argc; ++i) {
+        const std::string option = argv[i];
+        if (option == "--target" || option == "--backend" ||
+            option == "--log-level") {
+            if (i + 1 >= argc) {
+                error = option + " requires a value";
+                return false;
+            }
+            ++i;
+            continue;
+        }
+        if (option.rfind("--", 0) != 0 || option.size() <= 2) {
+            error = "invalid test argument option: " + option;
+            return false;
+        }
+        if (i + 1 >= argc) {
+            error = option + " requires a value";
+            return false;
+        }
+
+        auto argument_name = option.substr(2);
+        for (auto& character : argument_name) {
+            if (character == '-') {
+                character = '_';
+            }
+        }
+        args[argument_name] = argv[++i];
+    }
+    return true;
 }
 
 static HalType parse_backend(const std::string& backend)
@@ -166,92 +200,17 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    if (command == "bar-read") {
-        auto target = get_option(argc, argv, "--target", "PCIE_0_0");
-        auto offset = get_option(argc, argv, "--offset", "0x0");
-        auto bar = get_option(argc, argv, "--bar", "");
-        TestArgs args = {
-            {"offset", offset},
-        };
-        if (!bar.empty()) {
-            args["bar_index"] = bar;
-        }
-        return run_test(device_manager,
-                        target,
-                        "pcie_bar_read32",
-                        args);
+    const auto target = get_option(argc, argv, "--target", "");
+    if (target.empty()) {
+        std::cerr << command << " requires --target" << std::endl;
+        return 1;
     }
 
-    if (command == "bar-scan") {
-        auto target = get_option(argc, argv, "--target", "PCIE_0_0");
-        auto offset = get_option(argc, argv, "--offset", "0x0");
-        auto words = get_option(argc, argv, "--words", "16");
-        auto bar = get_option(argc, argv, "--bar", "");
-        TestArgs args = {
-            {"offset", offset},
-            {"words", words},
-        };
-        if (!bar.empty()) {
-            args["bar_index"] = bar;
-        }
-        return run_test(device_manager,
-                        target,
-                        "pcie_bar_scan32",
-                        args);
+    TestArgs args;
+    std::string error;
+    if (!parse_test_args(argc, argv, args, error)) {
+        std::cerr << error << std::endl;
+        return 1;
     }
-
-    if (command == "dma-transfer") {
-        auto target = get_option(argc, argv, "--target", "PCIE_0_0");
-        TestArgs args = {
-            {"direction", get_option(argc, argv, "--direction", "h2d")},
-            {"size_bytes", get_option(argc, argv, "--size", "4096")},
-            {"pattern", get_option(argc, argv, "--pattern", "incremental")},
-            {"device_offset", get_option(argc, argv, "--device-offset", "0x10200")},
-            {"timeout_ms", get_option(argc, argv, "--timeout-ms", "1000")},
-        };
-        return run_test(device_manager,
-                        target,
-                        "pcie_dma_data_transfer",
-                        args);
-    }
-
-    if (command == "sequential-aperture-mapping") {
-        auto target = get_option(argc, argv, "--target", "PCIE_0_0");
-        return run_test(device_manager,
-                        target,
-                        "sequential_aperture_mapping");
-    }
-
-    if (command == "isi-pcie-aperture-context") {
-        auto target = get_option(argc, argv, "--target", "ISI_0_0");
-        TestArgs args = {
-            {"bar_index", get_option(argc, argv, "--bar", "4")},
-            {"aperture_index", get_option(argc, argv, "--aperture", "0")},
-        };
-        return run_test(device_manager,
-                        target,
-                        "isi_pcie_aperture_context",
-                        args);
-    }
-
-    if (command == "isi-common-devmem-read") {
-        auto target = get_option(argc, argv, "--target", "ISI_0_0");
-        TestArgs args = {
-            {"bar_index", get_option(argc, argv, "--bar", "4")},
-            {"aperture_index", get_option(argc, argv, "--aperture", "0")},
-            {"identity", get_option(argc, argv, "--identity", "0")},
-            {"target_addr", get_option(argc, argv, "--target-addr", "0x10000000")},
-            {"aperture_size", get_option(argc, argv, "--size", "0x100000")},
-            {"bar_offset", get_option(argc, argv, "--bar-offset", "0")},
-            {"offset", get_option(argc, argv, "--offset", "0")},
-        };
-        return run_test(device_manager,
-                        target,
-                        "isi_common_devmem_read",
-                        args);
-    }
-
-    std::cerr << "Unknown command: " << command << std::endl;
-    print_usage(argv[0]);
-    return 1;
+    return run_test(device_manager, target, command, args);
 }

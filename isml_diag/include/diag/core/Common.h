@@ -208,7 +208,8 @@ inline bool write32(const DeviceContext& ctx,
 
 // ------------------------------------------------------------
 // common::args::get_string() / common::args::get_u64()
-// reads resolved test inputs after CLI/Python has applied YAML defaults.
+// reads inputs after BaseDevice has applied registered defaults and validated
+// argument formats and policy ranges.
 // ------------------------------------------------------------
 namespace common::args {
 
