@@ -14,7 +14,7 @@ public:
     {
     }
 
-    TestStatus PmuIpcRequestStart(TestInfo& ti) override
+    TestStatus ipc_request_start(TestInfo& ti) override
     {
         const auto request_id = common::args::get_string(ti.args, "request_id");
         if (ti.logger != nullptr) {
@@ -24,7 +24,7 @@ public:
         return TestStatus::OK;
     }
 
-    TestStatus PmuIpcRequestExec(TestInfo& ti) override
+    TestStatus ipc_request_exec(TestInfo& ti) override
     {
         const auto opcode = common::args::get_string(ti.args, "opcode");
         if (ti.logger != nullptr) {
@@ -34,7 +34,7 @@ public:
         return TestStatus::OK;
     }
 
-    TestStatus PmuIpcRequestFinish(TestInfo& ti) override
+    TestStatus ipc_request_finish(TestInfo& ti) override
     {
         const auto timeout_ms = common::args::get_string(ti.args, "timeout_ms");
         if (ti.logger != nullptr) {
@@ -44,7 +44,7 @@ public:
         return TestStatus::OK;
     }
 
-    TestStatus PmuRegRead(TestInfo& ti) override
+    TestStatus reg_read(TestInfo& ti) override
     {
         const auto offset = common::args::get_string(ti.args, "offset");
         if (ti.logger != nullptr) {
@@ -54,7 +54,7 @@ public:
         return TestStatus::OK;
     }
 
-    TestStatus PmuRegWrite(TestInfo& ti) override
+    TestStatus reg_write(TestInfo& ti) override
     {
         const auto offset = common::args::get_string(ti.args, "offset");
         const auto value = common::args::get_string(ti.args, "value");
@@ -65,7 +65,7 @@ public:
         return TestStatus::OK;
     }
 
-    TestStatus PmuRegCheck(TestInfo& ti) override
+    TestStatus reg_check(TestInfo& ti) override
     {
         const auto offset = common::args::get_string(ti.args, "offset");
         const auto expected = common::args::get_string(ti.args, "expected");

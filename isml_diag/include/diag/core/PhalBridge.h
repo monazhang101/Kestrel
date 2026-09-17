@@ -1,7 +1,6 @@
 #pragma once
 
-#include "diag/core/BaseDevice.h"
-#include "diag/core/PlatformPolicy.h"
+#include "diag/core/Platform.h"
 
 #include <cstddef>
 #include <cstdint>

@@ -12,7 +12,7 @@ public:
     {
     }
 
-    TestStatus Identify(TestInfo& ti) override
+    TestStatus identify(TestInfo& ti) override
     {
         if (ti.logger != nullptr) {
             ti.logger->info("TPU identify product=ATLAS bdf=" + ctx_.device_ctx.bdf +

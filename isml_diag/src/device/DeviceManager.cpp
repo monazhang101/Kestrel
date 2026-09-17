@@ -7,26 +7,6 @@
 
 namespace {
 
-std::string infer_child_type(const std::string& target_name)
-{
-    if (target_name.rfind("PCIE_", 0) == 0) {
-        return "PCIE_MODULE";
-    }
-    if (target_name.rfind("PMU_", 0) == 0) {
-        return "PMU_MODULE";
-    }
-    if (target_name.rfind("DMC_", 0) == 0) {
-        return "DMC_MODULE";
-    }
-    if (target_name.rfind("DDP_", 0) == 0) {
-        return "DDP_MODULE";
-    }
-    if (target_name.rfind("ISI_", 0) == 0) {
-        return "ISI_MODULE";
-    }
-    return "MODULE";
-}
-
 std::string default_tpu_name(TPUType tpu_type, uint32_t index)
 {
     switch (tpu_type) {
@@ -44,9 +24,7 @@ std::string default_tpu_name(TPUType tpu_type, uint32_t index)
 
 DeviceManager::DeviceManager(HalType hal_type)
     : hal_(hal_type),
-      atomic_test_policy_(load_atomic_test_policy({
-          "isml_diag/policies/pcie_atomic_tests.yaml",
-      })),
+      testcase_policies_(load_testcase_policies("isml_diag/policies/testcases")),
       policy_(load_product_policy({
           "isml_diag/policies/product/atlas_ubb.yaml",
           "isml_diag/policies/product/atlas_m.yaml",
@@ -62,35 +40,32 @@ DeviceManager::~DeviceManager()
 void DeviceManager::clear_discovered_devices()
 {
     target_registry_.clear();
-    target_policy_registry_.clear();
     devices_.clear();
     hal_.clear();
     device_tree_ = {};
 }
 
-void DeviceManager::register_device_tree(BaseDevice* target,
-                                         const AtomicTestPolicies* atomic_tests)
+void DeviceManager::register_device_tree(TestTarget* target)
 {
     if (target == nullptr) {
         return;
     }
 
-    // Register this target and all descendants for run_atomic_test lookup.
+    // Register this target and all descendants for testcase dispatch.
     target_registry_[target->get_name()] = target;
-    target_policy_registry_[target->get_name()] = atomic_tests;
     for (auto* child : target->child_targets()) {
-        register_device_tree(child, atomic_tests);
+        register_device_tree(child);
     }
 }
 
-void DeviceManager::add_child_to_tree(const BaseDevice& child,
-                                      const BaseDevice& parent)
+void DeviceManager::add_child_to_tree(const TestTarget& child,
+                                      const TestTarget& parent)
 {
     const auto& ctx = child.get_context();
 
     DeviceDiscoveryInfo info;
     info.name = child.get_name();
-    info.type = infer_child_type(child.get_name());
+    info.type = child.get_target_type();
     info.parent = parent.get_name();
     info.bdf = ctx.bdf;
     info.vendor_id = ctx.vendor_id;
@@ -170,14 +145,14 @@ DeviceTree DeviceManager::discover()
 
         auto* tpu = tpu_device.get();
 
-        // Register the TPU and child targets for run_atomic_test lookup.
-        register_device_tree(tpu, &atomic_test_policy_);
+        // Register the TPU and child targets for testcase lookup.
+        register_device_tree(tpu);
 
         // Add the discovered TPU and its module hierarchy to the public topology.
         const auto& ctx = tpu->get_context();
         DeviceDiscoveryInfo info;
         info.name = tpu->get_name();
-        info.type = "TPU";
+        info.type = tpu->get_target_type();
         info.parent = "PCIeRootComplex0";
         info.bdf = ctx.bdf;
         info.vendor_id = ctx.vendor_id;
@@ -214,7 +189,7 @@ HalType DeviceManager::get_hal_type() const
     return hal_.type();
 }
 
-BaseDevice* DeviceManager::get_target(const std::string& target_name)
+TestTarget* DeviceManager::get_target(const std::string& target_name)
 {
     auto it = target_registry_.find(target_name);
     return it == target_registry_.end() ? nullptr : it->second;
@@ -239,9 +214,9 @@ LogLevel DeviceManager::get_log_level() const
     return logger_.get_level();
 }
 
-TestStatus DeviceManager::run_atomic_test(const std::string& target_name,
-                                          const std::string& test_name,
-                                          const TestArgs& args)
+TestStatus DeviceManager::run_testcase(const std::string& target_name,
+                                       const std::string& test_name,
+                                       const TestArgs& args)
 {
     auto* target = get_target(target_name);
     if (target == nullptr) {
@@ -250,34 +225,13 @@ TestStatus DeviceManager::run_atomic_test(const std::string& target_name,
         return TestStatus::INVALID;
     }
 
-    // -------------------------------
-    // Future per-device execution lock boundary.
-    //
-    // If MVP policy chooses "one test at a time per TPU", derive the top-level
-    // TPU name from target_name before dispatch:
-    //   ATLAS_0     -> ATLAS_0
-    //   PCIE_0_0    -> ATLAS_0
-    //   DDP_0_1     -> ATLAS_0
-    //   DMC_0_1_2   -> ATLAS_0
-    //
-    // Then lock device_execution_mutexes_[ATLAS_0] here, before calling
-    // target->run_atomic_test(). BaseDevice still keeps its own object mutex,
-    // so the final order is:
-    //   DeviceManager per-TPU lock -> BaseDevice per-object lock -> test body.
-    //
-    // This intentionally serializes all modules under one TPU while allowing
-    // different TPU devices, such as ATLAS_0 and ATLAS_1, to run in parallel.
-    // -------------------------------
-    const AtomicTestPolicy* test_policy = nullptr;
-    auto target_policy = target_policy_registry_.find(target_name);
-    if (target_policy != target_policy_registry_.end() &&
-        target_policy->second != nullptr) {
-        auto policy = target_policy->second->find(test_name);
-        if (policy != target_policy->second->end()) {
-            test_policy = &policy->second;
-        }
+    const TestcasePolicy* test_policy = nullptr;
+    const auto target_policies = testcase_policies_.find(target->get_target_type());
+    if (target_policies != testcase_policies_.end()) {
+        const auto policy = target_policies->second.find(test_name);
+        if (policy != target_policies->second.end()) test_policy = &policy->second;
     }
-    return target->run_atomic_test(test_name, args, &logger_, &hal_, test_policy);
+    return target->run_testcase(test_name, args, &logger_, &hal_, test_policy);
 }
 
 void DeviceManager::print_tree() const

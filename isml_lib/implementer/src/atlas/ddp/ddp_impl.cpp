@@ -14,7 +14,7 @@ public:
     {
     }
 
-    TestStatus DdpDmemLinkupVerify(TestInfo& ti) override
+    TestStatus dmem_linkup_verify(TestInfo& ti) override
     {
         const auto link = common::args::get_string(ti.args, "link");
         if (ti.logger != nullptr) {

@@ -1,12 +1,12 @@
-#include "diag/module/DMCModule.h"
+#include "diag/modules/DMCModule.h"
 
-// dmc_status_check : To check one DDP memory-controller status block.
+// status_check: Check one DDP memory-controller status block.
 // @input: none.
 // @output: TestStatus; details are written to the testcase log.
-TestStatus DMCModule::DmcStatusCheck(TestInfo& ti)
+TestStatus DMCModule::status_check(TestInfo& ti)
 {
     if (impl_ == nullptr) {
         return make_unimplemented_status(ti, "DMC implementation is not bound");
     }
-    return impl_->DmcStatusCheck(ti);
+    return impl_->status_check(ti);
 }

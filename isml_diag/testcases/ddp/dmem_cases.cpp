@@ -1,12 +1,12 @@
-#include "diag/module/DDPModule.h"
+#include "diag/modules/DDPModule.h"
 
-// ddp_dmem_linkup_verify : To verify DDP device-memory link-up state.
+// dmem_linkup_verify: Verify DDP device-memory link-up state.
 // @input: args["link"] resolved by YAML defaults.
 // @output: TestStatus; details are written to the testcase log.
-TestStatus DDPModule::DdpDmemLinkupVerify(TestInfo& ti)
+TestStatus DDPModule::dmem_linkup_verify(TestInfo& ti)
 {
     if (impl_ == nullptr) {
         return make_unimplemented_status(ti, "DDP implementation is not bound");
     }
-    return impl_->DdpDmemLinkupVerify(ti);
+    return impl_->dmem_linkup_verify(ti);
 }

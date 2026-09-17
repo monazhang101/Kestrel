@@ -1,10 +1,9 @@
 #pragma once
 
-#include "diag/core/BaseDevice.h"
-#include "diag/core/PlatformPolicy.h"
+#include "diag/core/TestTarget.h"
 #include "diag/implementer/DDPImpl.h"
 #include "diag/implementer/Implementer.h"
-#include "diag/module/DMCModule.h"
+#include "diag/modules/DMCModule.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -12,7 +11,7 @@
 #include <string>
 #include <vector>
 
-class DDPModule : public BaseDevice {
+class DDPModule : public TestTarget {
 private:
     uint32_t ddp_id_ = 0;
     uint32_t bar_index_ = 0;
@@ -21,8 +20,8 @@ private:
     std::unique_ptr<DDPImpl> impl_;
     std::vector<std::unique_ptr<DMCModule>> dmc_modules_;
 
-    /* ----------- Register atomic tests here ----------- */
-    TestStatus DdpDmemLinkupVerify(TestInfo& ti);
+    // Testcase implementations registered by DDPModule's constructor.
+    TestStatus dmem_linkup_verify(TestInfo& ti);
 
 public:
     DDPModule(const std::string& name,
@@ -37,5 +36,5 @@ public:
     uint64_t reg_base_offset() const { return reg_base_offset_; }
     uint64_t reg_size() const { return reg_size_; }
     uint32_t bar_index() const { return bar_index_; }
-    std::vector<BaseDevice*> child_targets() const override;
+    std::vector<TestTarget*> child_targets() const override;
 };

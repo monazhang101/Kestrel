@@ -1,4 +1,4 @@
-#include "diag/module/ISIModule.h"
+#include "diag/modules/ISIModule.h"
 
 #include "diag/core/Common.h"
 #include "diag/core/DevMem.h"
@@ -24,9 +24,9 @@ std::string hex_u64(uint64_t value)
 
 }
 
-// isi_pcie_aperture_context : Direct-PHAL smoke test proving an ISI testcase
+// pcie_aperture_context: Direct-PHAL smoke test proving an ISI testcase
 // can use the shared PCIe PHAL context without calling into PCIeModule.
-TestStatus ISIModule::IsiPcieApertureContext(TestInfo& ti)
+TestStatus ISIModule::pcie_aperture_context(TestInfo& ti)
 {
     if (ti.hal == nullptr) {
         if (ti.logger != nullptr) {
@@ -78,9 +78,9 @@ TestStatus ISIModule::IsiPcieApertureContext(TestInfo& ti)
     return TestStatus::OK;
 }
 
-// isi_common_devmem_read : Common-helper smoke test proving an ISI testcase
+// common_devmem_read: Common-helper smoke test proving an ISI testcase
 // can read device memory without directly managing PHAL or aperture programming.
-TestStatus ISIModule::IsiCommonDevMemRead(TestInfo& ti)
+TestStatus ISIModule::common_devmem_read(TestInfo& ti)
 {
     common::devmem::Window window;
     window.bar_index = static_cast<uint32_t>(

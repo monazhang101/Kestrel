@@ -14,7 +14,7 @@ public:
     {
     }
 
-    TestStatus DmcStatusCheck(TestInfo& ti) override
+    TestStatus status_check(TestInfo& ti) override
     {
         if (ti.logger != nullptr) {
             ti.logger->info("DMC status ddp_id=" + std::to_string(ctx_.parent_index) +
@@ -24,7 +24,7 @@ public:
         return TestStatus::OK;
     }
 
-    TestStatus DmcRegScan(TestInfo& ti) override
+    TestStatus reg_scan(TestInfo& ti) override
     {
         const auto range = common::args::get_string(ti.args, "range");
         if (ti.logger != nullptr) {

@@ -1,6 +1,7 @@
 #pragma once
 
-#include "diag/core/BaseDevice.h"
+#include "diag/core/Platform.h"
+#include "diag/core/TestInfo.h"
 
 #include <cstddef>
 #include <cstdint>

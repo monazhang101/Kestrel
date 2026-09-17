@@ -386,9 +386,8 @@ std::vector<DeviceContext> HalContext::scan_pci_devices() const
         return devices;
     }
 
-    // Pseudocode:
-    // pHal can delegate discovery to a platform/vendor API.
-    // Until that API is wired in, pHal keeps a fake device inventory for dry-run.
+    // The pHal backend uses synthetic inventory for local dry-run testing until
+    // platform discovery is connected to the vendor API.
     DeviceContext tpu0;
     tpu0.bdf = "0000:19:00.0";
     tpu0.vendor_id = 0x16c3;
@@ -489,12 +488,11 @@ DeviceContext HalContext::mmap_bar_space(DeviceContext ctx)
         return ctx;
     }
 
-    // Pseudocode:
-    // pHal can request equivalent BAR metadata from its backend service:
+    // The pHal dry-run backend models the BAR metadata expected from its service:
     //   host-mapped pointer -> mapped_bar_base
     //   device-visible BAR base, e.g. dev->bars[N].baseAddr -> bar_device_base
     //   BAR length -> bar_size
-    // Until that API is wired in, pHal keeps fake BAR mappings for dry-run.
+    // Synthetic mappings keep local tests independent of physical hardware.
     for (auto bar_index : PROBE_BAR_INDICES) {
         mapped_bar_storage_.push_back(
             std::make_unique<std::vector<uint8_t>>(DRYRUN_BAR_WINDOW_SIZE, 0));

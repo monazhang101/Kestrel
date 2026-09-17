@@ -1,34 +1,34 @@
-#include "diag/module/PMUModule.h"
+#include "diag/modules/PMUModule.h"
 
-// pmu_reg_read : To read one PMU register through the PMU register window.
+// reg_read: Read one PMU register through the PMU register window.
 // @input: args["offset"] register offset.
 // @output: TestStatus; register details are written to the testcase log.
-TestStatus PMUModule::PmuRegRead(TestInfo& ti)
+TestStatus PMUModule::reg_read(TestInfo& ti)
 {
     if (impl_ == nullptr) {
         return make_unimplemented_status(ti, "PMU implementation is not bound");
     }
-    return impl_->PmuRegRead(ti);
+    return impl_->reg_read(ti);
 }
 
-// pmu_reg_write : To write one PMU register through the PMU register window.
+// reg_write: Write one PMU register through the PMU register window.
 // @input: args["offset"] register offset, args["value"] value to write.
 // @output: TestStatus; register details are written to the testcase log.
-TestStatus PMUModule::PmuRegWrite(TestInfo& ti)
+TestStatus PMUModule::reg_write(TestInfo& ti)
 {
     if (impl_ == nullptr) {
         return make_unimplemented_status(ti, "PMU implementation is not bound");
     }
-    return impl_->PmuRegWrite(ti);
+    return impl_->reg_write(ti);
 }
 
-// pmu_reg_check : To read a PMU register and check it against an expected value.
+// reg_check: Read a PMU register and check it against an expected value.
 // @input: args["offset"] register offset, args["expected"] expected value.
 // @output: TestStatus; register details are written to the testcase log.
-TestStatus PMUModule::PmuRegCheck(TestInfo& ti)
+TestStatus PMUModule::reg_check(TestInfo& ti)
 {
     if (impl_ == nullptr) {
         return make_unimplemented_status(ti, "PMU implementation is not bound");
     }
-    return impl_->PmuRegCheck(ti);
+    return impl_->reg_check(ti);
 }

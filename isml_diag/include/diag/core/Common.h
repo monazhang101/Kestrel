@@ -1,6 +1,6 @@
 #pragma once
 
-#include "diag/core/BaseDevice.h"
+#include "diag/core/TestTarget.h"
 #include "diag/core/TestInfo.h"
 
 #include <cstddef>
@@ -208,7 +208,7 @@ inline bool write32(const DeviceContext& ctx,
 
 // ------------------------------------------------------------
 // common::args::get_string() / common::args::get_u64()
-// reads inputs after BaseDevice has applied registered defaults and validated
+// reads inputs after TestTarget has applied registered defaults and validated
 // argument formats and policy ranges.
 // ------------------------------------------------------------
 namespace common::args {
@@ -262,8 +262,7 @@ namespace common::pattern {
 
 inline std::vector<uint8_t> generate(size_t size, const std::string& pattern)
 {
-    // Pseudocode: pattern payloads are generated for 32-bit data paths.
-    // Reject empty or non-32-bit-sized payloads.
+    // Pattern payloads use the 32-bit transfer granularity required by DMA tests.
     if (size == 0 || (size % sizeof(uint32_t)) != 0) {
         return {};
     }
@@ -287,7 +286,7 @@ inline std::vector<uint8_t> generate(size_t size, const std::string& pattern)
     if (pattern == "random") {
         uint32_t seed = 0x12345678;
         for (auto& byte : data) {
-            // Pseudocode: deterministic pseudo-random bytes keep tests reproducible.
+            // Deterministic pseudo-random bytes keep test failures reproducible.
             seed = seed * 1664525u + 1013904223u;
             byte = static_cast<uint8_t>((seed >> 24) & 0xff);
         }

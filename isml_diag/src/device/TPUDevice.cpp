@@ -24,7 +24,7 @@ ModuleImplContext make_impl_context(const std::string& target_name,
     };
 }
 
-void print_child_tree(const BaseDevice& target, const std::string& prefix)
+void print_child_tree(const TestTarget& target, const std::string& prefix)
 {
     const auto children = target.child_targets();
     for (size_t i = 0; i < children.size(); ++i) {
@@ -78,7 +78,7 @@ TPUDevice::TPUDevice(const std::string& logical_name,
                      const DeviceContext& ctx,
                      const TPUDeviceConfig& config,
                      std::shared_ptr<Implementer> implementer)
-    : BaseDevice(logical_name, ctx),
+    : TestTarget(logical_name, "tpu", ctx),
       tpu_index_(config.tpu_index),
       config_(config),
       implementer_(std::move(implementer))
@@ -90,7 +90,7 @@ TPUDevice::TPUDevice(const std::string& logical_name,
     }
 
     // ----------------- Atomic Tests -----------------
-    _add_test("identify", {}, [this](TestInfo& ti) { return Identify(ti); });
+    _add_test("identify", {}, [this](TestInfo& ti) { return identify(ti); });
 
     // Create the policy-defined PCIe module, if this TPU type exposes one.
     if (!config_.pcie_modules.empty()) {
@@ -201,9 +201,9 @@ DDPModule* TPUDevice::ddp(size_t index) const
     return ddp_modules_[index].get();
 }
 
-std::vector<BaseDevice*> TPUDevice::child_targets() const
+std::vector<TestTarget*> TPUDevice::child_targets() const
 {
-    std::vector<BaseDevice*> children;
+    std::vector<TestTarget*> children;
     if (pcie_ != nullptr) {
         children.push_back(pcie_.get());
     }
@@ -236,10 +236,10 @@ void TPUDevice::print_tree() const
 // identify : To read ATLAS identity registers and report stable hardware facts.
 // @input: none.
 // @output: TestStatus; identity details are written to the testcase log.
-TestStatus TPUDevice::Identify(TestInfo& ti)
+TestStatus TPUDevice::identify(TestInfo& ti)
 {
     if (impl_ == nullptr) {
         return make_unimplemented_status(ti, "TPU implementation is not bound");
     }
-    return impl_->Identify(ti);
+    return impl_->identify(ti);
 }

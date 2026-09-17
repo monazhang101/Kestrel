@@ -1,4 +1,4 @@
-#include "diag/module/PCIeModule.h"
+#include "diag/modules/PCIeModule.h"
 
 #include "diag/core/Common.h"
 #include "diag/core/DevMem.h"
@@ -39,7 +39,7 @@ TestStatus PCIeModule::dma_data_transfer(TestInfo& ti)
         return make_unimplemented_status(ti, "PCIe implementation is not bound");
     }
 
-    // BaseDevice has already supplied registered defaults and validated each
+    // TestTarget has already supplied registered defaults and validated each
     // argument's format and product-policy range. Cross-argument constraints
     // and temporary I/S scratch bounds are checked below.
     const auto direction = common::args::get_string(ti.args, "direction");

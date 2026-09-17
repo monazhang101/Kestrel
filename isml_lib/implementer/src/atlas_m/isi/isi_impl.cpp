@@ -14,7 +14,7 @@ public:
     {
     }
 
-    TestStatus IsiLinkup(TestInfo& ti) override
+    TestStatus linkup(TestInfo& ti) override
     {
         if (ti.logger != nullptr) {
             ti.logger->info("ISI link status link_id=" + std::to_string(ctx_.index) +
@@ -23,7 +23,7 @@ public:
         return TestStatus::OK;
     }
 
-    TestStatus IsiSetup(TestInfo& ti) override
+    TestStatus setup(TestInfo& ti) override
     {
         const auto mode = common::args::get_string(ti.args, "mode");
         if (ti.logger != nullptr) {

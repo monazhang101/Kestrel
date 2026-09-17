@@ -1,0 +1,5 @@
+testcases:
+  setup:
+    arguments:
+      mode:
+        range: [default, bringup]

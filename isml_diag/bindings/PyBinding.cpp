@@ -63,7 +63,7 @@ static py::dict device_tree_to_dict(const DeviceTree& tree)
 
 PYBIND11_MODULE(tpu_hal, m)
 {
-    m.doc() = "Python bindings for TPU diagnostic HAL pseudocode";
+    m.doc() = "Python bindings for the TPU diagnostic framework";
 
     py::class_<BarMapping>(m, "BarMapping")
         .def(py::init<>())
@@ -143,37 +143,38 @@ PYBIND11_MODULE(tpu_hal, m)
         .def_readwrite("devices", &DeviceTree::devices)
         .def_readwrite("topology", &DeviceTree::topology);
 
-    py::class_<BaseDevice>(m, "BaseDevice")
-        .def("run_atomic_test",
-             [](BaseDevice& device,
+    py::class_<TestTarget>(m, "TestTarget")
+        .def("run_testcase",
+             [](TestTarget& target,
                 const std::string& test_name,
                 const TestArgs& args) {
-                 return device.run_atomic_test(test_name, args);
+                 return target.run_testcase(test_name, args);
              },
              py::arg("test_name"),
              py::arg("args") = TestArgs{},
              py::call_guard<py::gil_scoped_release>())
-        .def("get_name", &BaseDevice::get_name)
-        .def("get_registered_test_names", &BaseDevice::get_registered_test_names)
+        .def("get_name", &TestTarget::get_name)
+        .def("get_target_type", &TestTarget::get_target_type)
+        .def("get_registered_test_names", &TestTarget::get_registered_test_names)
         .def("get_context",
-             static_cast<DeviceContext& (BaseDevice::*)()>(&BaseDevice::get_context),
+             static_cast<DeviceContext& (TestTarget::*)()>(&TestTarget::get_context),
              py::return_value_policy::reference_internal)
-        .def("get_bar_base_addr", [](const BaseDevice& device) {
-            return reinterpret_cast<uintptr_t>(device.get_bar_base_addr());
+        .def("get_bar_base_addr", [](const TestTarget& target) {
+            return reinterpret_cast<uintptr_t>(target.get_bar_base_addr());
         });
 
-    py::class_<TPUDevice, BaseDevice>(m, "TPUDevice")
+    py::class_<TPUDevice, TestTarget>(m, "TPUDevice")
         .def("tpu_index", &TPUDevice::tpu_index)
         .def("print_tree", &TPUDevice::print_tree);
 
-    py::class_<PCIeModule, BaseDevice>(m, "PCIeModule");
-    py::class_<PMUModule, BaseDevice>(m, "PMUModule");
-    py::class_<ISIModule, BaseDevice>(m, "ISIModule")
+    py::class_<PCIeModule, TestTarget>(m, "PCIeModule");
+    py::class_<PMUModule, TestTarget>(m, "PMUModule");
+    py::class_<ISIModule, TestTarget>(m, "ISIModule")
         .def("link_id", &ISIModule::link_id);
-    py::class_<DMCModule, BaseDevice>(m, "DMCModule")
+    py::class_<DMCModule, TestTarget>(m, "DMCModule")
         .def("ddp_id", &DMCModule::ddp_id)
         .def("controller_id", &DMCModule::controller_id);
-    py::class_<DDPModule, BaseDevice>(m, "DDPModule");
+    py::class_<DDPModule, TestTarget>(m, "DDPModule");
 
     py::class_<DeviceManager>(m, "DeviceManager")
         .def(py::init<>())
@@ -191,12 +192,12 @@ PYBIND11_MODULE(tpu_hal, m)
         .def("get_target_names", &DeviceManager::get_target_names)
         .def("set_log_level", &DeviceManager::set_log_level)
         .def("get_log_level", &DeviceManager::get_log_level)
-        .def("run_atomic_test",
+        .def("run_testcase",
              [](DeviceManager& manager,
                 const std::string& target_name,
                 const std::string& test_name,
                 const TestArgs& args) {
-                 return manager.run_atomic_test(target_name, test_name, args);
+                 return manager.run_testcase(target_name, test_name, args);
              },
              py::arg("target_name"),
              py::arg("test_name"),

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "diag/core/BaseDevice.h"
+#include "diag/core/Platform.h"
 #include "diag/core/PhalBridge.h"
 
 #include <cstdint>

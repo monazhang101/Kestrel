@@ -13,7 +13,7 @@ protected:
 public:
     explicit GenericTPUImpl(ModuleImplContext ctx);
 
-    TestStatus Identify(TestInfo& ti) override;
+    TestStatus identify(TestInfo& ti) override;
 };
 
 class GenericPCIeImpl : public PCIeImpl {
@@ -35,12 +35,12 @@ protected:
 public:
     explicit GenericPMUImpl(ModuleImplContext ctx);
 
-    TestStatus PmuIpcRequestStart(TestInfo& ti) override;
-    TestStatus PmuIpcRequestExec(TestInfo& ti) override;
-    TestStatus PmuIpcRequestFinish(TestInfo& ti) override;
-    TestStatus PmuRegRead(TestInfo& ti) override;
-    TestStatus PmuRegWrite(TestInfo& ti) override;
-    TestStatus PmuRegCheck(TestInfo& ti) override;
+    TestStatus ipc_request_start(TestInfo& ti) override;
+    TestStatus ipc_request_exec(TestInfo& ti) override;
+    TestStatus ipc_request_finish(TestInfo& ti) override;
+    TestStatus reg_read(TestInfo& ti) override;
+    TestStatus reg_write(TestInfo& ti) override;
+    TestStatus reg_check(TestInfo& ti) override;
 };
 
 class GenericISIImpl : public ISIImpl {
@@ -50,8 +50,8 @@ protected:
 public:
     explicit GenericISIImpl(ModuleImplContext ctx);
 
-    TestStatus IsiLinkup(TestInfo& ti) override;
-    TestStatus IsiSetup(TestInfo& ti) override;
+    TestStatus linkup(TestInfo& ti) override;
+    TestStatus setup(TestInfo& ti) override;
 };
 
 class GenericDDPImpl : public DDPImpl {
@@ -61,7 +61,7 @@ protected:
 public:
     explicit GenericDDPImpl(ModuleImplContext ctx);
 
-    TestStatus DdpDmemLinkupVerify(TestInfo& ti) override;
+    TestStatus dmem_linkup_verify(TestInfo& ti) override;
 };
 
 class GenericDMCImpl : public DMCImpl {
@@ -71,8 +71,8 @@ protected:
 public:
     explicit GenericDMCImpl(ModuleImplContext ctx);
 
-    TestStatus DmcStatusCheck(TestInfo& ti) override;
-    TestStatus DmcRegScan(TestInfo& ti) override;
+    TestStatus status_check(TestInfo& ti) override;
+    TestStatus reg_scan(TestInfo& ti) override;
 };
 
 std::unique_ptr<TPUImpl> make_tpu_impl(const ModuleImplContext& ctx);

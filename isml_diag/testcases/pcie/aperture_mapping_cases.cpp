@@ -1,4 +1,4 @@
-#include "diag/module/PCIeModule.h"
+#include "diag/modules/PCIeModule.h"
 
 #include "diag/core/Common.h"
 #include "diag/core/HalContext.h"

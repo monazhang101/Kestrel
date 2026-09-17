@@ -1,4 +1,4 @@
-#include "diag/module/DDPModule.h"
+#include "diag/modules/DDPModule.h"
 
 #include <string>
 #include <utility>
@@ -9,15 +9,15 @@ DDPModule::DDPModule(const std::string& name,
                      const DDPModuleConfig& config,
                      std::unique_ptr<DDPImpl> impl,
                      const std::shared_ptr<Implementer>& implementer)
-    : BaseDevice(name, ctx),
+    : TestTarget(name, "ddp", ctx),
       ddp_id_(config.index),
       bar_index_(config.bar_index),
       reg_base_offset_(config.reg_base_offset),
       reg_size_(config.reg_size),
       impl_(std::move(impl))
 {
-    _add_test("ddp_dmem_linkup_verify", {{"link", "all", "string"}},
-              [this](TestInfo& ti) { return DdpDmemLinkupVerify(ti); });
+    _add_test("dmem_linkup_verify", {{"link", "all", "string"}},
+              [this](TestInfo& ti) { return dmem_linkup_verify(ti); });
 
     for (const auto& dmc_config : config.dmc_modules) {
         auto dmc_name = "DMC_" + std::to_string(tpu_index) + "_" +
@@ -54,9 +54,9 @@ DMCModule* DDPModule::dmc(size_t index) const
     return dmc_modules_[index].get();
 }
 
-std::vector<BaseDevice*> DDPModule::child_targets() const
+std::vector<TestTarget*> DDPModule::child_targets() const
 {
-    std::vector<BaseDevice*> children;
+    std::vector<TestTarget*> children;
     for (const auto& dmc_module : dmc_modules_) {
         children.push_back(dmc_module.get());
     }

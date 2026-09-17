@@ -1,6 +1,4 @@
-module: pcie
-
-atomic_tests:
+testcases:
   dma_data_transfer:
     arguments:
       direction:

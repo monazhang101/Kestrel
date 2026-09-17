@@ -13,7 +13,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(ISML_BUILD_EXAMPLES "Build ISML diagnostic examples" ON)
+option(ISML_BUILD_CLI "Build the ISML diagnostic CLI" ON)
 option(ISML_BUILD_PYTHON_BINDINGS "Build pybind11 Python bindings" OFF)
 option(ISML_USE_MOCK_PHAL "Use the bundled compile/smoke PHAL mock" OFF)
 
@@ -145,27 +145,28 @@ target_include_directories(isml_lib
 )
 
 add_library(isml_diag
+    isml_diag/src/core/TestTarget.cpp
     isml_diag/src/core/DevMem.cpp
     isml_diag/src/core/PolicyParser.cpp
     isml_diag/src/core/PhalBridge.cpp
+    isml_diag/src/core/HalContext.cpp
     isml_diag/src/device/DeviceManager.cpp
     isml_diag/src/device/TPUDevice.cpp
-    isml_diag/src/core/HalContext.cpp
     isml_diag/src/modules/ddp/DDPModule.cpp
-    isml_diag/src/modules/ddp/dmem_cases.cpp
     isml_diag/src/modules/dmc/DMCModule.cpp
-    isml_diag/src/modules/dmc/status_cases.cpp
-    isml_diag/src/modules/dmc/reg_cases.cpp
     isml_diag/src/modules/isi/ISIModule.cpp
-    isml_diag/src/modules/isi/link_cases.cpp
-    isml_diag/src/modules/isi/pcie_aperture_cases.cpp
-    isml_diag/src/modules/isi/setup_cases.cpp
     isml_diag/src/modules/pcie/PCIeModule.cpp
-    isml_diag/src/modules/pcie/dma_cases.cpp
-    isml_diag/src/modules/pcie/aperture_mapping_cases.cpp
     isml_diag/src/modules/pmu/PMUModule.cpp
-    isml_diag/src/modules/pmu/ipc_cases.cpp
-    isml_diag/src/modules/pmu/reg_cases.cpp
+    isml_diag/testcases/ddp/dmem_cases.cpp
+    isml_diag/testcases/dmc/status_cases.cpp
+    isml_diag/testcases/dmc/reg_cases.cpp
+    isml_diag/testcases/isi/link_cases.cpp
+    isml_diag/testcases/isi/pcie_aperture_cases.cpp
+    isml_diag/testcases/isi/setup_cases.cpp
+    isml_diag/testcases/pcie/dma_cases.cpp
+    isml_diag/testcases/pcie/aperture_mapping_cases.cpp
+    isml_diag/testcases/pmu/ipc_cases.cpp
+    isml_diag/testcases/pmu/reg_cases.cpp
 )
 
 target_include_directories(isml_diag
@@ -176,11 +177,7 @@ target_include_directories(isml_diag
         ${CMAKE_CURRENT_SOURCE_DIR}/isml_kmod/include/uapi
 )
 
-target_link_libraries(isml_diag
-    PUBLIC
-        isml_lib
-        phal
-)
+target_link_libraries(isml_diag PUBLIC isml_lib phal)
 
 # GCC 8 and earlier ship std::filesystem in a separate compatibility library.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
@@ -188,30 +185,16 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
     target_link_libraries(isml_diag PUBLIC stdc++fs)
 endif()
 
-set_target_properties(isml_diag PROPERTIES
-    OUTPUT_NAME isml_diag
-)
+set_target_properties(isml_diag PROPERTIES OUTPUT_NAME isml_diag)
 
-if(ISML_BUILD_EXAMPLES)
-    add_executable(isml_diag_example
-        isml_diag/examples/main.cpp
-    )
-
-    target_link_libraries(isml_diag_example
-        PRIVATE
-            isml_diag
-    )
+if(ISML_BUILD_CLI)
+    add_executable(isml_diag_cli isml_diag/cli/main.cpp)
+    target_link_libraries(isml_diag_cli PRIVATE isml_diag)
+    set_target_properties(isml_diag_cli PROPERTIES OUTPUT_NAME isml_diag)
 endif()
 
 if(ISML_BUILD_PYTHON_BINDINGS)
     find_package(pybind11 CONFIG REQUIRED)
-
-    pybind11_add_module(tpu_hal
-        isml_diag/bindings/PyBinding.cpp
-    )
-
-    target_link_libraries(tpu_hal
-        PRIVATE
-            isml_diag
-    )
+    pybind11_add_module(tpu_hal isml_diag/bindings/PyBinding.cpp)
+    target_link_libraries(tpu_hal PRIVATE isml_diag)
 endif()

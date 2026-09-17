@@ -40,7 +40,7 @@ GenericTPUImpl::GenericTPUImpl(ModuleImplContext ctx)
 {
 }
 
-TestStatus GenericTPUImpl::Identify(TestInfo& ti)
+TestStatus GenericTPUImpl::identify(TestInfo& ti)
 {
     return make_unimplemented_status(
         ti, "TPU identify is not implemented for " + ctx_.target_name);
@@ -208,32 +208,32 @@ GenericPMUImpl::GenericPMUImpl(ModuleImplContext ctx)
 {
 }
 
-TestStatus GenericPMUImpl::PmuIpcRequestStart(TestInfo& ti)
+TestStatus GenericPMUImpl::ipc_request_start(TestInfo& ti)
 {
     return make_unimplemented_status(ti, "PMU IPC request start is not implemented for " + ctx_.target_name);
 }
 
-TestStatus GenericPMUImpl::PmuIpcRequestExec(TestInfo& ti)
+TestStatus GenericPMUImpl::ipc_request_exec(TestInfo& ti)
 {
     return make_unimplemented_status(ti, "PMU IPC request exec is not implemented for " + ctx_.target_name);
 }
 
-TestStatus GenericPMUImpl::PmuIpcRequestFinish(TestInfo& ti)
+TestStatus GenericPMUImpl::ipc_request_finish(TestInfo& ti)
 {
     return make_unimplemented_status(ti, "PMU IPC request finish is not implemented for " + ctx_.target_name);
 }
 
-TestStatus GenericPMUImpl::PmuRegRead(TestInfo& ti)
+TestStatus GenericPMUImpl::reg_read(TestInfo& ti)
 {
     return make_unimplemented_status(ti, "PMU register read is not implemented for " + ctx_.target_name);
 }
 
-TestStatus GenericPMUImpl::PmuRegWrite(TestInfo& ti)
+TestStatus GenericPMUImpl::reg_write(TestInfo& ti)
 {
     return make_unimplemented_status(ti, "PMU register write is not implemented for " + ctx_.target_name);
 }
 
-TestStatus GenericPMUImpl::PmuRegCheck(TestInfo& ti)
+TestStatus GenericPMUImpl::reg_check(TestInfo& ti)
 {
     return make_unimplemented_status(ti, "PMU register check is not implemented for " + ctx_.target_name);
 }
@@ -245,12 +245,12 @@ GenericISIImpl::GenericISIImpl(ModuleImplContext ctx)
 {
 }
 
-TestStatus GenericISIImpl::IsiLinkup(TestInfo& ti)
+TestStatus GenericISIImpl::linkup(TestInfo& ti)
 {
     return make_unimplemented_status(ti, "ISI linkup is not implemented for " + ctx_.target_name);
 }
 
-TestStatus GenericISIImpl::IsiSetup(TestInfo& ti)
+TestStatus GenericISIImpl::setup(TestInfo& ti)
 {
     return make_unimplemented_status(ti, "ISI setup is not implemented for " + ctx_.target_name);
 }
@@ -262,7 +262,7 @@ GenericDDPImpl::GenericDDPImpl(ModuleImplContext ctx)
 {
 }
 
-TestStatus GenericDDPImpl::DdpDmemLinkupVerify(TestInfo& ti)
+TestStatus GenericDDPImpl::dmem_linkup_verify(TestInfo& ti)
 {
     return make_unimplemented_status(ti, "DDP dmem linkup verify is not implemented for " + ctx_.target_name);
 }
@@ -274,12 +274,12 @@ GenericDMCImpl::GenericDMCImpl(ModuleImplContext ctx)
 {
 }
 
-TestStatus GenericDMCImpl::DmcStatusCheck(TestInfo& ti)
+TestStatus GenericDMCImpl::status_check(TestInfo& ti)
 {
     return make_unimplemented_status(ti, "DMC status check is not implemented for " + ctx_.target_name);
 }
 
-TestStatus GenericDMCImpl::DmcRegScan(TestInfo& ti)
+TestStatus GenericDMCImpl::reg_scan(TestInfo& ti)
 {
     return make_unimplemented_status(ti, "DMC register scan is not implemented for " + ctx_.target_name);
 }

@@ -6,6 +6,6 @@ class ISIImpl {
 public:
     virtual ~ISIImpl() = default;
 
-    virtual TestStatus IsiLinkup(TestInfo& ti) = 0;
-    virtual TestStatus IsiSetup(TestInfo& ti) = 0;
+    virtual TestStatus linkup(TestInfo& ti) = 0;
+    virtual TestStatus setup(TestInfo& ti) = 0;
 };

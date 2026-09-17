@@ -1,0 +1,5 @@
+testcases:
+  ipc_request_finish:
+    arguments:
+      timeout_ms:
+        range: [1, 60000]

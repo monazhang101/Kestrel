@@ -1,6 +1,0 @@
-module: tpu
-
-tests:
-  identify:
-    summary: Read ATLAS identity registers and report stable hardware facts.
-    args: {}

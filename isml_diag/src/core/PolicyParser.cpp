@@ -1,7 +1,10 @@
-#include "diag/core/PlatformPolicy.h"
+#include "diag/core/Platform.h"
+#include "diag/core/TestTarget.h"
 
+#include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <filesystem>
 #include <iterator>
 #include <sstream>
 #include <utility>
@@ -331,10 +334,10 @@ std::vector<PolicyDeviceInventory> parse_inventory(const std::vector<YamlLine>& 
     return inventory;
 }
 
-AtomicTestPolicies parse_atomic_test_policies(const std::vector<YamlLine>& lines)
+TestcasePolicies parse_testcase_policies(const std::vector<YamlLine>& lines)
 {
-    AtomicTestPolicies policies;
-    const auto section = find_line(lines, "atomic_tests:");
+    TestcasePolicies policies;
+    const auto section = find_line(lines, "testcases:");
     if (section == lines.size()) {
         return policies;
     }
@@ -443,14 +446,20 @@ std::vector<PolicyEntry> load_product_policy(const std::vector<std::string>& pat
     return policy;
 }
 
-AtomicTestPolicies load_atomic_test_policy(const std::vector<std::string>& paths)
+TestcasePolicyCatalog load_testcase_policies(const std::string& directory)
 {
-    AtomicTestPolicies policy;
-    for (const auto& path : paths) {
-        auto parsed = parse_atomic_test_policies(read_yaml_lines(path));
-        for (auto& test : parsed) {
-            policy[test.first] = std::move(test.second);
+    TestcasePolicyCatalog catalog;
+    std::vector<std::filesystem::path> paths;
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".yaml") {
+            paths.push_back(entry.path());
         }
     }
-    return policy;
+    std::sort(paths.begin(), paths.end());
+
+    for (const auto& path : paths) {
+        catalog[path.stem().string()] =
+            parse_testcase_policies(read_yaml_lines(path.string()));
+    }
+    return catalog;
 }

@@ -9,7 +9,7 @@ static int run_test(DeviceManager& device_manager,
                     const std::string& test,
                     const TestArgs& args = {})
 {
-    const auto status = device_manager.run_atomic_test(target, test, args);
+    const auto status = device_manager.run_testcase(target, test, args);
     const char* result = status == TestStatus::OK
                              ? "PASS"
                              : test_status_name(status);
@@ -182,8 +182,8 @@ int main(int argc, char** argv)
     device_manager.set_log_level(
         parse_log_level(get_option(argc, argv, "--log-level", "info")));
 
-    // Pseudocode: discover scans PCI devices, applies VID/DID policy,
-    // mmaps BAR space, creates ATLAS parent devices, and registers child modules.
+    // Discovery scans PCI devices, applies VID/DID policy, maps BAR space,
+    // creates TPU targets, and registers their child modules.
     DeviceTree tree = device_manager.discover();
     // Pass --backend phal to discover through the pHal/dry-run backend.
 

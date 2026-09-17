@@ -1,12 +1,12 @@
-#include "diag/module/DMCModule.h"
+#include "diag/modules/DMCModule.h"
 
-// dmc_reg_scan : To scan readable registers for one DMC controller.
+// reg_scan: Scan readable registers for one DMC controller.
 // @input: args["range"] resolved by YAML defaults.
 // @output: TestStatus; scan details are written to the testcase log.
-TestStatus DMCModule::DmcRegScan(TestInfo& ti)
+TestStatus DMCModule::reg_scan(TestInfo& ti)
 {
     if (impl_ == nullptr) {
         return make_unimplemented_status(ti, "DMC implementation is not bound");
     }
-    return impl_->DmcRegScan(ti);
+    return impl_->reg_scan(ti);
 }

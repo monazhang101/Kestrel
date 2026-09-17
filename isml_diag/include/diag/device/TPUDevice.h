@@ -1,13 +1,12 @@
 #pragma once
 
-#include "diag/core/BaseDevice.h"
-#include "diag/core/PlatformPolicy.h"
+#include "diag/core/TestTarget.h"
 #include "diag/implementer/Implementer.h"
 #include "diag/implementer/TPUImpl.h"
-#include "diag/module/DDPModule.h"
-#include "diag/module/ISIModule.h"
-#include "diag/module/PCIeModule.h"
-#include "diag/module/PMUModule.h"
+#include "diag/modules/DDPModule.h"
+#include "diag/modules/ISIModule.h"
+#include "diag/modules/PCIeModule.h"
+#include "diag/modules/PMUModule.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -15,7 +14,7 @@
 #include <string>
 #include <vector>
 
-class TPUDevice : public BaseDevice {
+class TPUDevice : public TestTarget {
 private:
     uint32_t tpu_index_ = 0;
     TPUDeviceConfig config_;
@@ -27,7 +26,7 @@ private:
     std::vector<std::unique_ptr<ISIModule>> isi_modules_;
     std::vector<std::unique_ptr<DDPModule>> ddp_modules_;
 
-    TestStatus Identify(TestInfo& ti);
+    TestStatus identify(TestInfo& ti);
 
 public:
     TPUDevice(const std::string& logical_name,
@@ -46,6 +45,6 @@ public:
     ISIModule* isi(size_t index) const;
     DDPModule* ddp(size_t index) const;
 
-    std::vector<BaseDevice*> child_targets() const override;
+    std::vector<TestTarget*> child_targets() const override;
     void print_tree() const;
 };

@@ -1,4 +1,4 @@
-#include "diag/module/PCIeModule.h"
+#include "diag/modules/PCIeModule.h"
 
 #include <utility>
 
@@ -6,7 +6,7 @@ PCIeModule::PCIeModule(const std::string& name,
                        const DeviceContext& ctx,
                        const ModuleInstanceConfig& config,
                        std::unique_ptr<PCIeImpl> impl)
-    : BaseDevice(name, ctx),
+    : TestTarget(name, "pcie", ctx),
       bar_index_(config.bar_index),
       reg_base_offset_(config.reg_base_offset),
       reg_size_(config.reg_size),

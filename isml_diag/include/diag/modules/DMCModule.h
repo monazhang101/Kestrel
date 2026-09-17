@@ -1,14 +1,13 @@
 #pragma once
 
-#include "diag/core/BaseDevice.h"
-#include "diag/core/PlatformPolicy.h"
+#include "diag/core/TestTarget.h"
 #include "diag/implementer/DMCImpl.h"
 
 #include <cstdint>
 #include <memory>
 #include <string>
 
-class DMCModule : public BaseDevice {
+class DMCModule : public TestTarget {
 private:
     uint32_t ddp_id_ = 0;
     uint32_t controller_id_ = 0;
@@ -17,9 +16,9 @@ private:
     uint64_t reg_size_ = 0;
     std::unique_ptr<DMCImpl> impl_;
 
-    /* ----------- Register atomic tests here ----------- */
-    TestStatus DmcStatusCheck(TestInfo& ti);
-    TestStatus DmcRegScan(TestInfo& ti);
+    // Testcase implementations registered by DMCModule's constructor.
+    TestStatus status_check(TestInfo& ti);
+    TestStatus reg_scan(TestInfo& ti);
 
 public:
     DMCModule(const std::string& name,

@@ -1,8 +1,7 @@
 #pragma once
 
-#include "diag/core/BaseDevice.h"
+#include "diag/core/TestTarget.h"
 #include "diag/core/HalContext.h"
-#include "diag/core/PlatformPolicy.h"
 #include "diag/device/TPUDevice.h"
 
 #include <cstdint>
@@ -38,30 +37,16 @@ class DeviceManager {
 private:
     HalContext hal_;
     std::vector<std::unique_ptr<TPUDevice>> devices_;
-    std::unordered_map<std::string, BaseDevice*> target_registry_;
-    std::unordered_map<std::string, const AtomicTestPolicies*> target_policy_registry_;
-    // -------------------------------
-    // Future per-device execution locks.
-    //
-    // Use one lock per top-level TPU target, e.g. ATLAS_0 or ATLAS_1, when
-    // the MVP needs every module under the same TPU to run sequentially.
-    // Child targets such as PCIE_0_0, PMU_0_0, DDP_0_1, DMC_0_1_2,
-    // and ISI_0_7 should all resolve to the ATLAS_0 lock before
-    // dispatching into BaseDevice::run_atomic_test().
-    //
-    // Example shape:
-    // std::unordered_map<std::string, std::mutex> device_execution_mutexes_;
-    // -------------------------------
-    AtomicTestPolicies atomic_test_policy_;
+    std::unordered_map<std::string, TestTarget*> target_registry_;
+    TestcasePolicyCatalog testcase_policies_;
     std::vector<PolicyEntry> policy_;
     DeviceTree device_tree_;
     Logger logger_;
 
     void clear_discovered_devices();
-    void register_device_tree(BaseDevice* target,
-                              const AtomicTestPolicies* atomic_tests);
-    void add_child_to_tree(const BaseDevice& child,
-                           const BaseDevice& parent);
+    void register_device_tree(TestTarget* target);
+    void add_child_to_tree(const TestTarget& child,
+                           const TestTarget& parent);
 
 public:
     explicit DeviceManager(HalType hal_type = HalType::iHal);
@@ -73,12 +58,12 @@ public:
 
     HalType get_hal_type() const;
     DeviceTree discover();
-    BaseDevice* get_target(const std::string& target_name);
+    TestTarget* get_target(const std::string& target_name);
     std::vector<std::string> get_target_names() const;
     void set_log_level(LogLevel level);
     LogLevel get_log_level() const;
-    TestStatus run_atomic_test(const std::string& target_name,
-                              const std::string& test_name,
-                              const TestArgs& args = {});
+    TestStatus run_testcase(const std::string& target_name,
+                            const std::string& test_name,
+                            const TestArgs& args = {});
     void print_tree() const;
 };

@@ -1,14 +1,13 @@
 #pragma once
 
-#include "diag/core/BaseDevice.h"
-#include "diag/core/PlatformPolicy.h"
+#include "diag/core/TestTarget.h"
 #include "diag/implementer/ISIImpl.h"
 
 #include <cstdint>
 #include <memory>
 #include <string>
 
-class ISIModule : public BaseDevice {
+class ISIModule : public TestTarget {
 private:
     uint32_t link_id_ = 0;
     uint32_t bar_index_ = 0;
@@ -16,11 +15,11 @@ private:
     uint64_t reg_size_ = 0;
     std::unique_ptr<ISIImpl> impl_;
 
-    /* ----------- Register atomic tests here ----------- */
-    TestStatus IsiLinkup(TestInfo& ti);
-    TestStatus IsiSetup(TestInfo& ti);
-    TestStatus IsiPcieApertureContext(TestInfo& ti);
-    TestStatus IsiCommonDevMemRead(TestInfo& ti);
+    // Testcase implementations registered by ISIModule's constructor.
+    TestStatus linkup(TestInfo& ti);
+    TestStatus setup(TestInfo& ti);
+    TestStatus pcie_aperture_context(TestInfo& ti);
+    TestStatus common_devmem_read(TestInfo& ti);
 
 public:
     ISIModule(const std::string& name,

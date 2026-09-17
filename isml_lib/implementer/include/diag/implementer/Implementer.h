@@ -1,7 +1,7 @@
 #pragma once
 
-#include "diag/core/BaseDevice.h"
-#include "diag/core/PlatformPolicy.h"
+#include "diag/core/Platform.h"
+#include "diag/core/TestInfo.h"
 #include "diag/implementer/DDPImpl.h"
 #include "diag/implementer/DMCImpl.h"
 #include "diag/implementer/ISIImpl.h"
