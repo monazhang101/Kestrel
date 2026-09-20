@@ -18,8 +18,6 @@ private:
     // Testcase implementations registered by ISIModule's constructor.
     TestStatus linkup(TestInfo& ti);
     TestStatus setup(TestInfo& ti);
-    TestStatus pcie_aperture_context(TestInfo& ti);
-    TestStatus common_devmem_read(TestInfo& ti);
 
 public:
     ISIModule(const std::string& name,

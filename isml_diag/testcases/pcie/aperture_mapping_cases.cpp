@@ -1,13 +1,13 @@
 #include "diag/modules/PCIeModule.h"
 
 #include "diag/core/Common.h"
+#include "diag/core/Format.h"
 #include "diag/core/HalContext.h"
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <iomanip>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -119,9 +119,6 @@ private:
                       std::string& failure_details) const;
 
     static std::string aperture_name(const ApertureCase& aperture_case);
-    static std::string data_sample(const std::vector<uint8_t>& data);
-    static std::string hex_u64(uint64_t value);
-
     TestInfo& ti_;
     const DeviceContext& ctx_;
     uint32_t control_bar_index_ = 0;
@@ -219,7 +216,7 @@ bool SequentialApertureMappingRun::save_originals_all()
                         aperture_name(aperture_case) +
                         " edge=" + edge.name +
                         " bar_offset=" +
-                        hex_u64(aperture_case.bar_offset + edge.offset));
+                        common::format::hex(aperture_case.bar_offset + edge.offset));
                 }
                 return false;
             }
@@ -250,7 +247,7 @@ bool SequentialApertureMappingRun::write_patterns_all()
                         aperture_name(aperture_case) +
                         " edge=" + edge.name +
                         " bar_offset=" +
-                        hex_u64(aperture_case.bar_offset + edge.offset));
+                        common::format::hex(aperture_case.bar_offset + edge.offset));
                 }
                 return false;
             }
@@ -287,7 +284,7 @@ bool SequentialApertureMappingRun::readback_compare_all()
                         aperture_name(aperture_case) +
                         " edge=" + edge.name +
                         " bar_offset=" +
-                        hex_u64(aperture_case.bar_offset + edge.offset));
+                        common::format::hex(aperture_case.bar_offset + edge.offset));
                 }
                 return false;
             }
@@ -340,7 +337,7 @@ bool SequentialApertureMappingRun::restore_all()
                         aperture_name(aperture_case) +
                         " edge=" + edge.name +
                         " bar_offset=" +
-                        hex_u64(aperture_case.bar_offset + edge.offset));
+                        common::format::hex(aperture_case.bar_offset + edge.offset));
                 }
             } else {
                 ++restored_edges;
@@ -404,11 +401,11 @@ bool SequentialApertureMappingRun::verify_aperture(
     mismatch << aperture_name(aperture_case)
              << ": aperture get mismatch expected(identity="
              << static_cast<uint32_t>(IDENTITY)
-             << ", target_addr=" << hex_u64(aperture_case.target_addr)
-             << ", size=" << hex_u64(APERTURE_SIZE)
+             << ", target_addr=" << common::format::hex(aperture_case.target_addr)
+             << ", size=" << common::format::hex(APERTURE_SIZE)
              << ") actual(identity=" << static_cast<uint32_t>(actual.identity)
-             << ", target_addr=" << hex_u64(actual.target_addr)
-             << ", size=" << hex_u64(actual.size) << ")";
+             << ", target_addr=" << common::format::hex(actual.target_addr)
+             << ", size=" << common::format::hex(actual.size) << ")";
     error = mismatch.str();
     return false;
 }
@@ -458,14 +455,14 @@ bool SequentialApertureMappingRun::compare_edge(
     details << aperture_name(aperture_case)
             << " edge=" << edge.name
             << " absolute_bar_offset="
-            << hex_u64(aperture_case.bar_offset + edge.offset)
+            << common::format::hex(aperture_case.bar_offset + edge.offset)
             << " mismatch_offset=" << mismatch_offset
-            << " expected=0x" << std::hex << std::setw(2) << std::setfill('0')
-            << static_cast<uint32_t>(*mismatch.first)
-            << " actual=0x" << std::setw(2)
-            << static_cast<uint32_t>(*mismatch.second)
-            << " expected_sample=" << data_sample(expected)
-            << " actual_sample=" << data_sample(actual);
+            << " expected=" << common::format::hex(*mismatch.first, 2)
+            << " actual=" << common::format::hex(*mismatch.second, 2)
+            << " expected_sample="
+            << common::format::hex_bytes(expected.data(), expected.size())
+            << " actual_sample="
+            << common::format::hex_bytes(actual.data(), actual.size());
     failure_details = details.str();
     return false;
 }
@@ -480,26 +477,5 @@ std::string SequentialApertureMappingRun::aperture_name(
            << static_cast<uint32_t>(aperture_case.aperture_index);
     return stream.str();
 }
-
-std::string SequentialApertureMappingRun::data_sample(
-    const std::vector<uint8_t>& data)
-{
-    std::ostringstream stream;
-    stream << "0x";
-    const auto count = std::min<size_t>(data.size(), 8);
-    for (size_t i = 0; i < count; ++i) {
-        stream << std::hex << std::setw(2) << std::setfill('0')
-               << static_cast<uint32_t>(data[i]);
-    }
-    return stream.str();
-}
-
-std::string SequentialApertureMappingRun::hex_u64(uint64_t value)
-{
-    std::ostringstream stream;
-    stream << "0x" << std::hex << value;
-    return stream.str();
-}
-
 
 }

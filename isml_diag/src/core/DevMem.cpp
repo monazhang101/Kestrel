@@ -8,6 +8,7 @@
 #include "diag/core/DevMem.h"
 
 #include "diag/core/Common.h"
+#include "diag/core/Format.h"
 #include "diag/core/HalContext.h"
 
 #include <limits>
@@ -26,13 +27,6 @@ bool fail(std::string* error, const std::string& message)
         *error = message;
     }
     return false;
-}
-
-std::string hex_u64(uint64_t value)
-{
-    std::ostringstream stream;
-    stream << "0x" << std::hex << value;
-    return stream.str();
 }
 
 bool prepare_window(TestInfo& ti,
@@ -108,9 +102,9 @@ bool prepare_window(TestInfo& ti,
                << "\n       bar_index        = " << window.bar_index
                << "\n       aperture_index   = "
                << static_cast<uint32_t>(window.aperture_index)
-               << "\n       target_addr      = " << hex_u64(window.target_addr)
-               << "\n       window_size      = " << hex_u64(window.size)
-               << "\n       data_bar_offset  = " << hex_u64(window.bar_offset);
+               << "\n       target_addr      = " << common::format::hex(window.target_addr)
+               << "\n       window_size      = " << common::format::hex(window.size)
+               << "\n       data_bar_offset  = " << common::format::hex(window.bar_offset);
         ti.logger->debug(stream.str());
     }
     return true;
@@ -142,6 +136,13 @@ bool read(TestInfo& ti,
                            len)) {
         return fail(error, "device-memory BAR read failed");
     }
+    if (ti.logger != nullptr) {
+        ti.logger->debug(
+            "D-MEM read target_addr=" +
+            common::format::hex(window.target_addr + offset) +
+            " size_bytes=" + std::to_string(len) +
+            " data_preview=" + common::format::hex_bytes(data, len));
+    }
     return true;
 }
 
@@ -168,6 +169,13 @@ bool write(TestInfo& ti,
                             data,
                             len)) {
         return fail(error, "device-memory BAR write failed");
+    }
+    if (ti.logger != nullptr) {
+        ti.logger->debug(
+            "D-MEM write target_addr=" +
+            common::format::hex(window.target_addr + offset) +
+            " size_bytes=" + std::to_string(len) +
+            " data_preview=" + common::format::hex_bytes(data, len));
     }
     return true;
 }

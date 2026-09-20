@@ -161,7 +161,6 @@ add_library(isml_diag
     isml_diag/testcases/dmc/status_cases.cpp
     isml_diag/testcases/dmc/reg_cases.cpp
     isml_diag/testcases/isi/link_cases.cpp
-    isml_diag/testcases/isi/pcie_aperture_cases.cpp
     isml_diag/testcases/isi/setup_cases.cpp
     isml_diag/testcases/pcie/dma_cases.cpp
     isml_diag/testcases/pcie/aperture_mapping_cases.cpp

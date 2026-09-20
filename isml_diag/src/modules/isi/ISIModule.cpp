@@ -16,21 +16,4 @@ ISIModule::ISIModule(const std::string& name,
     _add_test("linkup", {}, [this](TestInfo& ti) { return linkup(ti); });
     _add_test("setup", {{"mode", "default", "string"}},
               [this](TestInfo& ti) { return setup(ti); });
-    _add_test("pcie_aperture_context",
-              {{"bar_index", "4", "u64"},
-               {"aperture_index", "0", "u64"}},
-              [this](TestInfo& ti) {
-        return pcie_aperture_context(ti);
-    });
-    _add_test("common_devmem_read",
-              {{"bar_index", "4", "u64"},
-               {"aperture_index", "0", "u64"},
-               {"identity", "0", "u64"},
-               {"target_addr", "0x10000000", "offset"},
-               {"aperture_size", "0x100000", "bytes"},
-               {"bar_offset", "0", "offset"},
-               {"offset", "0", "offset"}},
-              [this](TestInfo& ti) {
-        return common_devmem_read(ti);
-    });
 }
