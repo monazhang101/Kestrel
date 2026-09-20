@@ -1,5 +1,0 @@
-testcases:
-  reg_scan:
-    arguments:
-      range:
-        range: [default, all]

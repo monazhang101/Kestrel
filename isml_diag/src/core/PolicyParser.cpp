@@ -222,78 +222,6 @@ std::vector<ModuleInstanceConfig> parse_module_list(const std::vector<YamlLine>&
     return modules;
 }
 
-std::vector<ModuleInstanceConfig> parse_dmc_list(const std::vector<YamlLine>& lines,
-                                                 size_t dmc_section)
-{
-    std::vector<ModuleInstanceConfig> dmc_modules;
-    auto end = section_end(lines, dmc_section);
-    ModuleInstanceConfig* current = nullptr;
-
-    for (size_t i = dmc_section + 1; i < end; ++i) {
-        if (lines[i].indent == lines[dmc_section].indent + 2 &&
-            starts_with(lines[i].text, "- index:")) {
-            ModuleInstanceConfig module;
-            module.index = static_cast<uint32_t>(parse_u64(yaml_value(lines[i].text)));
-            dmc_modules.push_back(module);
-            current = &dmc_modules.back();
-        } else if (current != nullptr && starts_with(lines[i].text, "reg_base_offset:")) {
-            current->reg_base_offset = parse_u64(yaml_value(lines[i].text));
-        } else if (current != nullptr && starts_with(lines[i].text, "reg_size:")) {
-            current->reg_size = parse_u64(yaml_value(lines[i].text));
-        } else if (current != nullptr && starts_with(lines[i].text, "bar_index:")) {
-            current->bar_index = static_cast<uint32_t>(parse_u64(yaml_value(lines[i].text)));
-        }
-    }
-
-    return dmc_modules;
-}
-
-std::vector<DDPModuleConfig> parse_ddp_list(const std::vector<YamlLine>& lines)
-{
-    std::vector<DDPModuleConfig> ddp_modules;
-    auto section = find_line(lines, "ddp:");
-    auto end = section_end(lines, section);
-
-    for (size_t i = section + 1; i < end; ++i) {
-        if (lines[i].indent != lines[section].indent + 2 ||
-            !starts_with(lines[i].text, "- index:")) {
-            continue;
-        }
-
-        DDPModuleConfig ddp;
-        ddp.index = static_cast<uint32_t>(parse_u64(yaml_value(lines[i].text)));
-
-        auto next_ddp = end;
-        for (size_t j = i + 1; j < end; ++j) {
-            if (lines[j].indent == lines[i].indent &&
-                starts_with(lines[j].text, "- index:")) {
-                next_ddp = j;
-                break;
-            }
-        }
-
-        for (size_t j = i + 1; j < next_ddp; ++j) {
-            if (lines[j].indent == lines[i].indent + 2 &&
-                starts_with(lines[j].text, "reg_base_offset:")) {
-                ddp.reg_base_offset = parse_u64(yaml_value(lines[j].text));
-            } else if (lines[j].indent == lines[i].indent + 2 &&
-                       starts_with(lines[j].text, "reg_size:")) {
-                ddp.reg_size = parse_u64(yaml_value(lines[j].text));
-            } else if (lines[j].indent == lines[i].indent + 2 &&
-                       starts_with(lines[j].text, "bar_index:")) {
-                ddp.bar_index = static_cast<uint32_t>(parse_u64(yaml_value(lines[j].text)));
-            } else if (lines[j].indent == lines[i].indent + 2 &&
-                       lines[j].text == "dmc:") {
-                ddp.dmc_modules = parse_dmc_list(lines, j);
-            }
-        }
-
-        ddp_modules.push_back(std::move(ddp));
-    }
-
-    return ddp_modules;
-}
-
 std::vector<PolicyDeviceInventory> parse_inventory(const std::vector<YamlLine>& lines)
 {
     std::vector<PolicyDeviceInventory> inventory;
@@ -396,7 +324,7 @@ std::vector<PolicyEntry> load_one_policy(const std::string& path)
     TPUDeviceConfig tpu_config;
     tpu_config.pcie_modules = parse_module_list(lines, "pcie:");
     tpu_config.pmu_modules = parse_module_list(lines, "pmu:");
-    tpu_config.ddp_modules = parse_ddp_list(lines);
+    tpu_config.ddp_modules = parse_module_list(lines, "ddp:");
     tpu_config.isi_modules = parse_module_list(lines, "isi:");
 
     std::vector<PolicyEntry> entries;

@@ -1,40 +1,18 @@
 #pragma once
 
 #include "diag/core/TestTarget.h"
-#include "diag/implementer/DDPImpl.h"
-#include "diag/implementer/Implementer.h"
-#include "diag/modules/DMCModule.h"
-
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-#include <string>
-#include <vector>
 
 class DDPModule : public TestTarget {
 private:
     uint32_t ddp_id_ = 0;
-    uint32_t bar_index_ = 0;
-    uint64_t reg_base_offset_ = 0;
-    uint64_t reg_size_ = 0;
-    std::unique_ptr<DDPImpl> impl_;
-    std::vector<std::unique_ptr<DMCModule>> dmc_modules_;
-
-    // Testcase implementations registered by DDPModule's constructor.
-    TestStatus dmem_linkup_verify(TestInfo& ti);
+    TestStatus example(TestInfo& ti);
 
 public:
-    DDPModule(const std::string& name,
-              const DeviceContext& ctx,
-              uint32_t tpu_index,
-              const DDPModuleConfig& config,
-              std::unique_ptr<DDPImpl> impl,
-              const std::shared_ptr<Implementer>& implementer);
+    DDPModule(const std::string& name, const DeviceContext& ctx,
+                const ModuleInstanceConfig& config);
 
     uint32_t ddp_id() const { return ddp_id_; }
-    DMCModule* dmc(size_t index) const;
-    uint64_t reg_base_offset() const { return reg_base_offset_; }
-    uint64_t reg_size() const { return reg_size_; }
-    uint32_t bar_index() const { return bar_index_; }
-    std::vector<TestTarget*> child_targets() const override;
+    uint64_t reg_base_offset() const { return ctx_.reg_base_offset; }
+    uint64_t reg_size() const { return ctx_.reg_size; }
+    uint32_t bar_index() const { return ctx_.reg_bar_index; }
 };

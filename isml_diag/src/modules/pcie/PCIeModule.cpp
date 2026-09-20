@@ -12,6 +12,9 @@ PCIeModule::PCIeModule(const std::string& name,
       reg_size_(config.reg_size),
       impl_(std::move(impl))
 {
+    ctx_.reg_bar_index = config.bar_index;
+    ctx_.reg_base_offset = config.reg_base_offset;
+    ctx_.reg_size = config.reg_size;
     _add_test("bar_read32",
               {{"offset", "0", "offset"}},
               [this](TestInfo& ti) { return bar_read32(ti); });

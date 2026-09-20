@@ -83,15 +83,6 @@ TPUDevice::TPUDevice(const std::string& logical_name,
       config_(config),
       implementer_(std::move(implementer))
 {
-    // Bind the top-level TPU operation implementation.
-    auto tpu_impl_ctx = make_impl_context(logical_name, ctx_, tpu_index_, 0, 0, 0, ctx_.bar_size);
-    if (implementer_ != nullptr) {
-        impl_ = implementer_->tpu_impl(tpu_impl_ctx);
-    }
-
-    // ----------------- Atomic Tests -----------------
-    _add_test("identify", {}, [this](TestInfo& ti) { return identify(ti); });
-
     // Create the policy-defined PCIe module, if this TPU type exposes one.
     if (!config_.pcie_modules.empty()) {
         const auto& pcie_config = config_.pcie_modules.front();
@@ -120,68 +111,20 @@ TPUDevice::TPUDevice(const std::string& logical_name,
         const auto& pmu_config = config_.pmu_modules.front();
         auto pmu_name = "PMU_" + std::to_string(tpu_index_) + "_" +
                         std::to_string(pmu_config.index);
-        auto impl_ctx = make_impl_context(pmu_name,
-                                          ctx_,
-                                          pmu_config.index,
-                                          tpu_index_,
-                                          pmu_config.bar_index,
-                                          pmu_config.reg_base_offset,
-                                          pmu_config.reg_size);
-        std::unique_ptr<PMUImpl> pmu_impl;
-        if (implementer_ != nullptr) {
-            pmu_impl = implementer_->pmu_impl(impl_ctx);
-        }
-        pmu_ = std::make_unique<PMUModule>(
-            pmu_name,
-            ctx_,
-            pmu_config,
-            std::move(pmu_impl));
+        pmu_ = std::make_unique<PMUModule>(pmu_name, ctx_, pmu_config);
     }
 
-    // Create all policy-defined DDP modules and their DMC children.
     for (const auto& ddp_config : config_.ddp_modules) {
         auto ddp_name = "DDP_" + std::to_string(tpu_index_) + "_" +
                         std::to_string(ddp_config.index);
-        auto impl_ctx = make_impl_context(ddp_name,
-                                          ctx_,
-                                          ddp_config.index,
-                                          tpu_index_,
-                                          ddp_config.bar_index,
-                                          ddp_config.reg_base_offset,
-                                          ddp_config.reg_size);
-        std::unique_ptr<DDPImpl> ddp_impl;
-        if (implementer_ != nullptr) {
-            ddp_impl = implementer_->ddp_impl(impl_ctx);
-        }
-        ddp_modules_.push_back(std::make_unique<DDPModule>(
-            ddp_name,
-            ctx_,
-            tpu_index_,
-            ddp_config,
-            std::move(ddp_impl),
-            implementer_));
+        ddp_modules_.push_back(std::make_unique<DDPModule>(ddp_name, ctx_, ddp_config));
     }
 
     // Create all policy-defined ISI modules.
     for (const auto& isi_config : config_.isi_modules) {
         auto isi_name = "ISI_" + std::to_string(tpu_index_) + "_" +
                         std::to_string(isi_config.index);
-        auto impl_ctx = make_impl_context(isi_name,
-                                          ctx_,
-                                          isi_config.index,
-                                          tpu_index_,
-                                          isi_config.bar_index,
-                                          isi_config.reg_base_offset,
-                                          isi_config.reg_size);
-        std::unique_ptr<ISIImpl> isi_impl;
-        if (implementer_ != nullptr) {
-            isi_impl = implementer_->isi_impl(impl_ctx);
-        }
-        isi_modules_.push_back(std::make_unique<ISIModule>(
-            isi_name,
-            ctx_,
-            isi_config,
-            std::move(isi_impl)));
+        isi_modules_.push_back(std::make_unique<ISIModule>(isi_name, ctx_, isi_config));
     }
 }
 
@@ -231,15 +174,4 @@ void TPUDevice::print_tree() const
     print_bar_map_status(ctx_);
 
     print_child_tree(*this, "");
-}
-
-// identify : To read ATLAS identity registers and report stable hardware facts.
-// @input: none.
-// @output: TestStatus; identity details are written to the testcase log.
-TestStatus TPUDevice::identify(TestInfo& ti)
-{
-    if (impl_ == nullptr) {
-        return make_unimplemented_status(ti, "TPU implementation is not bound");
-    }
-    return impl_->identify(ti);
 }

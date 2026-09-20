@@ -1,6 +1,8 @@
 #include "diag/core/TestTarget.h"
+#include "diag/core/HalContext.h"
 
 #include <exception>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -10,14 +12,16 @@ TestTarget::TestTarget(const std::string& name,
                        const DeviceContext& ctx)
     : name_(name), target_type_(std::move(target_type)), ctx_(ctx)
 {
+    ctx_.target_name = name;
 }
 
 void TestTarget::_add_test(const std::string& test_name,
                            std::initializer_list<TestArgumentDefinition> arguments,
-                           TestcaseFunc func)
+                           TestcaseFunc func,
+                           bool prepare_phal)
 {
     registered_tests_[test_name] = {
-        std::vector<TestArgumentDefinition>(arguments), std::move(func)};
+        std::vector<TestArgumentDefinition>(arguments), std::move(func), prepare_phal};
 }
 
 bool TestTarget::parse_u64(const std::string& value, uint64_t& parsed)
@@ -34,8 +38,8 @@ bool TestTarget::parse_u64(const std::string& value, uint64_t& parsed)
 
 bool TestTarget::is_numeric_format(const std::string& format)
 {
-    return format == "u64" || format == "bytes" ||
-           format == "ms" || format == "offset";
+    return format == "u64" || format == "u32" || format == "bytes" ||
+           format == "ms" || format == "us" || format == "offset" || format == "bool";
 }
 
 bool TestTarget::validate_format(const TestArgumentDefinition& definition,
@@ -45,7 +49,10 @@ bool TestTarget::validate_format(const TestArgumentDefinition& definition,
     if (definition.format == "string") return true;
     if (is_numeric_format(definition.format)) {
         uint64_t parsed = 0;
-        if (parse_u64(value, parsed)) return true;
+        if (parse_u64(value, parsed) &&
+            ((definition.format != "u32" && definition.format != "us") ||
+             parsed <= std::numeric_limits<uint32_t>::max()) &&
+            (definition.format != "bool" || parsed <= 1)) return true;
         error = "argument " + definition.name + " must use format " +
                 definition.format + ": " + value;
         return false;
@@ -96,7 +103,7 @@ TestStatus TestTarget::run_testcase(const std::string& test_name,
                                     HalContext* hal,
                                     const TestcasePolicy* policy)
 {
-    std::lock_guard<std::mutex> lock(testcase_mutex_);
+    std::lock_guard<std::mutex> lock(*ctx_.testcase_mutex);
     Logger default_logger;
     TestInfo ti;
     ti.target_name = name_;
@@ -143,7 +150,32 @@ TestStatus TestTarget::run_testcase(const std::string& test_name,
     }
     ti.args = std::move(resolved_args);
 
+    // Only these borrowed per-call fields are reset; PHAL instances are owned
+    // and cached by HalContext. Framework block offsets never mutate PHAL.
+    ctx_.block_offset = 0;
+    ctx_.logger = ti.logger;
+    struct Restore {
+        DeviceContext& ctx;
+        ~Restore() { ctx.block_offset = 0; ctx.logger = nullptr; }
+    } restore{ctx_};
+
     try {
+        if (test->second.prepare_phal) {
+            if (hal == nullptr) {
+                ti.logger->error("testcase requires a HAL context; run through DeviceManager");
+                return TestStatus::ERROR;
+            }
+            std::string error;
+            const auto project = phal_project_from_tpu_type(ctx_.tpu_type);
+            ctx_.pcie_phal = hal->phal().get_context(ctx_, ctx_.pcie_control_bar_index,
+                                                   ctx_.pcie_control_base, project, &error);
+            ctx_.phal = hal->phal().get_context(ctx_, ctx_.reg_bar_index,
+                                              ctx_.reg_base_offset, project, &error);
+            if (ctx_.pcie_phal == nullptr || ctx_.phal == nullptr) {
+                ti.logger->error("PHAL initialization failed: " + error);
+                return TestStatus::ERROR;
+            }
+        }
         return test->second.execute(ti);
     } catch (const std::invalid_argument& e) {
         ti.logger->error(std::string("invalid test argument: ") + e.what());

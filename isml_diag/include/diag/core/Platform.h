@@ -1,10 +1,14 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
 enum class TPUType { Unknown, Atlas, AtlasM };
+
+class Logger;
 
 inline std::string to_string(TPUType tpu_type)
 {
@@ -26,6 +30,7 @@ struct BarMapping {
     uint64_t resource_size = 0;
     uint64_t mapped_size = 0;
     bool mapped = false;
+    bool writable = false;
     std::string error;
     std::vector<std::string> layout;
 };
@@ -41,6 +46,21 @@ struct DeviceContext {
     std::vector<BarMapping> bar_mappings;
     uint32_t pcie_control_bar_index = 0;
     uint64_t pcie_control_base = 0;
+
+    // Module-relative register view; raw common::bar offsets remain unchanged.
+    uint32_t reg_bar_index = 0;
+    uint64_t reg_base_offset = 0;
+    uint64_t reg_size = 0;
+    uint64_t block_offset = 0;
+    // Bring-up scratch region, independent of the module CSR address space.
+    uint64_t dmem_base = 0x10000000;
+    uint64_t dmem_size = 0x100000;
+    void* phal = nullptr;
+    void* pcie_phal = nullptr;
+    Logger* logger = nullptr; // Borrowed only during a testcase.
+    std::string target_name;
+    // Copies passed to sibling modules share the physical device lock.
+    std::shared_ptr<std::mutex> testcase_mutex = std::make_shared<std::mutex>();
 };
 
 struct ModuleInstanceConfig {
@@ -48,14 +68,6 @@ struct ModuleInstanceConfig {
     uint32_t bar_index = 0;
     uint64_t reg_base_offset = 0;
     uint64_t reg_size = 0;
-};
-
-struct DDPModuleConfig {
-    uint32_t index = 0;
-    uint32_t bar_index = 0;
-    uint64_t reg_base_offset = 0;
-    uint64_t reg_size = 0;
-    std::vector<ModuleInstanceConfig> dmc_modules;
 };
 
 struct TPUDeviceConfig {
@@ -66,7 +78,7 @@ struct TPUDeviceConfig {
     std::vector<ModuleInstanceConfig> pcie_modules;
     std::vector<ModuleInstanceConfig> pmu_modules;
     std::vector<ModuleInstanceConfig> isi_modules;
-    std::vector<DDPModuleConfig> ddp_modules;
+    std::vector<ModuleInstanceConfig> ddp_modules;
 };
 
 struct PolicyEntry {

@@ -1,2 +1,2 @@
 testcases:
-  # No configurable policy ranges yet. Test contracts live in DDPModule.cpp.
+  # Example defaults and validation are declared in the module registration.

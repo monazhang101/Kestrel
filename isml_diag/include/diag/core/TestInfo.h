@@ -19,21 +19,33 @@ enum class TestStatus : int {
     INVALID = 1u << 3,
 };
 
-inline const char* test_status_name(TestStatus status)
+constexpr TestStatus operator|(TestStatus lhs, TestStatus rhs)
 {
-    switch (status) {
-    case TestStatus::OK:
-        return "OK";
-    case TestStatus::TIMEOUT:
-        return "TIMEOUT";
-    case TestStatus::ERROR:
-        return "ERROR";
-    case TestStatus::UNIMPLEMENTED:
-        return "UNIMPLEMENTED";
-    case TestStatus::INVALID:
-        return "INVALID";
+    return static_cast<TestStatus>(static_cast<int>(lhs) | static_cast<int>(rhs));
+}
+
+inline TestStatus& operator|=(TestStatus& lhs, TestStatus rhs)
+{
+    return lhs = lhs | rhs;
+}
+
+inline std::string test_status_name(TestStatus status)
+{
+    if (status == TestStatus::OK) return "OK";
+    std::string result;
+    const auto append = [&](const char* name) {
+        if (!result.empty()) result += '|';
+        result += name;
+    };
+    const auto bits = static_cast<unsigned>(status);
+    if (bits & static_cast<unsigned>(TestStatus::TIMEOUT)) append("TIMEOUT");
+    if (bits & static_cast<unsigned>(TestStatus::ERROR)) append("ERROR");
+    if (bits & static_cast<unsigned>(TestStatus::UNIMPLEMENTED)) append("UNIMPLEMENTED");
+    if (bits & static_cast<unsigned>(TestStatus::INVALID)) append("INVALID");
+    if (bits & ~15u) {
+        append("UNKNOWN");
     }
-    return "UNKNOWN";
+    return result;
 }
 
 enum class LogLevel {

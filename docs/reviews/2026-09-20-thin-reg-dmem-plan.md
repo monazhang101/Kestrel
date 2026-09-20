@@ -1,5 +1,7 @@
 # reg / dmem 薄接口审查与最小实施方案
 
+> 历史评估记录。后续确认的实施范围为：保留全部 PCIe/HQC/DMA/kernel；删除 TPU identify、DMC 和其它旧 case/Impl；PMU、DDP、ISI 各保留一个 example，只有 ISI 直接调用原生 PHAL linkup。实际接口和使用方法以 [isml_diag/README.md](../../isml_diag/README.md) 为准。本文下方关于移出 DMA、单个共享 example 等早期建议不再作为实施要求。
+
 审查日期：2026-09-20。基于当前工作区，包括已有未提交改动。本次交付是审查和实施方案，没有修改运行代码。
 
 结论：底层 IO 能力接近目标；需要集中修改 testcase 接口、上下文准备和错误语义，同时退出当前默认路径中的 FW/HQC/DMA。无需重建 probe、设备树或测试框架。不能把目前部分 case 返回 OK 当成已实现硬件功能的证据。

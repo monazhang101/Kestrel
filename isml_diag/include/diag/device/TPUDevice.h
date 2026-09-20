@@ -2,7 +2,6 @@
 
 #include "diag/core/TestTarget.h"
 #include "diag/implementer/Implementer.h"
-#include "diag/implementer/TPUImpl.h"
 #include "diag/modules/DDPModule.h"
 #include "diag/modules/ISIModule.h"
 #include "diag/modules/PCIeModule.h"
@@ -19,14 +18,12 @@ private:
     uint32_t tpu_index_ = 0;
     TPUDeviceConfig config_;
     std::shared_ptr<Implementer> implementer_;
-    std::unique_ptr<TPUImpl> impl_;
 
     std::unique_ptr<PCIeModule> pcie_;
     std::unique_ptr<PMUModule> pmu_;
     std::vector<std::unique_ptr<ISIModule>> isi_modules_;
     std::vector<std::unique_ptr<DDPModule>> ddp_modules_;
 
-    TestStatus identify(TestInfo& ti);
 
 public:
     TPUDevice(const std::string& logical_name,

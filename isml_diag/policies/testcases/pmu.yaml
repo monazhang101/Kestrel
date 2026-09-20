@@ -1,5 +1,2 @@
 testcases:
-  ipc_request_finish:
-    arguments:
-      timeout_ms:
-        range: [1, 60000]
+  # Example defaults and validation are declared in the module registration.

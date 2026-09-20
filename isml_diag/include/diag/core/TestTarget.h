@@ -38,12 +38,10 @@ struct TestArgumentDefinition {
 struct TestcaseDefinition {
     std::vector<TestArgumentDefinition> arguments;
     TestcaseFunc execute;
+    bool prepare_phal = false;
 };
 
 class TestTarget {
-private:
-    std::mutex testcase_mutex_;
-
 protected:
     std::string name_;
     TargetType target_type_;
@@ -53,7 +51,8 @@ protected:
     // Modules declare testcase defaults, formats, and callbacks here.
     void _add_test(const std::string& test_name,
                    std::initializer_list<TestArgumentDefinition> arguments,
-                   TestcaseFunc func);
+                   TestcaseFunc func,
+                   bool prepare_phal = false);
 
 private:
     static bool parse_u64(const std::string& value, uint64_t& parsed);

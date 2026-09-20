@@ -10,7 +10,7 @@ static int run_test(DeviceManager& device_manager,
                     const TestArgs& args = {})
 {
     const auto status = device_manager.run_testcase(target, test, args);
-    const char* result = status == TestStatus::OK
+    const std::string result = status == TestStatus::OK
                              ? "PASS"
                              : test_status_name(status);
     std::cout << "[" << result << "] "

@@ -16,55 +16,15 @@ chip_profile:
       - index: 0
         reg_base_offset: "0x32000000"
         reg_size: "0xd18a44"
-        dmc:
-          - index: 0
-            reg_base_offset: "0x32000800"
-            reg_size: "0xb009c"
-          - index: 1
-            reg_base_offset: "0x32400800"
-            reg_size: "0xb009c"
-          - index: 2
-            reg_base_offset: "0x32800800"
-            reg_size: "0xb009c"
       - index: 1
         reg_base_offset: "0x33000000"
         reg_size: "0xd18a44"
-        dmc:
-          - index: 0
-            reg_base_offset: "0x33000800"
-            reg_size: "0xb009c"
-          - index: 1
-            reg_base_offset: "0x33400800"
-            reg_size: "0xb009c"
-          - index: 2
-            reg_base_offset: "0x33800800"
-            reg_size: "0xb009c"
       - index: 2
         reg_base_offset: "0x34000000"
         reg_size: "0xd18a44"
-        dmc:
-          - index: 0
-            reg_base_offset: "0x34000800"
-            reg_size: "0xb009c"
-          - index: 1
-            reg_base_offset: "0x34400800"
-            reg_size: "0xb009c"
-          - index: 2
-            reg_base_offset: "0x34800800"
-            reg_size: "0xb009c"
       - index: 3
         reg_base_offset: "0x35000000"
         reg_size: "0xd18a44"
-        dmc:
-          - index: 0
-            reg_base_offset: "0x35000800"
-            reg_size: "0xb009c"
-          - index: 1
-            reg_base_offset: "0x35400800"
-            reg_size: "0xb009c"
-          - index: 2
-            reg_base_offset: "0x35800800"
-            reg_size: "0xb009c"
     isi:
       - index: 0
         reg_base_offset: "0x37000000"

@@ -35,6 +35,8 @@ struct DeviceTree {
 
 class DeviceManager {
 private:
+    // Discovery must not invalidate mappings while a testcase is running.
+    std::mutex execution_mutex_;
     HalContext hal_;
     std::vector<std::unique_ptr<TPUDevice>> devices_;
     std::unordered_map<std::string, TestTarget*> target_registry_;

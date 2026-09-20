@@ -8,6 +8,8 @@
  */
 #pragma once
 
+#include "diag/core/TestInfo.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <string>
@@ -43,3 +45,13 @@ bool write(TestInfo& ti,
            std::string* error = nullptr);
 
 }
+
+namespace common {
+// One 32-bit word at dmem_base + addr. Uses BAR4/aperture0/identity0;
+// independent of the module register block. Framework prepares pcie_phal.
+TestStatus dmem_read(DeviceContext& ctx, uint64_t addr, uint32_t* data);
+TestStatus dmem_write(DeviceContext& ctx, uint64_t addr, uint32_t data);
+}
+
+using common::dmem_read;
+using common::dmem_write;

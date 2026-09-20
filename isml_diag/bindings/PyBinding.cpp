@@ -20,6 +20,7 @@ static py::dict bar_mapping_to_dict(const BarMapping& bar)
     d["resource_size"] = bar.resource_size;
     d["mapped_size"] = bar.mapped_size;
     d["mapped"] = bar.mapped;
+    d["writable"] = bar.writable;
     d["error"] = bar.error;
     d["layout"] = bar.layout;
     return d;
@@ -75,6 +76,7 @@ PYBIND11_MODULE(tpu_hal, m)
         .def_readwrite("resource_size", &BarMapping::resource_size)
         .def_readwrite("mapped_size", &BarMapping::mapped_size)
         .def_readwrite("mapped", &BarMapping::mapped)
+        .def_readwrite("writable", &BarMapping::writable)
         .def_readwrite("error", &BarMapping::error)
         .def_readwrite("layout", &BarMapping::layout)
         .def_property(
@@ -144,15 +146,6 @@ PYBIND11_MODULE(tpu_hal, m)
         .def_readwrite("topology", &DeviceTree::topology);
 
     py::class_<TestTarget>(m, "TestTarget")
-        .def("run_testcase",
-             [](TestTarget& target,
-                const std::string& test_name,
-                const TestArgs& args) {
-                 return target.run_testcase(test_name, args);
-             },
-             py::arg("test_name"),
-             py::arg("args") = TestArgs{},
-             py::call_guard<py::gil_scoped_release>())
         .def("get_name", &TestTarget::get_name)
         .def("get_target_type", &TestTarget::get_target_type)
         .def("get_registered_test_names", &TestTarget::get_registered_test_names)
@@ -171,9 +164,6 @@ PYBIND11_MODULE(tpu_hal, m)
     py::class_<PMUModule, TestTarget>(m, "PMUModule");
     py::class_<ISIModule, TestTarget>(m, "ISIModule")
         .def("link_id", &ISIModule::link_id);
-    py::class_<DMCModule, TestTarget>(m, "DMCModule")
-        .def("ddp_id", &DMCModule::ddp_id)
-        .def("controller_id", &DMCModule::controller_id);
     py::class_<DDPModule, TestTarget>(m, "DDPModule");
 
     py::class_<DeviceManager>(m, "DeviceManager")

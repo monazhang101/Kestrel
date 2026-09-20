@@ -1,6 +1,7 @@
 #pragma once
 
 #include "diag/core/Platform.h"
+#include "diag/core/TestInfo.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -14,6 +15,9 @@ enum class PhalProject {
 };
 
 PhalProject phal_project_from_tpu_type(TPUType tpu_type);
+
+// Never cast native PHAL status values to the framework's unrelated bit flags.
+TestStatus from_phal(int status);
 
 struct IhalIO {
     const DeviceContext* device_ctx = nullptr;

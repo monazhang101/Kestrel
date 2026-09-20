@@ -96,6 +96,15 @@ PhalProject phal_project_from_tpu_type(TPUType tpu_type)
     return PhalProject::Generic;
 }
 
+TestStatus from_phal(int status)
+{
+    if (status == PHAL_STATUS_OK) return TestStatus::OK;
+    if (status == PHAL_STATUS_INVALID) return TestStatus::INVALID;
+    // Other native values are retained in the caller's diagnostic log. Without
+    // the real PHAL status ABI, do not assume timeout/error bits match ours.
+    return TestStatus::ERROR;
+}
+
 phal_status_t ihal_write32(void* handler, uintptr_t addr, uint32_t data)
 {
     auto* ihalIO = static_cast<IhalIO*>(handler);
@@ -202,6 +211,7 @@ void* PhalBridge::get_context(const DeviceContext& ctx,
 
     auto slot = std::make_unique<Impl::ContextSlot>();
     slot->device_ctx = ctx;
+    slot->device_ctx.logger = nullptr;
     slot->control_bar_index = control_bar_index;
     slot->base_offset = base_offset;
     slot->project = project;

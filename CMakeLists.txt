@@ -16,6 +16,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(ISML_BUILD_CLI "Build the ISML diagnostic CLI" ON)
 option(ISML_BUILD_PYTHON_BINDINGS "Build pybind11 Python bindings" OFF)
 option(ISML_USE_MOCK_PHAL "Use the bundled compile/smoke PHAL mock" OFF)
+option(ISML_BUILD_TESTS "Build software IO contract tests (no hardware access)" OFF)
 
 set(ISML_DIAG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/isml_diag)
 set(ISML_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/isml_lib)
@@ -33,6 +34,7 @@ if(ISML_USE_MOCK_PHAL)
     set(PHAL_CORE_SOURCES
         ${PHAL_ROOT}/src/phal/init.c
         ${PHAL_ROOT}/src/components/pcie/pcie.c
+        ${PHAL_ROOT}/src/components/isi/isi.c
     )
     set(PHAL_PROJECT_IMPL_SOURCES)
     message(WARNING
@@ -121,19 +123,9 @@ add_library(ProtonHal::phal ALIAS phal)
 add_library(isml_lib
     isml_lib/implementer/src/implementer.cpp
     isml_lib/implementer/src/generic/generic_impl.cpp
-    isml_lib/implementer/src/atlas/ddp/ddp_impl.cpp
-    isml_lib/implementer/src/atlas/dmc/dmc_impl.cpp
-    isml_lib/implementer/src/atlas/isi/isi_impl.cpp
     isml_lib/implementer/src/atlas/pcie/hqc_admin_queue.cpp
     isml_lib/implementer/src/atlas/pcie/pcie_impl.cpp
-    isml_lib/implementer/src/atlas/pmu/pmu_impl.cpp
-    isml_lib/implementer/src/atlas/tpu/tpu_impl.cpp
-    isml_lib/implementer/src/atlas_m/ddp/ddp_impl.cpp
-    isml_lib/implementer/src/atlas_m/dmc/dmc_impl.cpp
-    isml_lib/implementer/src/atlas_m/isi/isi_impl.cpp
     isml_lib/implementer/src/atlas_m/pcie/pcie_impl.cpp
-    isml_lib/implementer/src/atlas_m/pmu/pmu_impl.cpp
-    isml_lib/implementer/src/atlas_m/tpu/tpu_impl.cpp
 )
 
 target_include_directories(isml_lib
@@ -153,19 +145,14 @@ add_library(isml_diag
     isml_diag/src/device/DeviceManager.cpp
     isml_diag/src/device/TPUDevice.cpp
     isml_diag/src/modules/ddp/DDPModule.cpp
-    isml_diag/src/modules/dmc/DMCModule.cpp
     isml_diag/src/modules/isi/ISIModule.cpp
     isml_diag/src/modules/pcie/PCIeModule.cpp
     isml_diag/src/modules/pmu/PMUModule.cpp
-    isml_diag/testcases/ddp/dmem_cases.cpp
-    isml_diag/testcases/dmc/status_cases.cpp
-    isml_diag/testcases/dmc/reg_cases.cpp
-    isml_diag/testcases/isi/link_cases.cpp
-    isml_diag/testcases/isi/setup_cases.cpp
+    isml_diag/testcases/pmu/example_case.cpp
+    isml_diag/testcases/ddp/example_case.cpp
+    isml_diag/testcases/isi/example_case.cpp
     isml_diag/testcases/pcie/dma_cases.cpp
     isml_diag/testcases/pcie/aperture_mapping_cases.cpp
-    isml_diag/testcases/pmu/ipc_cases.cpp
-    isml_diag/testcases/pmu/reg_cases.cpp
 )
 
 target_include_directories(isml_diag
@@ -196,4 +183,9 @@ if(ISML_BUILD_PYTHON_BINDINGS)
     find_package(pybind11 CONFIG REQUIRED)
     pybind11_add_module(tpu_hal isml_diag/bindings/PyBinding.cpp)
     target_link_libraries(tpu_hal PRIVATE isml_diag)
+endif()
+
+if(ISML_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
 endif()

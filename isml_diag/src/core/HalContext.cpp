@@ -354,7 +354,6 @@ HalContext::HalContext(HalType type)
 void HalContext::reset(HalType type)
 {
     clear_mappings();
-    phal_bridge_.reset();
     type_ = type;
 }
 
@@ -475,6 +474,7 @@ DeviceContext HalContext::mmap_bar_space(DeviceContext ctx)
 
             bar.mapped_base = mapped;
             bar.mapped = true;
+            bar.writable = (prot & PROT_WRITE) != 0;
             mapped_bar_mappings_.push_back({mapped, map_size});
 
             if (bar_index == 0) {
@@ -504,6 +504,7 @@ DeviceContext HalContext::mmap_bar_space(DeviceContext ctx)
         bar.mapped_size = DRYRUN_BAR_WINDOW_SIZE;
         bar.size = DRYRUN_BAR_WINDOW_SIZE;
         bar.mapped = true;
+        bar.writable = true;
 
         if (bar_index == 0) {
             ctx.mapped_bar_base = bar.mapped_base;
@@ -587,6 +588,7 @@ void HalContext::free_host_dma_buffer(DmaBuffer& buffer)
 
 void HalContext::clear_mappings()
 {
+    phal_bridge_.reset();
     if (type_ == HalType::iHal) {
         for (const auto& mapping : mapped_bar_mappings_) {
             if (mapping.first != nullptr && mapping.second != 0) {
@@ -596,7 +598,6 @@ void HalContext::clear_mappings()
         mapped_bar_mappings_.clear();
     }
     mapped_bar_storage_.clear();
-    phal_bridge_.reset();
 }
 
 void HalContext::clear()

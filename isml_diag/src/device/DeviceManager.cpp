@@ -92,6 +92,7 @@ void DeviceManager::add_child_to_tree(const TestTarget& child,
 
 DeviceTree DeviceManager::discover()
 {
+    std::lock_guard<std::mutex> lock(execution_mutex_);
     // Start a fresh discovery result and release previous transient mappings.
     clear_discovered_devices();
 
@@ -218,6 +219,7 @@ TestStatus DeviceManager::run_testcase(const std::string& target_name,
                                        const std::string& test_name,
                                        const TestArgs& args)
 {
+    std::lock_guard<std::mutex> lock(execution_mutex_);
     auto* target = get_target(target_name);
     if (target == nullptr) {
         logger_.error("target=" + target_name +

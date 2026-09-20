@@ -2,12 +2,7 @@
 
 #include "diag/core/Platform.h"
 #include "diag/core/TestInfo.h"
-#include "diag/implementer/DDPImpl.h"
-#include "diag/implementer/DMCImpl.h"
-#include "diag/implementer/ISIImpl.h"
 #include "diag/implementer/PCIeImpl.h"
-#include "diag/implementer/PMUImpl.h"
-#include "diag/implementer/TPUImpl.h"
 
 #include <cstdint>
 #include <memory>
@@ -32,10 +27,5 @@ public:
 
     TPUType tpu_type() const { return tpu_type_; }
 
-    std::unique_ptr<TPUImpl> tpu_impl(const ModuleImplContext& ctx) const;
     std::unique_ptr<PCIeImpl> pcie_impl(const ModuleImplContext& ctx) const;
-    std::unique_ptr<PMUImpl> pmu_impl(const ModuleImplContext& ctx) const;
-    std::unique_ptr<ISIImpl> isi_impl(const ModuleImplContext& ctx) const;
-    std::unique_ptr<DDPImpl> ddp_impl(const ModuleImplContext& ctx) const;
-    std::unique_ptr<DMCImpl> dmc_impl(const ModuleImplContext& ctx) const;
 };
