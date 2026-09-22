@@ -10,7 +10,7 @@ static int run_test(DeviceManager& device_manager,
                     const TestArgs& args = {})
 {
     const auto status = device_manager.run_testcase(target, test, args);
-    const std::string result = status == TestStatus::OK
+    const std::string result = status == PHAL_STATUS_OK
                              ? "PASS"
                              : test_status_name(status);
     std::cout << "[" << result << "] "
@@ -31,6 +31,7 @@ static void print_usage(const char* program)
               << "  " << program << " discover --tree\n"
               << "  " << program << " discover --backend phal --tree\n"
               << "  " << program << " bar_read32 --target PCIE_0_0 --offset 0x20f80\n"
+              << "  " << program << " bar_read32_abs --target PCIE_0_0 --offset 0x36100000\n"
               << "  " << program << " dma_data_transfer --target PCIE_0_0 --direction h2d --pattern incremental\n"
               << "  " << program << " sequential_aperture_mapping --target PCIE_0_0 --log-level debug\n";
 }

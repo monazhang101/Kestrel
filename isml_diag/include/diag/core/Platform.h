@@ -6,6 +6,10 @@
 #include <string>
 #include <vector>
 
+extern "C" {
+#include <phal/phal.h>
+}
+
 enum class TPUType { Unknown, Atlas, AtlasM };
 
 class Logger;
@@ -44,19 +48,17 @@ struct DeviceContext {
     uint64_t bar_device_base = 0;
     uint64_t bar_size = 0;
     std::vector<BarMapping> bar_mappings;
-    uint32_t pcie_control_bar_index = 0;
+    // PCIe control registers are in BAR0, including aperture configuration.
     uint64_t pcie_control_base = 0;
 
-    // Module-relative register view; raw common::bar offsets remain unchanged.
-    uint32_t reg_bar_index = 0;
+    // PHAL module root in BAR0; raw common::bar offsets remain unchanged.
     uint64_t reg_base_offset = 0;
     uint64_t reg_size = 0;
-    uint64_t block_offset = 0;
     // Bring-up scratch region, independent of the module CSR address space.
     uint64_t dmem_base = 0x10000000;
-    uint64_t dmem_size = 0x100000;
-    void* phal = nullptr;
-    void* pcie_phal = nullptr;
+    uint64_t dmem_size = 0x10000000; // 256 MiB aperture window
+    phal_ctx_t* phal = nullptr;
+    phal_ctx_t* pcie_phal = nullptr;
     Logger* logger = nullptr; // Borrowed only during a testcase.
     std::string target_name;
     // Copies passed to sibling modules share the physical device lock.

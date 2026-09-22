@@ -18,17 +18,17 @@ bindings/                    Python bindings
 1. Declare the testcase method in `include/diag/modules/<Module>.h`.
 2. Register its public name, defaults, formats, and callback with `_add_test()`
    in `src/modules/<target_type>/<Module>.cpp`.
-3. Implement the method in `testcases/<target_type>/*_cases.cpp`.
+3. Implement the method in `testcases/<target_type>/*.cpp` (or the module source
+   for a small primitive).
 4. Add optional platform limits under the same testcase name in
    `policies/testcases/<target_type>.yaml`.
 5. Add a new testcase source file to the root `CMakeLists.txt` when needed.
 
 Defaults and argument formats belong in `_add_test()`. YAML policy files only
 restrict values allowed on a platform; they do not redefine testcase behavior.
-For a testcase that uses the short DMEM API or calls PHAL directly, pass `true`
-as the final `_add_test(..., callback, true)` argument. The runner then prepares
-both the module and PCIe PHAL contexts before invoking the callback. Register
-IO itself does not require PHAL.
+The runner prepares both module and PCIe PHAL contexts before every testcase;
+`_add_test()` has no PHAL-initialization option. Case code uses `ctx.phal` or
+`ctx.pcie_phal` directly without fetching or initializing a context.
 
 ## Add a module type
 
@@ -47,87 +47,115 @@ Adding a module type does not require a target-type enum or a parser change.
 
 ## Register and device-memory examples
 
-PMU, DDP and ISI each register one `example` testcase in their own
-`testcases/<module>/example_case.cpp`. They call the short functions declared
-by `Common.h` directly:
+PCIe, PMU, DDP and ISI each register one `example` testcase in their own
+`testcases/<module>/example.cpp`. Register operations call PHAL directly;
+the framework prepares `ctx.phal` before the case begins:
 
 ```cpp
 auto& ctx = ctx_;  // This target's existing DeviceContext; prepared by the runner.
-auto status = block_ctx_enter(ctx, block_offset);
-if (status != TestStatus::OK) return status;
-status |= reg_write(ctx, reg_offset, value);
-status |= reg_read(ctx, reg_offset, &actual);
-status |= block_ctx_exit(ctx, block_offset);
-status |= dmem_write(ctx, dmem_offset, value);
+phal_block_ctx_enter(ctx.phal, block_offset);
+auto status = phal_read(ctx.phal, reg_offset, &actual);
+phal_block_ctx_exit(ctx.phal, block_offset);
 status |= dmem_read(ctx, dmem_offset, &actual);
 ```
 
-Each access moves one 32-bit word; offsets are byte offsets. A successful read
-assigns its output pointer; failed reads leave it unchanged. Register addresses
-are `module base + block offset + reg_offset` in the module's BAR. `reg_read`
-and `reg_write` call `common::bar` directly, without going through PHAL. The
-log includes the target, module base, block offset, full BAR offset and value.
-Enter/exit must be paired; nested blocks add their offsets. The runner resets
-block state when a testcase returns or throws.
+Each access above moves one 32-bit word; offsets are byte offsets. PHAL starts
+at the module's BAR0 base. Its block enter/exit adjusts `ctx.phal->env.base`,
+so the callback reaches `module base + block offset + reg_offset` in BAR0.
+`phal_read/write` call the registered PHAL 32-bit callbacks, which terminate
+at `common::bar::read32/write32`. Callback logs show `env_base`, `offset`, the
+complete `bar0_offset`, value, and native status at debug level; failures log
+at error level. Pair block enter/exit before any dependent DMEM call, especially
+on PCIe where module and aperture contexts can be the same PHAL instance.
+The runner restores cached PHAL context bases after the testcase returns or
+throws. `TestStatus` aliases `phal_status_t`, so PHAL and DMEM results can be
+combined directly with `|` without status conversion.
 
-DMEM uses a separate scratch base, currently `0x10000000`, and a 1 MiB window
+DMEM uses a separate scratch base, currently `0x10000000`, and a 256 MiB window
 on BAR4/aperture0/identity0. Its PCIe PHAL context is initialized at the PCIe
-root, independently of the current module. Every operation sets and verifies
-the aperture before accessing the data window. Framework register blocks do
-not modify PHAL's `env.base`, so DMEM works inside a framework register block
-too. These bring-up scratch settings still need confirmation on the hardware.
+root in BAR0, independently of the current module. PHAL register callbacks
+always access BAR0, including aperture configuration. DMEM payloads use BAR4
+by default (or BAR2/BAR4 through the configurable window API). Every operation sets and verifies
+the aperture before accessing the data window. The three-argument DMEM API
+itself is unchanged. These bring-up scratch settings still need confirmation
+on the hardware.
 
-Examples default to `write_enable=0`: they read the chosen register and DMEM
-word. Set `--write-enable 1` only for a confirmed ordinary read/write scratch
-register and memory range; the example then saves, writes, compares and restores
-both words. This restore pattern is not valid for W1C/read-clear/command
-registers. `--value` is a 32-bit pattern; `--block-offset`, `--reg-offset` and
-`--dmem-offset` choose the locations. Defaults are declared only in `_add_test`.
+The same three-argument DMEM names also accept byte vectors:
 
-```sh
-./build/isml_diag example --target DDP_0_0 --reg-offset 0
-./build/isml_diag example --target DDP_0_1 --reg-offset 0
-./build/isml_diag example --target PMU_0_0 --reg-offset 0
-./build/isml_diag example --target ISI_0_0 --reg-offset 0 --timeout-us 1000000
+```cpp
+std::vector<uint8_t> expected(1024, 0xab);
+std::vector<uint8_t> actual(expected.size());
+auto status = dmem_write(ctx, 0x10200, expected);
+if (status != PHAL_STATUS_OK) return status;
+status = dmem_read(ctx, 0x10200, &actual);
 ```
 
-The ISI example additionally calls the actual PHAL entry
-`phal_component_isi_linkup(ctx, timeout_us)` with its preinitialized ISI context,
-even when register/DMEM writes are disabled. PMU and DDP have no direct PHAL
-example section. Only PHAL read/write callbacks are installed; no delay, tick
-or fence callbacks are added. Real project-specific linkup behavior requires
-the real ProtonHal tree; the local mock deliberately reports failure.
+A buffer call transfers exactly `vector.size()` bytes with one aperture setup,
+not one setup per word. The caller sizes the read buffer beforehand; the API
+does not resize it. Byte buffers support unaligned byte offsets and lengths;
+the uint32 overloads still require 4-byte alignment. Empty/null buffers and
+out-of-window ranges return INVALID; mapping/PHAL failures return ERROR.
+Failed reads leave the output unchanged. The accessed range must also fit the
+actual mapped BAR; a 256 MiB aperture does not enlarge the host BAR mapping.
 
-`TestStatus` supports `|` and `|=` and prints combined flags. Native PHAL status
-is converted explicitly: known OK/INVALID map to framework OK/INVALID, and
-other native failures map to ERROR with the original value logged. Do not OR
-raw bool or PHAL status values into `TestStatus`.
+PMU, DDP and ISI use hardcoded, read-only register examples:
 
-TPU remains the parent device without an `identify` testcase. DMC is no longer
-a module or target. Existing PCIe BAR/aperture/DMA cases, HQC code, and the
-kernel module are retained. Their raw BAR offsets and configurable buffer
-`common::devmem::read/write` interfaces are unchanged. Run Python testcases
-through `DeviceManager.run_testcase` so HAL preparation and policy are applied.
-Same-device module execution is serialized; discovery cannot race manager-run
-tests. Device contexts and PHAL pointers must not outlive their owning manager.
+- PMU enters EFUSE CTRL at block offset `0x2106000`, reads revision at
+  offset `0x0`, and expects `0x01010001`. Its internal address is
+  `0x18000000 + 0x2106000 = 0x1a106000`; the Atlas BAR0 policy base is
+  `0x38000000`, so the actual BAR0 offset is `0x3a106000`.
+- Every DDP target enters DMC0 at block offset `0x80800`, reads DID/VID at
+  offset `0x0`, and expects `0xabcd16c3`. For DDP0 this corresponds to the
+  documented internal register address `0x12080800`; the configured BAR0
+  offset is `0x32080800`. The mapping between those address spaces must be
+  confirmed on the platform. This access has stalled the `pcie-b7` tester,
+  so do not rerun it there until the PCIe/FPGA path is fixed.
+- Every ISI target reads offset `0x1c` directly from its module base, without
+  block entry, and expects `0x202020`.
+- PCIe enters block offset `0x100000` from its module base, reads offset
+  `0x0`, and expects `0xabcd16c3`. For Atlas this is BAR0 offset
+  `0x36100000`; that register has returned the expected value on `pcie-b7`.
+
+PCIe, PMU, DDP and ISI return ERROR on a value mismatch and never call `phal_write`.
+Their examples take no arguments. Each reads DMEM offset `0x0`, writes
+`0x12345678`, reads it back, checks the value and restores the original word.
+Run these examples only when that DMEM range is usable for writes.
+
+For raw BAR0 debugging, `bar_read32` takes a PCIe-module-relative `--offset`
+and adds the PCIe base. `bar_read32_abs` takes a required `--offset` and
+reads that exact BAR0 offset without adding any module base. Like every case,
+the runner prepares PHAL first, but the raw BAR read itself does not call it.
+For example, `bar_read32_abs --target PCIE_0_0 --offset 0x36100000`
+checks the known PCIe DID/VID location. It can also address DDP/ISI offsets
+through the PCIe target, but it issues the same MMIO read as `phal_read` at that
+location. In particular, do not read `0x32080800` on `pcie-b7` until the
+hardware access that stalled that server is resolved.
+
+```sh
+./build/isml_diag example --target DDP_0_0
+./build/isml_diag example --target DDP_0_1
+./build/isml_diag example --target PCIE_0_0
+./build/isml_diag example --target PMU_0_0
+./build/isml_diag example --target ISI_0_0
+```
 
 ## Software verification
 
-On Linux, configure the normal build with `-DISML_BUILD_TESTS=ON`, build, and
-run `ctest --test-dir build --output-on-failure`.
-
-For portable software checks (including Windows/MinGW), build the standalone
-test project. It compiles the production dispatch, cases, PCIe/HQC code and
-PHAL bridge against the mock, replacing only the Linux mapping/DMA owner with
-a test fixture:
+On Linux, make sure flowra_sources folder is cloned outside isml_suite2. Configure
+the normal build with `-DISML_BUILD_TESTS=ON`, build by execute:
 
 ```sh
-cmake -S tests -B build-io-tests -G Ninja
-cmake --build build-io-tests
-ctest --test-dir build-io-tests --output-on-failure
+make -C isml_kmod
+cmake -S . -B build
+cmake --build build
 ```
 
-These tests check address dispatch, bounds, read-only mapping rejection,
-context cleanup, serialization, new/legacy DMEM APIs, native PHAL callback
-routing and the retained PCIe catalog. They do not verify physical aperture
-translation, ISI linkup, Linux ioctl/mmap or actual DMA.
+To unbind ProtonHal VFIO driver, remove DKMS package first, then reboot and
+load our isml_kmod driver:
+
+```sh
+sudo dpkg -P proton-drv-vfio-pci-kernel-dkms
+sudo reboot
+
+sudo insmod ./isml_kmod/isml_diag.ko
+```

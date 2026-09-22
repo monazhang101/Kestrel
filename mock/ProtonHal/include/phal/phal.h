@@ -11,8 +11,10 @@ extern "C" {
 
 typedef enum phal_status {
     PHAL_STATUS_OK = 0,
-    PHAL_STATUS_ERROR = 1,
-    PHAL_STATUS_INVALID = 2,
+    PHAL_STATUS_TIMEOUT = 1 << 0,
+    PHAL_STATUS_ERROR = 1 << 1,
+    PHAL_STATUS_UNIMPLEMENTED = 1 << 2,
+    PHAL_STATUS_INVALID = 1 << 3,
 } phal_status_t;
 
 typedef enum phal_project {
@@ -65,6 +67,19 @@ typedef struct phal_ctx {
 
 phal_status_t phal_init(phal_ctx_t* ctx, const phal_config_t* config);
 void phal_deinit(phal_ctx_t* ctx);
+phal_status_t phal_write(phal_ctx_t* ctx, uintptr_t addr, uint32_t data);
+phal_status_t phal_read(phal_ctx_t* ctx, uintptr_t addr, uint32_t* data);
+
+static inline uintptr_t phal_block_ctx_enter(phal_ctx_t* ctx, uintptr_t offset)
+{
+    ctx->env.base += offset;
+    return offset;
+}
+
+static inline void phal_block_ctx_exit(phal_ctx_t* ctx, uintptr_t offset)
+{
+    ctx->env.base -= offset;
+}
 
 #ifdef __cplusplus
 }

@@ -122,7 +122,6 @@ DeviceTree DeviceManager::discover()
         mapped_ctx.tpu_type = policy_entry->tpu_type;
         if (!policy_entry->device_config.pcie_modules.empty()) {
             const auto& pcie = policy_entry->device_config.pcie_modules.front();
-            mapped_ctx.pcie_control_bar_index = pcie.bar_index;
             mapped_ctx.pcie_control_base = pcie.reg_base_offset;
         }
 
@@ -224,7 +223,7 @@ TestStatus DeviceManager::run_testcase(const std::string& target_name,
     if (target == nullptr) {
         logger_.error("target=" + target_name +
                       " is not registered; call discover() before running tests");
-        return TestStatus::INVALID;
+        return PHAL_STATUS_INVALID;
     }
 
     const TestcasePolicy* test_policy = nullptr;

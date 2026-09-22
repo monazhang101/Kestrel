@@ -1,6 +1,10 @@
 #include "diag/core/TestTarget.h"
 #include "diag/core/HalContext.h"
 
+extern "C" {
+#include <phal/phal.h>
+}
+
 #include <exception>
 #include <limits>
 #include <sstream>
@@ -17,11 +21,10 @@ TestTarget::TestTarget(const std::string& name,
 
 void TestTarget::_add_test(const std::string& test_name,
                            std::initializer_list<TestArgumentDefinition> arguments,
-                           TestcaseFunc func,
-                           bool prepare_phal)
+                           TestcaseFunc func)
 {
     registered_tests_[test_name] = {
-        std::vector<TestArgumentDefinition>(arguments), std::move(func), prepare_phal};
+        std::vector<TestArgumentDefinition>(arguments), std::move(func)};
 }
 
 bool TestTarget::parse_u64(const std::string& value, uint64_t& parsed)
@@ -115,7 +118,7 @@ TestStatus TestTarget::run_testcase(const std::string& test_name,
     if (test == registered_tests_.end()) {
         ti.logger->error("testcase is not registered: target=" + name_ +
                          " test=" + test_name);
-        return TestStatus::UNIMPLEMENTED;
+        return PHAL_STATUS_UNIMPLEMENTED;
     }
 
     TestArgs resolved_args;
@@ -128,7 +131,7 @@ TestStatus TestTarget::run_testcase(const std::string& test_name,
         if (definitions.find(argument.first) == definitions.end()) {
             ti.logger->error("unknown argument: test=" + test_name +
                              " argument=" + argument.first);
-            return TestStatus::INVALID;
+            return PHAL_STATUS_INVALID;
         }
         resolved_args[argument.first] = argument.second;
     }
@@ -137,55 +140,61 @@ TestStatus TestTarget::run_testcase(const std::string& test_name,
         std::string error;
         if (!validate_format(definition, value, error)) {
             ti.logger->error(error);
-            return TestStatus::INVALID;
+            return PHAL_STATUS_INVALID;
         }
         if (policy != nullptr) {
             const auto argument = policy->arguments.find(definition.name);
             if (argument != policy->arguments.end() &&
                 !validate_range(definition, value, argument->second, error)) {
                 ti.logger->error(error);
-                return TestStatus::INVALID;
+                return PHAL_STATUS_INVALID;
             }
         }
     }
     ti.args = std::move(resolved_args);
 
-    // Only these borrowed per-call fields are reset; PHAL instances are owned
-    // and cached by HalContext. Framework block offsets never mutate PHAL.
-    ctx_.block_offset = 0;
+    // PHAL instances are owned and cached by HalContext. Each case starts at
+    // its module root and leaves both cached contexts at their roots.
     ctx_.logger = ti.logger;
+    ctx_.phal = nullptr;
+    ctx_.pcie_phal = nullptr;
     struct Restore {
         DeviceContext& ctx;
-        ~Restore() { ctx.block_offset = 0; ctx.logger = nullptr; }
+        bool prepared = false;
+        ~Restore()
+        {
+            if (prepared) {
+                ctx.phal->env.base = ctx.reg_base_offset;
+                ctx.pcie_phal->env.base = ctx.pcie_control_base;
+            }
+            ctx.logger = nullptr;
+        }
     } restore{ctx_};
 
     try {
-        if (test->second.prepare_phal) {
-            if (hal == nullptr) {
-                ti.logger->error("testcase requires a HAL context; run through DeviceManager");
-                return TestStatus::ERROR;
-            }
-            std::string error;
-            const auto project = phal_project_from_tpu_type(ctx_.tpu_type);
-            ctx_.pcie_phal = hal->phal().get_context(ctx_, ctx_.pcie_control_bar_index,
-                                                   ctx_.pcie_control_base, project, &error);
-            ctx_.phal = hal->phal().get_context(ctx_, ctx_.reg_bar_index,
-                                              ctx_.reg_base_offset, project, &error);
-            if (ctx_.pcie_phal == nullptr || ctx_.phal == nullptr) {
-                ti.logger->error("PHAL initialization failed: " + error);
-                return TestStatus::ERROR;
-            }
+        if (hal == nullptr) {
+            ti.logger->error("testcase requires a HAL context; run through DeviceManager");
+            return PHAL_STATUS_ERROR;
         }
+        std::string error;
+        const auto project = phal_project_from_tpu_type(ctx_.tpu_type);
+        ctx_.pcie_phal = hal->phal().get_context(ctx_, ctx_.pcie_control_base, project, &error);
+        ctx_.phal = hal->phal().get_context(ctx_, ctx_.reg_base_offset, project, &error);
+        if (ctx_.pcie_phal == nullptr || ctx_.phal == nullptr) {
+            ti.logger->error("PHAL initialization failed: " + error);
+            return PHAL_STATUS_ERROR;
+        }
+        restore.prepared = true;
         return test->second.execute(ti);
     } catch (const std::invalid_argument& e) {
         ti.logger->error(std::string("invalid test argument: ") + e.what());
-        return TestStatus::INVALID;
+        return PHAL_STATUS_INVALID;
     } catch (const std::out_of_range& e) {
         ti.logger->error(std::string("test argument is out of range: ") + e.what());
-        return TestStatus::INVALID;
+        return PHAL_STATUS_INVALID;
     } catch (const std::exception& e) {
         ti.logger->error(std::string("testcase exception: ") + e.what());
-        return TestStatus::ERROR;
+        return PHAL_STATUS_ERROR;
     }
 }
 

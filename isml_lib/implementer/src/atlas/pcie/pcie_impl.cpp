@@ -28,8 +28,8 @@ TestStatus fail(TestInfo& ti, TestStatus status, const std::string& message)
 
 TestStatus hqc_status(int status)
 {
-    return status == HQC_STATUS_TIMEOUT ? TestStatus::TIMEOUT
-                                        : TestStatus::ERROR;
+    return status == HQC_STATUS_TIMEOUT ? PHAL_STATUS_TIMEOUT
+                                        : PHAL_STATUS_ERROR;
 }
 
 class AtlasPCIeImpl : public generic_impl::GenericPCIeImpl {
@@ -63,12 +63,12 @@ public:
             // and ABI constants, but never submit a placeholder to hardware.
             return make_unimplemented_status(ti, "VMEM DMA is not enabled");
         default:
-            return fail(ti, TestStatus::INVALID, "unknown DMA transfer type");
+            return fail(ti, PHAL_STATUS_INVALID, "unknown DMA transfer type");
         }
         if (req.size_bytes == 0 ||
             req.size_bytes > std::numeric_limits<uint32_t>::max() ||
             (req.size_bytes % DMA_ALIGNMENT) != 0 || req.timeout_ms == 0) {
-            return fail(ti, TestStatus::INVALID,
+            return fail(ti, PHAL_STATUS_INVALID,
                         "DMA size must fit uint32 and be a nonzero multiple of 32; timeout must be nonzero");
         }
 
@@ -82,7 +82,7 @@ public:
         };
         if ((!host_source && !valid_device_range(req.src_offset)) ||
             (!host_destination && !valid_device_range(req.dst_offset))) {
-            return fail(ti, TestStatus::INVALID,
+            return fail(ti, PHAL_STATUS_INVALID,
                         "device DMA range must be 4-byte aligned and fit the FW word address");
         }
 
@@ -91,7 +91,7 @@ public:
         if (host_source || host_destination) {
             if (req.host_buffer == nullptr || !req.host_buffer->valid() ||
                 req.host_buffer->addr_kind() != "dma_addr") {
-                return fail(ti, TestStatus::INVALID,
+                return fail(ti, PHAL_STATUS_INVALID,
                             "host DMA requires a valid isml_kmod buffer");
             }
             const auto host_offset = host_source ? req.src_offset : req.dst_offset;
@@ -100,12 +100,12 @@ public:
                 req.size_bytes > req.host_buffer->size() - host_offset ||
                 req.host_buffer->device_addr() >
                     std::numeric_limits<uint64_t>::max() - host_offset) {
-                return fail(ti, TestStatus::INVALID, "host DMA range is invalid");
+                return fail(ti, PHAL_STATUS_INVALID, "host DMA range is invalid");
             }
             const auto host_addr = req.host_buffer->device_addr() + host_offset;
             if (host_addr % DMA_ALIGNMENT != 0 ||
                 req.size_bytes - 1 > std::numeric_limits<uint64_t>::max() - host_addr) {
-                return fail(ti, TestStatus::INVALID,
+                return fail(ti, PHAL_STATUS_INVALID,
                             "host DMA address must be 32-byte aligned and not overflow");
             }
             if (host_source) {
@@ -114,7 +114,7 @@ public:
                 destination = host_addr;
             }
         } else if (req.host_buffer != nullptr) {
-            return fail(ti, TestStatus::INVALID,
+            return fail(ti, PHAL_STATUS_INVALID,
                         "device-only DMA must not carry a host buffer");
         }
 
@@ -165,7 +165,7 @@ public:
                 ti.logger->error("HQC DMA completion returned cmd_status=" +
                                  std::to_string(completion.header.cmd_status));
             }
-            return TestStatus::ERROR;
+            return PHAL_STATUS_ERROR;
         }
 
         if (ti.logger != nullptr) {
@@ -179,7 +179,7 @@ public:
                                                    : "device_byte_offset");
             ti.logger->info(message.str());
         }
-        return TestStatus::OK;
+        return PHAL_STATUS_OK;
     }
 };
 

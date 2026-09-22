@@ -14,6 +14,9 @@
 #include <limits>
 #include <sstream>
 
+using common::format::hex;
+using common::format::hex_bytes;
+
 extern "C" {
 #include <phal/components/pcie/pcie.h>
 }
@@ -93,9 +96,9 @@ bool prepare_window(phal_ctx_t* phal, Logger* logger,
                << "\n       bar_index        = " << window.bar_index
                << "\n       aperture_index   = "
                << static_cast<uint32_t>(window.aperture_index)
-               << "\n       target_addr      = " << common::format::hex(window.target_addr)
-               << "\n       window_size      = " << common::format::hex(window.size)
-               << "\n       data_bar_offset  = " << common::format::hex(window.bar_offset);
+               << "\n       target_addr      = " << hex(window.target_addr)
+               << "\n       window_size      = " << hex(window.size)
+               << "\n       data_bar_offset  = " << hex(window.bar_offset);
         logger->debug(stream.str());
     }
     return true;
@@ -119,9 +122,9 @@ bool transfer(phal_ctx_t* phal, Logger* logger, const DeviceContext& ctx,
     if (!ok) return fail(error, "device-memory BAR access failed");
     if (logger != nullptr) {
         logger->debug(std::string(writing ? "D-MEM write" : "D-MEM read") +
-            " target_addr=" + common::format::hex(window.target_addr + offset) +
+            " target_addr=" + hex(window.target_addr + offset) +
             " size_bytes=" + std::to_string(len) + " data_preview=" +
-            common::format::hex_bytes(writing ? input : output, len));
+            hex_bytes(writing ? input : output, len));
     }
     return true;
 }
@@ -132,13 +135,13 @@ phal_ctx_t* pcie_context(TestInfo& ti, const DeviceContext& ctx, std::string* er
         fail(error, "HAL context is not available");
         return nullptr;
     }
-    return static_cast<phal_ctx_t*>(ti.hal->phal().get_context(
-        ctx, ctx.pcie_control_bar_index, ctx.pcie_control_base,
-        phal_project_from_tpu_type(ctx.tpu_type), error));
+    return ti.hal->phal().get_context(
+        ctx, ctx.pcie_control_base,
+        phal_project_from_tpu_type(ctx.tpu_type), error);
 }
 }
 
-// Existing configurable/buffer API retained for PCIe and DMA cases.
+// Existing configurable/buffer API retained for callers choosing their window.
 bool read(TestInfo& ti, const DeviceContext& ctx, const Window& window,
           uint64_t offset, void* data, size_t len, std::string* error)
 {
@@ -158,40 +161,50 @@ bool write(TestInfo& ti, const DeviceContext& ctx, const Window& window,
 
 namespace common {
 namespace {
-TestStatus dmem_word(DeviceContext& ctx, uint64_t addr, uint32_t* output,
-                     const uint32_t* input)
+TestStatus dmem_transfer(DeviceContext& ctx, uint64_t addr, void* output,
+                         const void* input, size_t len, size_t alignment)
 {
-    if ((output == nullptr && input == nullptr) || addr % 4 != 0 || ctx.dmem_base % 4 != 0 ||
-        !mmio::is_valid_range(ctx.dmem_size, addr, sizeof(uint32_t)) ||
+    if ((output == nullptr && input == nullptr) || addr % alignment != 0 ||
+        ctx.dmem_base % alignment != 0 || !mmio::is_valid_range(ctx.dmem_size, addr, len) ||
         ctx.dmem_base > std::numeric_limits<uint64_t>::max() - (ctx.dmem_size - 1)) {
-        if (ctx.logger) ctx.logger->error("invalid D-MEM word address or buffer");
-        return TestStatus::INVALID;
+        if (ctx.logger) ctx.logger->error("invalid D-MEM address or buffer length");
+        return PHAL_STATUS_INVALID;
     }
     // One framework scratch window. Never add the register block offset here.
     const devmem::Window window{4, 0, 0, ctx.dmem_base, ctx.dmem_size, 0};
-    uint32_t value = 0;
     std::string error;
-    const bool ok = devmem::transfer(static_cast<phal_ctx_t*>(ctx.pcie_phal), ctx.logger,
-        ctx, window, addr, output != nullptr ? &value : nullptr, input, sizeof(value), &error);
+    const bool ok = devmem::transfer(ctx.pcie_phal, ctx.logger,
+        ctx, window, addr, output, input, len, &error);
     if (!ok) {
         if (ctx.logger) ctx.logger->error("D-MEM access failed: " + error);
-        return TestStatus::ERROR;
+        return PHAL_STATUS_ERROR;
     }
-    if (output != nullptr) *output = value;
     if (ctx.logger) ctx.logger->info(std::string(input ? "dmem_write" : "dmem_read") +
-        " target=" + ctx.target_name + " address=" + format::hex(ctx.dmem_base + addr) +
-        " value=" + format::hex(input ? *input : value, 8));
-    return TestStatus::OK;
+        " target=" + ctx.target_name + " address=" + hex(ctx.dmem_base + addr) +
+        " size_bytes=" + std::to_string(len) +
+        " data_preview=" + hex_bytes(input ? input : output, len));
+    return PHAL_STATUS_OK;
 }
 }
 
 TestStatus dmem_read(DeviceContext& ctx, uint64_t addr, uint32_t* data)
 {
-    return dmem_word(ctx, addr, data, nullptr);
+    return dmem_transfer(ctx, addr, data, nullptr, sizeof(uint32_t), alignof(uint32_t));
 }
 
 TestStatus dmem_write(DeviceContext& ctx, uint64_t addr, uint32_t data)
 {
-    return dmem_word(ctx, addr, nullptr, &data);
+    return dmem_transfer(ctx, addr, nullptr, &data, sizeof(data), alignof(uint32_t));
+}
+
+TestStatus dmem_read(DeviceContext& ctx, uint64_t addr, std::vector<uint8_t>* data)
+{
+    return dmem_transfer(ctx, addr, data ? data->data() : nullptr, nullptr,
+                         data ? data->size() : 0, 1);
+}
+
+TestStatus dmem_write(DeviceContext& ctx, uint64_t addr, const std::vector<uint8_t>& data)
+{
+    return dmem_transfer(ctx, addr, nullptr, data.data(), data.size(), 1);
 }
 }

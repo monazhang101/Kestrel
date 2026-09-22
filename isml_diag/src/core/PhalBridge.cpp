@@ -22,12 +22,29 @@ phal_status_t ihal_read32(void* handler, uintptr_t addr, uint32_t* data);
 
 namespace {
 
+void log_phal_io(const char* operation, env_t* env, uintptr_t addr,
+                  uint32_t data, phal_status_t status)
+{
+    const auto* io = static_cast<const IhalIO*>(env->priv);
+    auto* logger = io->device_ctx != nullptr ? io->device_ctx->logger : nullptr;
+    if (logger == nullptr || (status == PHAL_STATUS_OK && logger->get_level() < LogLevel::Debug)) return;
+    using common::format::hex;
+    const auto message = std::string(operation) + " bdf=" + io->device_ctx->bdf +
+        " env_base=" + hex(env->base) + " offset=" + hex(addr) +
+        " bar0_offset=" + hex(env->base + addr) + " value=" + hex(data, 8) +
+        " status=" + std::to_string(static_cast<int>(status));
+    if (status == PHAL_STATUS_OK) logger->debug(message);
+    else logger->error(message);
+}
+
 static phal_status_t hal_drv_write(env_t* env, uintptr_t addr, uint32_t data)
 {
     if (env == nullptr || env->priv == nullptr) {
         return PHAL_STATUS_INVALID;
     }
-    return ihal_write32(env->priv, env->base + addr, data);
+    const auto status = ihal_write32(env->priv, env->base + addr, data);
+    log_phal_io("phal_write", env, addr, data, status);
+    return status;
 }
 
 static phal_status_t hal_drv_read(env_t* env, uintptr_t addr, uint32_t* data)
@@ -35,7 +52,9 @@ static phal_status_t hal_drv_read(env_t* env, uintptr_t addr, uint32_t* data)
     if (env == nullptr || env->priv == nullptr || data == nullptr) {
         return PHAL_STATUS_INVALID;
     }
-    return ihal_read32(env->priv, env->base + addr, data);
+    const auto status = ihal_read32(env->priv, env->base + addr, data);
+    log_phal_io("phal_read", env, addr, status == PHAL_STATUS_OK ? *data : 0, status);
+    return status;
 }
 
 hw_ops_t make_hal_drv_ops()
@@ -96,15 +115,6 @@ PhalProject phal_project_from_tpu_type(TPUType tpu_type)
     return PhalProject::Generic;
 }
 
-TestStatus from_phal(int status)
-{
-    if (status == PHAL_STATUS_OK) return TestStatus::OK;
-    if (status == PHAL_STATUS_INVALID) return TestStatus::INVALID;
-    // Other native values are retained in the caller's diagnostic log. Without
-    // the real PHAL status ABI, do not assume timeout/error bits match ours.
-    return TestStatus::ERROR;
-}
-
 phal_status_t ihal_write32(void* handler, uintptr_t addr, uint32_t data)
 {
     auto* ihalIO = static_cast<IhalIO*>(handler);
@@ -113,7 +123,7 @@ phal_status_t ihal_write32(void* handler, uintptr_t addr, uint32_t data)
     }
 
     return common::bar::write32(*ihalIO->device_ctx,
-                                ihalIO->bar_index,
+                                0,
                                 static_cast<uint64_t>(addr),
                                 data)
                ? PHAL_STATUS_OK
@@ -128,7 +138,7 @@ phal_status_t ihal_read32(void* handler, uintptr_t addr, uint32_t* data)
     }
 
     return common::bar::read32(*ihalIO->device_ctx,
-                               ihalIO->bar_index,
+                               0,
                                static_cast<uint64_t>(addr),
                                *data)
                ? PHAL_STATUS_OK
@@ -138,9 +148,9 @@ phal_status_t ihal_read32(void* handler, uintptr_t addr, uint32_t* data)
 class PhalBridge::Impl {
 public:
     struct ContextSlot {
+        Logger logger; // Owned snapshot: no borrowed testcase logger survives in the cache.
         DeviceContext device_ctx;
         IhalIO ihalIO;
-        uint32_t control_bar_index = 0;
         uint64_t base_offset = 0;
         PhalProject project = PhalProject::Generic;
         phal_ctx_t ctx{};
@@ -158,13 +168,11 @@ public:
     std::vector<std::unique_ptr<ContextSlot>> contexts;
 
     ContextSlot* find(const DeviceContext& device_ctx,
-                      uint32_t control_bar_index,
                       uint64_t base_offset,
                       PhalProject project)
     {
         for (const auto& slot : contexts) {
             if (slot->device_ctx.bdf == device_ctx.bdf &&
-                slot->control_bar_index == control_bar_index &&
                 slot->base_offset == base_offset &&
                 slot->project == project) {
                 return slot.get();
@@ -190,8 +198,7 @@ void PhalBridge::reset()
     impl_ = std::make_unique<Impl>();
 }
 
-void* PhalBridge::get_context(const DeviceContext& ctx,
-                              uint32_t control_bar_index,
+phal_ctx_t* PhalBridge::get_context(const DeviceContext& ctx,
                               uint64_t base_offset,
                               PhalProject project,
                               std::string* error)
@@ -205,18 +212,18 @@ void* PhalBridge::get_context(const DeviceContext& ctx,
     }
 
     std::lock_guard<std::mutex> lock(impl_->mutex);
-    if (auto* existing = impl_->find(ctx, control_bar_index, base_offset, project)) {
+    if (auto* existing = impl_->find(ctx, base_offset, project)) {
+        existing->logger.set_level(ctx.logger ? ctx.logger->get_level() : LogLevel::Info);
         return &existing->ctx;
     }
 
     auto slot = std::make_unique<Impl::ContextSlot>();
     slot->device_ctx = ctx;
-    slot->device_ctx.logger = nullptr;
-    slot->control_bar_index = control_bar_index;
+    slot->logger.set_level(ctx.logger ? ctx.logger->get_level() : LogLevel::Info);
+    slot->device_ctx.logger = &slot->logger;
     slot->base_offset = base_offset;
     slot->project = project;
     slot->ihalIO.device_ctx = &slot->device_ctx;
-    slot->ihalIO.bar_index = control_bar_index;
 
     phal_config_t config{};
     config.env_config.base = base_offset;
@@ -234,8 +241,7 @@ void* PhalBridge::get_context(const DeviceContext& ctx,
             *error += phal_project_macro(project);
             *error += " bdf=";
             *error += ctx.bdf;
-            *error += " control_bar=";
-            *error += std::to_string(control_bar_index);
+            *error += " control_bar=0";
         }
         return nullptr;
     }

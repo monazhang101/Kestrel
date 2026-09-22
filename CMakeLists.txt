@@ -33,6 +33,7 @@ if(ISML_USE_MOCK_PHAL)
     set(ISML_USING_MOCK_PHAL ON)
     set(PHAL_CORE_SOURCES
         ${PHAL_ROOT}/src/phal/init.c
+        ${PHAL_ROOT}/src/phal/ops.c
         ${PHAL_ROOT}/src/components/pcie/pcie.c
         ${PHAL_ROOT}/src/components/isi/isi.c
     )
@@ -136,6 +137,8 @@ target_include_directories(isml_lib
         ${ISML_IMPLEMENTER_DIR}/src
 )
 
+target_link_libraries(isml_lib PUBLIC phal)
+
 add_library(isml_diag
     isml_diag/src/core/TestTarget.cpp
     isml_diag/src/core/DevMem.cpp
@@ -148,11 +151,12 @@ add_library(isml_diag
     isml_diag/src/modules/isi/ISIModule.cpp
     isml_diag/src/modules/pcie/PCIeModule.cpp
     isml_diag/src/modules/pmu/PMUModule.cpp
-    isml_diag/testcases/pmu/example_case.cpp
-    isml_diag/testcases/ddp/example_case.cpp
-    isml_diag/testcases/isi/example_case.cpp
-    isml_diag/testcases/pcie/dma_cases.cpp
-    isml_diag/testcases/pcie/aperture_mapping_cases.cpp
+    isml_diag/testcases/pmu/example.cpp
+    isml_diag/testcases/ddp/example.cpp
+    isml_diag/testcases/isi/example.cpp
+    isml_diag/testcases/pcie/example.cpp
+    isml_diag/testcases/pcie/dma_copy.cpp
+    isml_diag/testcases/pcie/aperture_mapping.cpp
 )
 
 target_include_directories(isml_diag

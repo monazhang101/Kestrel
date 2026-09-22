@@ -5,19 +5,20 @@
 #include <string>
 #include <unordered_map>
 
+extern "C" {
+#include <phal/phal.h>
+}
+
 using TestArgs = std::unordered_map<std::string, std::string>;
 
 class HalContext;
 
-// Keep the public testcase contract intentionally small and PHAL-like: one
-// integer status is returned, while diagnostic details go to the testcase log.
-enum class TestStatus : int {
-    OK = 0,
-    TIMEOUT = 1u << 0,
-    ERROR = 1u << 1,
-    UNIMPLEMENTED = 1u << 2,
-    INVALID = 1u << 3,
-};
+// Testcases and PHAL share one status type and bit layout.
+using TestStatus = phal_status_t;
+static_assert(PHAL_STATUS_OK == 0 && PHAL_STATUS_TIMEOUT == 1 &&
+              PHAL_STATUS_ERROR == 2 && PHAL_STATUS_UNIMPLEMENTED == 4 &&
+              PHAL_STATUS_INVALID == 8,
+              "PHAL status bits differ from the diagnostic status contract");
 
 constexpr TestStatus operator|(TestStatus lhs, TestStatus rhs)
 {
@@ -31,17 +32,17 @@ inline TestStatus& operator|=(TestStatus& lhs, TestStatus rhs)
 
 inline std::string test_status_name(TestStatus status)
 {
-    if (status == TestStatus::OK) return "OK";
+    if (status == PHAL_STATUS_OK) return "OK";
     std::string result;
     const auto append = [&](const char* name) {
         if (!result.empty()) result += '|';
         result += name;
     };
     const auto bits = static_cast<unsigned>(status);
-    if (bits & static_cast<unsigned>(TestStatus::TIMEOUT)) append("TIMEOUT");
-    if (bits & static_cast<unsigned>(TestStatus::ERROR)) append("ERROR");
-    if (bits & static_cast<unsigned>(TestStatus::UNIMPLEMENTED)) append("UNIMPLEMENTED");
-    if (bits & static_cast<unsigned>(TestStatus::INVALID)) append("INVALID");
+    if (bits & static_cast<unsigned>(PHAL_STATUS_TIMEOUT)) append("TIMEOUT");
+    if (bits & static_cast<unsigned>(PHAL_STATUS_ERROR)) append("ERROR");
+    if (bits & static_cast<unsigned>(PHAL_STATUS_UNIMPLEMENTED)) append("UNIMPLEMENTED");
+    if (bits & static_cast<unsigned>(PHAL_STATUS_INVALID)) append("INVALID");
     if (bits & ~15u) {
         append("UNKNOWN");
     }
@@ -99,5 +100,5 @@ inline TestStatus make_unimplemented_status(const TestInfo& ti,
     if (ti.logger != nullptr) {
         ti.logger->error(reason);
     }
-    return TestStatus::UNIMPLEMENTED;
+    return PHAL_STATUS_UNIMPLEMENTED;
 }

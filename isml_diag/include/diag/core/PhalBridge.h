@@ -16,12 +16,8 @@ enum class PhalProject {
 
 PhalProject phal_project_from_tpu_type(TPUType tpu_type);
 
-// Never cast native PHAL status values to the framework's unrelated bit flags.
-TestStatus from_phal(int status);
-
 struct IhalIO {
     const DeviceContext* device_ctx = nullptr;
-    uint32_t bar_index = 0;
 };
 
 class PhalBridge {
@@ -39,8 +35,8 @@ public:
     PhalBridge& operator=(PhalBridge&&) noexcept;
 
     void reset();
-    void* get_context(const DeviceContext& ctx,
-                      uint32_t control_bar_index,
+    // All PHAL register callbacks use BAR0; base_offset is BAR0-relative.
+    phal_ctx_t* get_context(const DeviceContext& ctx,
                       uint64_t base_offset,
                       PhalProject project,
                       std::string* error = nullptr);

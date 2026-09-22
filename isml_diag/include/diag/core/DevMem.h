@@ -1,7 +1,8 @@
 /*
  * Common device-memory access over the PCIe BAR path.
  *
- * These helpers initialize the PCIe PHAL context. The PHAL aperture API enters
+ * The framework prepares PHAL for the short APIs; legacy helpers can initialize
+ * it on demand. The PHAL aperture API enters
  * its AXICLK block internally before programming and verifying one aperture.
  * Data is then read or written through the mapped BAR via common::bar.
  * These helpers are available to every diagnostic module.
@@ -13,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 struct DeviceContext;
 struct TestInfo;
@@ -49,8 +51,18 @@ bool write(TestInfo& ti,
 namespace common {
 // One 32-bit word at dmem_base + addr. Uses BAR4/aperture0/identity0;
 // independent of the module register block. Framework prepares pcie_phal.
+// Default window: 256 MiB starting at device address 0x10000000.
 TestStatus dmem_read(DeviceContext& ctx, uint64_t addr, uint32_t* data);
 TestStatus dmem_write(DeviceContext& ctx, uint64_t addr, uint32_t data);
+// Byte buffers: transfer exactly size() bytes, with one aperture setup per call.
+// Reads require a pre-sized, nonempty vector; they do not resize it.
+TestStatus dmem_read(DeviceContext& ctx, uint64_t addr, std::vector<uint8_t>* data);
+TestStatus dmem_write(DeviceContext& ctx, uint64_t addr, const std::vector<uint8_t>& data);
+// Keep a literal nullptr unambiguous between the two output pointer overloads.
+inline TestStatus dmem_read(DeviceContext& ctx, uint64_t addr, std::nullptr_t)
+{
+    return dmem_read(ctx, addr, static_cast<uint32_t*>(nullptr));
+}
 }
 
 using common::dmem_read;

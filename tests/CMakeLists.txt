@@ -16,6 +16,7 @@ list(REMOVE_ITEM IO_TEST_SOURCES ${REPO}/isml_diag/src/core/HalContext.cpp)
 add_library(io_test_code STATIC ${IO_TEST_SOURCES}
     hal_fixture.cpp
     ${REPO}/mock/ProtonHal/src/phal/init.c
+    ${REPO}/mock/ProtonHal/src/phal/ops.c
     ${REPO}/mock/ProtonHal/src/components/pcie/pcie.c
     ${REPO}/mock/ProtonHal/src/components/isi/isi.c)
 target_compile_features(io_test_code PUBLIC cxx_std_17)

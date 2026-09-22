@@ -106,11 +106,11 @@ PYBIND11_MODULE(tpu_hal, m)
             });
 
     py::enum_<TestStatus>(m, "TestStatus")
-        .value("OK", TestStatus::OK)
-        .value("TIMEOUT", TestStatus::TIMEOUT)
-        .value("ERROR", TestStatus::ERROR)
-        .value("UNIMPLEMENTED", TestStatus::UNIMPLEMENTED)
-        .value("INVALID", TestStatus::INVALID);
+        .value("OK", PHAL_STATUS_OK)
+        .value("TIMEOUT", PHAL_STATUS_TIMEOUT)
+        .value("ERROR", PHAL_STATUS_ERROR)
+        .value("UNIMPLEMENTED", PHAL_STATUS_UNIMPLEMENTED)
+        .value("INVALID", PHAL_STATUS_INVALID);
 
     py::enum_<LogLevel>(m, "LogLevel")
         .value("ERROR", LogLevel::Error)

@@ -8,6 +8,9 @@
 #include <utility>
 #include <vector>
 
+using common::args::get_u64;
+using common::format::hex;
+
 namespace generic_impl {
 
 // Generic PCIe impl. This is the fallback for BAR and DMA operations when
@@ -19,14 +22,14 @@ GenericPCIeImpl::GenericPCIeImpl(ModuleImplContext ctx)
 
 TestStatus GenericPCIeImpl::bar_read32(TestInfo& ti)
 {
-    const auto offset = common::args::get_u64(ti.args, "offset");
+    const auto offset = get_u64(ti.args, "offset");
 
     if ((offset % sizeof(uint32_t)) != 0) {
         if (ti.logger != nullptr) {
             ti.logger->error("BAR read offset must be 4-byte aligned: offset=" +
-                             common::format::hex(offset));
+                             hex(offset));
         }
-        return TestStatus::INVALID;
+        return PHAL_STATUS_INVALID;
     }
 
     uint32_t value = 0;
@@ -36,10 +39,10 @@ TestStatus GenericPCIeImpl::bar_read32(TestInfo& ti)
         if (ti.logger != nullptr) {
             ti.logger->error(
                 "BAR read is outside module range\n"
-                "       module_offset       = " + common::format::hex(offset) +
-                "\n       module_size         = " + common::format::hex(ctx_.reg_size));
+                "       module_offset       = " + hex(offset) +
+                "\n       module_size         = " + hex(ctx_.reg_size));
         }
-        return TestStatus::INVALID;
+        return PHAL_STATUS_INVALID;
     }
 
     if (ctx_.reg_base_offset >
@@ -47,7 +50,7 @@ TestStatus GenericPCIeImpl::bar_read32(TestInfo& ti)
         if (ti.logger != nullptr) {
             ti.logger->error("BAR read module offset overflow");
         }
-        return TestStatus::INVALID;
+        return PHAL_STATUS_INVALID;
     }
     const uint64_t absolute_offset = ctx_.reg_base_offset + offset;
     if (!common::bar::read32(ctx_.device_ctx,
@@ -58,46 +61,46 @@ TestStatus GenericPCIeImpl::bar_read32(TestInfo& ti)
             ti.logger->error(
                 "BAR read failed\n"
                 "       bar_index           = " + std::to_string(bar_index) +
-                "\n       module_offset       = " + common::format::hex(offset) +
-                "\n       absolute_bar_offset = " + common::format::hex(absolute_offset));
+                "\n       module_offset       = " + hex(offset) +
+                "\n       absolute_bar_offset = " + hex(absolute_offset));
         }
-        return TestStatus::ERROR;
+        return PHAL_STATUS_ERROR;
     }
 
     if (ti.logger != nullptr) {
         ti.logger->info(
             "BAR read completed\n"
             "       bar_index           = " + std::to_string(bar_index) +
-            "\n       module_offset       = " + common::format::hex(offset) +
+            "\n       module_offset       = " + hex(offset) +
             " (" + std::to_string(offset) + ")" +
-            "\n       absolute_bar_offset = " + common::format::hex(absolute_offset) +
+            "\n       absolute_bar_offset = " + hex(absolute_offset) +
             " (" + std::to_string(absolute_offset) + ")" +
-            "\n       value               = " + common::format::hex(value, 8) +
+            "\n       value               = " + hex(value, 8) +
             " (" + std::to_string(value) + ")");
     }
-    return TestStatus::OK;
+    return PHAL_STATUS_OK;
 }
 
 TestStatus GenericPCIeImpl::bar_scan32(TestInfo& ti)
 {
     constexpr uint64_t MAX_WORDS = 256;
 
-    const auto offset = common::args::get_u64(ti.args, "offset");
-    const auto words = common::args::get_u64(ti.args, "words");
+    const auto offset = get_u64(ti.args, "offset");
+    const auto words = get_u64(ti.args, "words");
 
     if ((offset % sizeof(uint32_t)) != 0) {
         if (ti.logger != nullptr) {
             ti.logger->error("BAR scan offset must be 4-byte aligned: offset=" +
-                             common::format::hex(offset));
+                             hex(offset));
         }
-        return TestStatus::INVALID;
+        return PHAL_STATUS_INVALID;
     }
     if (words == 0 || words > MAX_WORDS) {
         if (ti.logger != nullptr) {
             ti.logger->error("BAR scan words must be in range 1.." +
                              std::to_string(MAX_WORDS));
         }
-        return TestStatus::INVALID;
+        return PHAL_STATUS_INVALID;
     }
 
     std::vector<uint32_t> values(static_cast<size_t>(words), 0);
@@ -107,11 +110,11 @@ TestStatus GenericPCIeImpl::bar_scan32(TestInfo& ti)
         if (ti.logger != nullptr) {
             ti.logger->error(
                 "BAR scan is outside module range\n"
-                "       module_offset       = " + common::format::hex(offset) +
+                "       module_offset       = " + hex(offset) +
                 "\n       size_bytes          = " + std::to_string(bytes) +
-                "\n       module_size         = " + common::format::hex(ctx_.reg_size));
+                "\n       module_size         = " + hex(ctx_.reg_size));
         }
-        return TestStatus::INVALID;
+        return PHAL_STATUS_INVALID;
     }
 
     if (ctx_.reg_base_offset >
@@ -119,7 +122,7 @@ TestStatus GenericPCIeImpl::bar_scan32(TestInfo& ti)
         if (ti.logger != nullptr) {
             ti.logger->error("BAR scan module offset overflow");
         }
-        return TestStatus::INVALID;
+        return PHAL_STATUS_INVALID;
     }
     const uint64_t absolute_offset = ctx_.reg_base_offset + offset;
     if (!common::bar::read(ctx_.device_ctx,
@@ -131,31 +134,31 @@ TestStatus GenericPCIeImpl::bar_scan32(TestInfo& ti)
             ti.logger->error(
                 "BAR scan failed\n"
                 "       bar_index           = " + std::to_string(bar_index) +
-                "\n       module_offset       = " + common::format::hex(offset) +
-                "\n       absolute_bar_offset = " + common::format::hex(absolute_offset) +
+                "\n       module_offset       = " + hex(offset) +
+                "\n       absolute_bar_offset = " + hex(absolute_offset) +
                 "\n       size_bytes          = " + std::to_string(bytes));
         }
-        return TestStatus::ERROR;
+        return PHAL_STATUS_ERROR;
     }
 
     if (ti.logger != nullptr) {
         ti.logger->info(
             "BAR scan completed\n"
             "       bar_index           = " + std::to_string(bar_index) +
-            "\n       module_offset       = " + common::format::hex(offset) +
+            "\n       module_offset       = " + hex(offset) +
             " (" + std::to_string(offset) + ")" +
-            "\n       absolute_bar_offset = " + common::format::hex(absolute_offset) +
+            "\n       absolute_bar_offset = " + hex(absolute_offset) +
             " (" + std::to_string(absolute_offset) + ")" +
             "\n       word_count          = " + std::to_string(words));
         for (size_t i = 0; i < values.size(); ++i) {
             ti.logger->debug(
                 "BAR scan word[" + std::to_string(i) + "]" +
                 " address=" +
-                common::format::hex(absolute_offset + i * sizeof(uint32_t)) +
-                " value=" + common::format::hex(values[i], 8));
+                hex(absolute_offset + i * sizeof(uint32_t)) +
+                " value=" + hex(values[i], 8));
         }
     }
-    return TestStatus::OK;
+    return PHAL_STATUS_OK;
 }
 
 TestStatus GenericPCIeImpl::dma_copy(TestInfo& ti,
