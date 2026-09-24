@@ -27,5 +27,6 @@ public:
 
     TPUType tpu_type() const { return tpu_type_; }
 
+    MemoryRegionMap memory_regions() const;
     std::unique_ptr<PCIeImpl> pcie_impl(const ModuleImplContext& ctx) const;
 };

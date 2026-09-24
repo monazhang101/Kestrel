@@ -15,6 +15,7 @@ PCIeModule::PCIeModule(const std::string& name,
 {
     ctx_.reg_base_offset = config.reg_base_offset;
     ctx_.reg_size = config.reg_size;
+    ctx_.module_index = config.index;
     _add_test("bar_read32",
               {{"offset", "0", "offset"}},
               [this](TestInfo& ti) { return bar_read32(ti); });
@@ -29,13 +30,12 @@ PCIeModule::PCIeModule(const std::string& name,
               [this](TestInfo& ti) { return example(ti); });
     _add_test("sequential_aperture_mapping", {},
               [this](TestInfo& ti) { return sequential_aperture_mapping(ti); });
+    // _add_test adds "pcie_": CLI name is pcie_dma_data_transfer.
+    // TestTarget supplies these defaults through ti.args when flags are omitted.
     _add_test("dma_data_transfer",
               {{"direction", "h2d", "string"},
                {"size_bytes", "4096", "bytes"},
                {"pattern", "random", "string"},
-               {"device_offset", "0x10200", "offset"},
-               // Device-only round trips return to a separate DMEM region.
-               {"return_offset", "0x10400", "offset"},
                {"intermediate_offset", "0", "offset"},
                {"timeout_ms", "1000", "ms"}},
               [this](TestInfo& ti) { return dma_data_transfer(ti); });

@@ -126,22 +126,41 @@ TPUDevice::TPUDevice(const std::string& logical_name,
                         std::to_string(isi_config.index);
         isi_modules_.push_back(std::make_unique<ISIModule>(isi_name, ctx_, isi_config));
     }
+    soc_ = std::make_unique<SocModule>("SOC_" + std::to_string(tpu_index_), ctx_);
+    for (auto* child : child_targets()) child->set_device(this);
 }
 
 ISIModule* TPUDevice::isi(size_t index) const
 {
-    if (index >= isi_modules_.size()) {
-        return nullptr;
-    }
-    return isi_modules_[index].get();
+    for (const auto& module : isi_modules_)
+        if (module->get_context().module_index == index) return module.get();
+    return nullptr;
 }
 
 DDPModule* TPUDevice::ddp(size_t index) const
 {
-    if (index >= ddp_modules_.size()) {
-        return nullptr;
+    for (const auto& module : ddp_modules_)
+        if (module->get_context().module_index == index) return module.get();
+    return nullptr;
+}
+
+TestTarget* TPUDevice::module(const std::string& type, uint32_t index) const
+{
+    for (auto* module : child_targets())
+        if (module->get_target_type() == type &&
+            module->get_context().module_index == index) return module;
+    return nullptr;
+}
+
+std::vector<std::string> TPUDevice::get_registered_test_names() const
+{
+    std::vector<std::string> names;
+    for (auto* child : child_targets()) {
+        if (child->get_context().module_index != 0) continue;
+        const auto tests = child->get_registered_test_names();
+        names.insert(names.end(), tests.begin(), tests.end());
     }
-    return ddp_modules_[index].get();
+    return names;
 }
 
 std::vector<TestTarget*> TPUDevice::child_targets() const
@@ -159,6 +178,7 @@ std::vector<TestTarget*> TPUDevice::child_targets() const
     for (const auto& isi_module : isi_modules_) {
         children.push_back(isi_module.get());
     }
+    if (soc_) children.push_back(soc_.get());
     return children;
 }
 

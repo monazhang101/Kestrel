@@ -1,15 +1,9 @@
-/*
- * Common device-memory access over the PCIe BAR path.
- *
- * The framework prepares PHAL for the short APIs; legacy helpers can initialize
- * it on demand. The PHAL aperture API enters
- * its AXICLK block internally before programming and verifying one aperture.
- * Data is then read or written through the mapped BAR via common::bar.
- * These helpers are available to every diagnostic module.
- */
+/* Common access to DMEM through a PCIe aperture and RCF memory through BAR0. */
 #pragma once
 
+#include "diag/core/MemoryRegion.h"
 #include "diag/core/TestInfo.h"
+#include "diag/core/Platform.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -49,21 +43,58 @@ bool write(TestInfo& ti,
 }
 
 namespace common {
-// One 32-bit word at dmem_base + addr. Uses BAR4/aperture0/identity0;
-// independent of the module register block. Framework prepares pcie_phal.
-// Default window: 256 MiB starting at device address 0x10000000.
-TestStatus dmem_read(DeviceContext& ctx, uint64_t addr, uint32_t* data);
-TestStatus dmem_write(DeviceContext& ctx, uint64_t addr, uint32_t data);
-// Byte buffers: transfer exactly size() bytes, with one aperture setup per call.
-// Reads require a pre-sized, nonempty vector; they do not resize it.
-TestStatus dmem_read(DeviceContext& ctx, uint64_t addr, std::vector<uint8_t>* data);
-TestStatus dmem_write(DeviceContext& ctx, uint64_t addr, const std::vector<uint8_t>& data);
-// Keep a literal nullptr unambiguous between the two output pointer overloads.
-inline TestStatus dmem_read(DeviceContext& ctx, uint64_t addr, std::nullptr_t)
+// Owns an allocated interval. Keep it within the device/HAL lifetime and wait
+// for DMA completion before release. Separate allocations never overlap.
+class MemBuffer {
+    std::unique_ptr<DeviceContext> ctx_;
+    MemoryRegion region_ = DMEM;
+    uint64_t offset_ = 0;
+    uint64_t size_ = 0;
+    TestStatus transfer(uint64_t offset, void* output, const void* input, size_t len);
+    friend MemBuffer mem_alloc(const DeviceContext&, MemoryRegion, uint64_t);
+    friend TestStatus mem_read(MemBuffer&, uint64_t, uint32_t*);
+    friend TestStatus mem_write(MemBuffer&, uint64_t, uint32_t);
+    friend TestStatus mem_read(MemBuffer&, uint64_t, std::vector<uint8_t>*);
+    friend TestStatus mem_write(MemBuffer&, uint64_t, const std::vector<uint8_t>&);
+public:
+    MemBuffer() = default;
+    ~MemBuffer() { release(); }
+    MemBuffer(const MemBuffer&) = delete;
+    MemBuffer& operator=(const MemBuffer&) = delete;
+    MemBuffer(MemBuffer&&) noexcept = default;
+    MemBuffer& operator=(MemBuffer&& other) noexcept;
+    bool valid() const { return ctx_ != nullptr; }
+    uint64_t offset() const { return offset_; } // Byte offset within the region.
+    uint64_t size() const { return valid() ? size_ : 0; }
+    void release();
+    // Failed asynchronous IO may still use this range. Keep it occupied until
+    // device teardown instead of returning it to the allocator.
+    void keep_allocated() { ctx_.reset(); }
+};
+
+MemBuffer mem_alloc(const DeviceContext& ctx, MemoryRegion region, uint64_t size);
+TestStatus mem_read(MemBuffer& buffer, uint64_t offset, uint32_t* data);
+TestStatus mem_write(MemBuffer& buffer, uint64_t offset, uint32_t data);
+TestStatus mem_read(MemBuffer& buffer, uint64_t offset, std::vector<uint8_t>* data);
+TestStatus mem_write(MemBuffer& buffer, uint64_t offset, const std::vector<uint8_t>& data);
+
+// Low-level fixed-address access for firmware protocols and mapping tests.
+TestStatus mem_read(DeviceContext& ctx, MemoryRegion region,
+                    uint64_t addr, uint32_t* data);
+TestStatus mem_write(DeviceContext& ctx, MemoryRegion region,
+                     uint64_t addr, uint32_t data);
+TestStatus mem_read(DeviceContext& ctx, MemoryRegion region,
+                    uint64_t addr, std::vector<uint8_t>* data);
+TestStatus mem_write(DeviceContext& ctx, MemoryRegion region,
+                     uint64_t addr, const std::vector<uint8_t>& data);
+inline TestStatus mem_read(DeviceContext& ctx, MemoryRegion region,
+                           uint64_t addr, std::nullptr_t)
 {
-    return dmem_read(ctx, addr, static_cast<uint32_t*>(nullptr));
+    return mem_read(ctx, region, addr, static_cast<uint32_t*>(nullptr));
 }
 }
 
-using common::dmem_read;
-using common::dmem_write;
+using common::mem_read;
+using common::mem_write;
+using common::mem_alloc;
+using common::MemBuffer;

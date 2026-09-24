@@ -124,6 +124,7 @@ add_library(ProtonHal::phal ALIAS phal)
 add_library(isml_lib
     isml_lib/implementer/src/implementer.cpp
     isml_lib/implementer/src/generic/generic_impl.cpp
+    isml_lib/implementer/src/atlas/memory_regions.cpp
     isml_lib/implementer/src/atlas/pcie/hqc_admin_queue.cpp
     isml_lib/implementer/src/atlas/pcie/pcie_impl.cpp
     isml_lib/implementer/src/atlas_m/pcie/pcie_impl.cpp
@@ -151,6 +152,8 @@ add_library(isml_diag
     isml_diag/src/modules/isi/ISIModule.cpp
     isml_diag/src/modules/pcie/PCIeModule.cpp
     isml_diag/src/modules/pmu/PMUModule.cpp
+    isml_diag/src/modules/soc/SocModule.cpp
+    isml_diag/testcases/soc/example.cpp
     isml_diag/testcases/pmu/example.cpp
     isml_diag/testcases/ddp/example.cpp
     isml_diag/testcases/isi/example.cpp

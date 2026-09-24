@@ -1,5 +1,7 @@
 #pragma once
 
+#include "diag/core/MemoryRegion.h"
+
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -54,9 +56,10 @@ struct DeviceContext {
     // PHAL module root in BAR0; raw common::bar offsets remain unchanged.
     uint64_t reg_base_offset = 0;
     uint64_t reg_size = 0;
-    // Bring-up scratch region, independent of the module CSR address space.
-    uint64_t dmem_base = 0x10000000;
-    uint64_t dmem_size = 0x10000000; // 256 MiB aperture window
+    std::string module_type;
+    uint32_t module_index = 0;
+    MemoryRegionMap memory_regions;
+    std::shared_ptr<DeviceMemoryState> memory = std::make_shared<DeviceMemoryState>();
     phal_ctx_t* phal = nullptr;
     phal_ctx_t* pcie_phal = nullptr;
     Logger* logger = nullptr; // Borrowed only during a testcase.

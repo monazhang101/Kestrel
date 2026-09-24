@@ -40,3 +40,12 @@ target_link_libraries(io_test_cli PRIVATE io_test_code)
 add_test(NAME cli_help COMMAND io_test_cli --help)
 add_test(NAME cli_discover COMMAND io_test_cli discover --tree)
 set_tests_properties(cli_discover PROPERTIES WORKING_DIRECTORY ${REPO})
+
+add_test(NAME cli_default_target COMMAND io_test_cli pcie_bar_read32_abs --offset 4)
+add_test(NAME cli_tpu_target COMMAND io_test_cli pcie_bar_read32_abs --target TPU0 --offset 4)
+set_tests_properties(cli_default_target cli_tpu_target PROPERTIES
+    WORKING_DIRECTORY ${REPO} PASS_REGULAR_EXPRESSION "TPU0::pcie_bar_read32_abs")
+
+add_test(NAME cli_dma_arguments COMMAND ${CMAKE_COMMAND}
+    -DCLI=$<TARGET_FILE:io_test_cli> -DREPO=${REPO}
+    -P ${CMAKE_CURRENT_LIST_DIR}/cli_dma_arguments.cmake)

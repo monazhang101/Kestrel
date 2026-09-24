@@ -1,5 +1,8 @@
 #include "diag/core/TestTarget.h"
 #include "diag/core/HalContext.h"
+#include "diag/device/TPUDevice.h"
+#include <algorithm>
+#include <map>
 
 extern "C" {
 #include <phal/phal.h>
@@ -17,13 +20,14 @@ TestTarget::TestTarget(const std::string& name,
     : name_(name), target_type_(std::move(target_type)), ctx_(ctx)
 {
     ctx_.target_name = name;
+    ctx_.module_type = target_type_;
 }
 
 void TestTarget::_add_test(const std::string& test_name,
                            std::initializer_list<TestArgumentDefinition> arguments,
                            TestcaseFunc func)
 {
-    registered_tests_[test_name] = {
+    registered_tests_[target_type_ + "_" + test_name] = {
         std::vector<TestArgumentDefinition>(arguments), std::move(func)};
 }
 
@@ -109,7 +113,7 @@ TestStatus TestTarget::run_testcase(const std::string& test_name,
     std::lock_guard<std::mutex> lock(*ctx_.testcase_mutex);
     Logger default_logger;
     TestInfo ti;
-    ti.target_name = name_;
+    ti.target_name = device_ ? device_->get_name() : name_;
     ti.test_name = test_name;
     ti.logger = logger == nullptr ? &default_logger : logger;
     ti.hal = hal;
@@ -153,38 +157,52 @@ TestStatus TestTarget::run_testcase(const std::string& test_name,
     }
     ti.args = std::move(resolved_args);
 
-    // PHAL instances are owned and cached by HalContext. Each case starts at
-    // its module root and leaves both cached contexts at their roots.
-    ctx_.logger = ti.logger;
-    ctx_.phal = nullptr;
-    ctx_.pcie_phal = nullptr;
+    // Track every borrowed context, including sibling modules and shared PCIe
+    // PHAL pointers. Repeated lookups preserve active PHAL block scopes.
     struct Restore {
-        DeviceContext& ctx;
-        bool prepared = false;
+        std::vector<DeviceContext*> contexts;
+        std::map<phal_ctx_t*, uint64_t> roots;
         ~Restore()
         {
-            if (prepared) {
-                ctx.phal->env.base = ctx.reg_base_offset;
-                ctx.pcie_phal->env.base = ctx.pcie_control_base;
-            }
-            ctx.logger = nullptr;
+            for (const auto& entry : roots) entry.first->env.base = entry.second;
+            for (auto* ctx : contexts) ctx->logger = nullptr;
         }
-    } restore{ctx_};
+    } restore;
+    std::mutex prepare_mutex;
+    const auto prepare = [&](DeviceContext& ctx) -> DeviceContext& {
+        std::lock_guard<std::mutex> guard(prepare_mutex);
+        if (std::find(restore.contexts.begin(), restore.contexts.end(), &ctx) !=
+            restore.contexts.end()) return ctx;
+        restore.contexts.push_back(&ctx);
+        ctx.logger = ti.logger;
+        ctx.phal = nullptr;
+        ctx.pcie_phal = nullptr;
+        if (ctx.module_type == "soc" || ctx.module_type == "tpu") return ctx;
+        const auto get_phal = [&](uint64_t base) {
+            std::string error;
+            auto* phal = hal->phal().get_context(
+                ctx, base, phal_project_from_tpu_type(ctx.tpu_type), &error);
+            if (!phal) throw std::runtime_error("PHAL initialization failed: " + error);
+            if (restore.roots.emplace(phal, base).second) phal->env.base = base;
+            return phal;
+        };
+        ctx.pcie_phal = get_phal(ctx.pcie_control_base);
+        ctx.phal = get_phal(ctx.reg_base_offset);
+        return ctx;
+    };
 
     try {
         if (hal == nullptr) {
             ti.logger->error("testcase requires a HAL context; run through DeviceManager");
             return PHAL_STATUS_ERROR;
         }
-        std::string error;
-        const auto project = phal_project_from_tpu_type(ctx_.tpu_type);
-        ctx_.pcie_phal = hal->phal().get_context(ctx_, ctx_.pcie_control_base, project, &error);
-        ctx_.phal = hal->phal().get_context(ctx_, ctx_.reg_base_offset, project, &error);
-        if (ctx_.pcie_phal == nullptr || ctx_.phal == nullptr) {
-            ti.logger->error("PHAL initialization failed: " + error);
-            return PHAL_STATUS_ERROR;
-        }
-        restore.prepared = true;
+        ti.module = [&](const std::string& type, uint32_t index) -> DeviceContext& {
+            auto* module = device_ ? device_->module(type, index) : nullptr;
+            if (!module) throw std::invalid_argument(
+                "module is unavailable: " + type + " index=" + std::to_string(index));
+            return prepare(module->get_context());
+        };
+        prepare(ctx_);
         return test->second.execute(ti);
     } catch (const std::invalid_argument& e) {
         ti.logger->error(std::string("invalid test argument: ") + e.what());

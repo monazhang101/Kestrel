@@ -6,6 +6,7 @@ PMUModule::PMUModule(const std::string& name, const DeviceContext& ctx,
 {
     ctx_.reg_base_offset = config.reg_base_offset;
     ctx_.reg_size = config.reg_size;
+    ctx_.module_index = config.index;
     _add_test("example", {},
               [this](TestInfo& ti) { return example(ti); });
 }

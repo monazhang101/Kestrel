@@ -11,7 +11,6 @@
 namespace atlas_impl {
 namespace {
 
-constexpr uint32_t HQC_BAR = 0;
 constexpr uint32_t QUEUE_SIZE = 0x400;
 constexpr uint32_t ENTRY_SIZE = sizeof(HqcAdminCommand);
 // Short bring-up polling interval; IRQ/event-driven completion is future work.
@@ -19,25 +18,25 @@ constexpr uint64_t POLL_INTERVAL_MS = 1;
 
 }
 
-HqcAdminQueue::HqcAdminQueue(const DeviceContext& device,
-                             uint64_t hqc_sram_bar_offset,
+HqcAdminQueue::HqcAdminQueue(DeviceContext& device,
+                             MemoryRegion region,
                              Logger* logger)
     : device_(device),
-      hqc_sram_bar_offset_(hqc_sram_bar_offset),
+      region_(region),
       logger_(logger)
 {
 }
 
 int HqcAdminQueue::read32(uint64_t offset, uint32_t& value) const
 {
-    return common::bar::read32(device_, HQC_BAR, hqc_sram_bar_offset_ + offset, value)
+    return mem_read(device_, region_, offset, &value) == PHAL_STATUS_OK
                ? HQC_STATUS_OK
                : HQC_STATUS_IO_ERROR;
 }
 
 int HqcAdminQueue::write32(uint64_t offset, uint32_t value) const
 {
-    return common::bar::write32(device_, HQC_BAR, hqc_sram_bar_offset_ + offset, value)
+    return mem_write(device_, region_, offset, value) == PHAL_STATUS_OK
                ? HQC_STATUS_OK
                : HQC_STATUS_IO_ERROR;
 }

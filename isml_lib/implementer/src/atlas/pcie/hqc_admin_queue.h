@@ -73,9 +73,8 @@ static_assert(offsetof(HqcAdminCommand, payload.test.submit.dma.size) == 24,
 
 class HqcAdminQueue {
 public:
-    // Full BAR0-relative SRAM offset, including the PCIe TOP base.
-    HqcAdminQueue(const DeviceContext& device,
-                  uint64_t hqc_sram_bar_offset,
+    HqcAdminQueue(DeviceContext& device,
+                  MemoryRegion region,
                   Logger* logger);
 
     int full(bool& is_full) const;
@@ -90,8 +89,8 @@ private:
         uint64_t rptr;
     };
 
-    const DeviceContext& device_;
-    uint64_t hqc_sram_bar_offset_;
+    DeviceContext& device_;
+    MemoryRegion region_;
     Logger* logger_ = nullptr;
 
     // Atlas core-0 bring-up queue layout, expressed as byte offsets inside HQC

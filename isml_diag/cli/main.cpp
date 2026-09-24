@@ -22,18 +22,23 @@ static void print_usage(const char* program)
 {
     std::cout << "Usage:\n"
               << "  " << program << " discover [--backend phal|ihal|dryrun] [--tree]\n"
-              << "  " << program << " <test_name> --target <target> [--<argument> <value>]...\n"
+              << "  " << program << " <module_test_name> [--target TPU0] [--<argument> <value>]...\n"
               << "\n"
-              << "Default backend: ihal\n"
+              << "Default target: TPU0; default backend: ihal\n"
               << "Global logging: --log-level error|info|debug|trace (default: info)\n"
+              << "DMA: pcie_dma_data_transfer [--direction h2d|d2h|d2i2d|d2s2d]\n"
+              << "     [--size-bytes <bytes>] [--pattern zero|incremental|random] [--timeout-ms <ms>]\n"
+              << "     Defaults: h2d, 4096 bytes (4 KiB), random, 1000 ms.\n"
+              << "     H2D: one DMA transfer, then one MMIO readback for verification.\n"
               << "\n"
               << "Examples:\n"
               << "  " << program << " discover --tree\n"
               << "  " << program << " discover --backend phal --tree\n"
-              << "  " << program << " bar_read32 --target PCIE_0_0 --offset 0x20f80\n"
-              << "  " << program << " bar_read32_abs --target PCIE_0_0 --offset 0x36100000\n"
-              << "  " << program << " dma_data_transfer --target PCIE_0_0 --direction h2d --pattern incremental\n"
-              << "  " << program << " sequential_aperture_mapping --target PCIE_0_0 --log-level debug\n";
+              << "  " << program << " pcie_bar_read32 --target TPU0 --offset 0x20f80\n"
+              << "  " << program << " pcie_bar_read32_abs --target TPU0 --offset 0x36100000\n"
+              << "  " << program << " pcie_dma_data_transfer\n"
+              << "  " << program << " pcie_dma_data_transfer --target TPU0 --direction h2d --size-bytes 0x08000000 --pattern incremental --timeout-ms 30000\n"
+              << "  " << program << " pcie_sequential_aperture_mapping --target TPU0 --log-level debug\n";
 }
 
 static void print_bar_map_status(const std::vector<BarMapping>& bars)
@@ -201,11 +206,7 @@ int main(int argc, char** argv)
         return 0;
     }
 
-    const auto target = get_option(argc, argv, "--target", "");
-    if (target.empty()) {
-        std::cerr << command << " requires --target" << std::endl;
-        return 1;
-    }
+    const auto target = get_option(argc, argv, "--target", "TPU0");
 
     TestArgs args;
     std::string error;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <iostream>
 #include <string>
 #include <unordered_map>
@@ -12,6 +13,7 @@ extern "C" {
 using TestArgs = std::unordered_map<std::string, std::string>;
 
 class HalContext;
+struct DeviceContext;
 
 // Testcases and PHAL share one status type and bit layout.
 using TestStatus = phal_status_t;
@@ -92,6 +94,8 @@ struct TestInfo {
     TestArgs args;
     Logger* logger = nullptr;
     HalContext* hal = nullptr;
+    // Prepared context on the selected TPU; valid for this testcase execution.
+    std::function<DeviceContext&(const std::string&, uint32_t)> module;
 };
 
 inline TestStatus make_unimplemented_status(const TestInfo& ti,

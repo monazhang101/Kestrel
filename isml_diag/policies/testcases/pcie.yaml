@@ -7,10 +7,6 @@ testcases:
         range: [32, 134217728]
       pattern:
         range: [zero, incremental, random]
-      device_offset:
-        range: [0, 268435455]
-      return_offset:
-        range: [0, 268435455]
       intermediate_offset:
         # Direction-dependent bring-up bounds are checked by the testcase.
         range: [0, 255]

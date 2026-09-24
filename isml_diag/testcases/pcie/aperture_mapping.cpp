@@ -14,7 +14,6 @@ extern "C" {
 
 namespace {
 constexpr uint8_t IDENTITY = 0;
-constexpr uint64_t DMEM_BASE = 0x10000000;
 constexpr uint64_t APERTURE_SIZE = 0x100000;
 constexpr uint64_t BAR23_FIRST_CONFIGURABLE_OFFSET = 0x10000000;
 constexpr size_t VERIFY_BYTES = 1024;
@@ -68,16 +67,25 @@ TestStatus PCIeModule::sequential_aperture_mapping(TestInfo& ti)
     auto& ctx = ctx_;
     auto* phal = ctx.pcie_phal;
     auto& logger = *ti.logger;
+    const auto* dmem = find_df_region(ctx.memory_regions.df, DMEM);
+    if (!dmem || !dmem->supported) return PHAL_STATUS_UNIMPLEMENTED;
+    // One allocation holds all 15 test ranges plus room for 1 MiB alignment.
+    auto buffer = mem_alloc(ctx, DMEM, 16 * APERTURE_SIZE);
+    if (!buffer.valid()) return PHAL_STATUS_ERROR;
+    const auto target_base = (dmem->base + buffer.offset() + APERTURE_SIZE - 1) &
+                             ~(APERTURE_SIZE - 1);
+    // Explicit window cases hold the same lock as ordinary DMEM IO throughout.
+    std::lock_guard<std::mutex> lock(ctx.memory->aperture_mutex);
     std::vector<ApertureCase> cases;
     cases.reserve(15);
 
     // BAR2 apertures 1..7, then BAR4 apertures 0..7; distinct 1 MiB DMEM ranges.
     for (uint8_t id = 1; id <= 7; ++id)
         cases.push_back({2, id, BAR23_FIRST_CONFIGURABLE_OFFSET + (id - 1) * APERTURE_SIZE,
-                         DMEM_BASE + cases.size() * APERTURE_SIZE, static_cast<uint8_t>(0x20 | id)});
+                         target_base + cases.size() * APERTURE_SIZE, static_cast<uint8_t>(0x20 | id)});
     for (uint8_t id = 0; id <= 7; ++id)
         cases.push_back({4, id, id * APERTURE_SIZE,
-                         DMEM_BASE + cases.size() * APERTURE_SIZE, static_cast<uint8_t>(0x40 | id)});
+                         target_base + cases.size() * APERTURE_SIZE, static_cast<uint8_t>(0x40 | id)});
 
     // 1. Configure and verify all windows before accessing any payload.
     for (const auto& c : cases) {

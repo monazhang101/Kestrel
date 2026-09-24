@@ -4,6 +4,7 @@
 
 namespace atlas_impl {
 
+MemoryRegionMap memory_regions();
 std::unique_ptr<PCIeImpl> make_pcie_impl(const ModuleImplContext& ctx);
 
 }
@@ -17,6 +18,14 @@ std::unique_ptr<PCIeImpl> make_pcie_impl(const ModuleImplContext& ctx);
 Implementer::Implementer(TPUType tpu_type)
     : tpu_type_(tpu_type)
 {
+}
+
+MemoryRegionMap Implementer::memory_regions() const
+{
+    if (tpu_type_ == TPUType::Atlas) {
+        return atlas_impl::memory_regions();
+    }
+    return {};
 }
 
 std::unique_ptr<PCIeImpl> Implementer::pcie_impl(const ModuleImplContext& ctx) const

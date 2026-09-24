@@ -5,23 +5,6 @@
 #include <unordered_map>
 #include <utility>
 
-namespace {
-
-std::string default_tpu_name(TPUType tpu_type, uint32_t index)
-{
-    switch (tpu_type) {
-    case TPUType::Atlas:
-        return "ATLAS_" + std::to_string(index);
-    case TPUType::AtlasM:
-        return "ATM_" + std::to_string(index);
-    case TPUType::Unknown:
-        return "TPU_" + std::to_string(index);
-    }
-    return "TPU_" + std::to_string(index);
-}
-
-}
-
 DeviceManager::DeviceManager(HalType hal_type)
     : hal_(hal_type),
       testcase_policies_(load_testcase_policies("isml_diag/policies/testcases")),
@@ -51,7 +34,7 @@ void DeviceManager::register_device_tree(TestTarget* target)
         return;
     }
 
-    // Register this target and all descendants for testcase dispatch.
+    // Keep module objects discoverable; testcase dispatch accepts TPU targets.
     target_registry_[target->get_name()] = target;
     for (auto* child : target->child_targets()) {
         register_device_tree(child);
@@ -99,12 +82,10 @@ DeviceTree DeviceManager::discover()
     // Ask the selected HAL context for observed PCI devices.
     auto pci_devices = hal_.scan_pci_devices();
 
-    std::unordered_map<std::string, uint32_t> discovered_product_counts;
-
     for (auto& pci_device : pci_devices) {
         // FPGA bring-up intentionally matches chips by VID/DID only because
         // the platform and BDF assignment are not stable yet. Silicon-system
-        // discovery will additionally bind VID/DID/BDF to a stable ATLAS_n.
+        // discovery will additionally bind VID/DID/BDF to a stable TPU index.
         const PolicyEntry* policy_entry = nullptr;
         for (const auto& entry : policy_) {
             if (entry.match_vendor_id == pci_device.vendor_id &&
@@ -127,14 +108,11 @@ DeviceTree DeviceManager::discover()
 
         // Bind operation implementations for the matched TPU type.
         auto implementer = std::make_shared<Implementer>(policy_entry->tpu_type);
+        mapped_ctx.memory_regions = implementer->memory_regions();
 
         auto device_config = policy_entry->device_config;
-        auto instance_index = discovered_product_counts[policy_entry->product]++;
-        if (device_config.name.empty() ||
-            target_registry_.find(device_config.name) != target_registry_.end()) {
-            device_config.name = default_tpu_name(policy_entry->tpu_type, instance_index);
-            device_config.tpu_index = instance_index;
-        }
+        device_config.tpu_index = static_cast<uint32_t>(devices_.size());
+        device_config.name = "TPU" + std::to_string(device_config.tpu_index);
 
         // Build the TPU object and policy-defined child modules.
         auto tpu_device = std::make_unique<TPUDevice>(
@@ -199,7 +177,7 @@ std::vector<std::string> DeviceManager::get_target_names() const
 {
     std::vector<std::string> names;
     for (const auto& target : device_tree_.devices) {
-        names.push_back(target.name);
+        if (target.type == "tpu") names.push_back(target.name);
     }
     return names;
 }
@@ -219,17 +197,23 @@ TestStatus DeviceManager::run_testcase(const std::string& target_name,
                                        const TestArgs& args)
 {
     std::lock_guard<std::mutex> lock(execution_mutex_);
-    auto* target = get_target(target_name);
-    if (target == nullptr) {
-        logger_.error("target=" + target_name +
-                      " is not registered; call discover() before running tests");
+    auto* tpu = dynamic_cast<TPUDevice*>(get_target(target_name));
+    if (!tpu) {
+        logger_.error("unknown TPU target=" + target_name);
+        return PHAL_STATUS_INVALID;
+    }
+    const auto separator = test_name.find('_');
+    auto* target = separator == std::string::npos ? nullptr :
+        tpu->module(test_name.substr(0, separator), 0);
+    if (!target) {
+        logger_.error("test requires an available module prefix: " + test_name);
         return PHAL_STATUS_INVALID;
     }
 
     const TestcasePolicy* test_policy = nullptr;
     const auto target_policies = testcase_policies_.find(target->get_target_type());
     if (target_policies != testcase_policies_.end()) {
-        const auto policy = target_policies->second.find(test_name);
+        const auto policy = target_policies->second.find(test_name.substr(separator + 1));
         if (policy != target_policies->second.end()) test_policy = &policy->second;
     }
     return target->run_testcase(test_name, args, &logger_, &hal_, test_policy);

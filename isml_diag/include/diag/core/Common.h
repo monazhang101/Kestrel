@@ -204,9 +204,8 @@ inline bool write32(const DeviceContext& ctx,
 }
 
 // -------------------------------------------------------------
-// BAR-path device-memory read/write shared by every module lives in
-// DevMem.h. common::devmem programs a PHAL PCIe aperture before it
-// accesses the selected data BAR through common::bar.
+// Memory-region read/write shared by every module lives in DevMem.h.
+// DMEM uses a PCIe aperture; RCF regions use BAR0 directly.
 // -------------------------------------------------------------
 
 // ------------------------------------------------------------

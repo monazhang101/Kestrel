@@ -14,10 +14,6 @@ constexpr uint64_t DMA_ALIGNMENT = 32;
 // FW converts device byte offsets to 44-bit word offsets (4 bytes per word).
 // This is descriptor representability, not the physical memory capacity.
 constexpr uint64_t DEVICE_ADDRESS_LIMIT = uint64_t{1} << 46;
-// Relative to PCIe TOP, not BAR0. Atlas TOP is at BAR0 + 0x36000000,
-// so the host-visible HQC SRAM window starts at BAR0 + 0x36d00000.
-constexpr uint64_t ATL_HQC_SRAM_PCIE_OFFSET = 0xd00000;
-
 TestStatus fail(TestInfo& ti, TestStatus status, const std::string& message)
 {
     if (ti.logger != nullptr) {
@@ -37,6 +33,9 @@ public:
     explicit AtlasPCIeImpl(ModuleImplContext ctx)
         : generic_impl::GenericPCIeImpl(std::move(ctx))
     {
+        ctx_.device_ctx.reg_base_offset = ctx_.reg_base_offset;
+        ctx_.device_ctx.module_type = "pcie";
+        ctx_.device_ctx.module_index = ctx_.index;
     }
 
     TestStatus dma_copy(TestInfo& ti,
@@ -142,7 +141,7 @@ public:
 
         const auto start = std::chrono::steady_clock::now();
         HqcAdminQueue queue(ctx_.device_ctx,
-                            ctx_.reg_base_offset + ATL_HQC_SRAM_PCIE_OFFSET,
+                            HQC_SRAM_0,
                             ti.logger);
         int status = queue.push(command, req.timeout_ms);
         if (status != HQC_STATUS_OK) {

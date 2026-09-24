@@ -6,6 +6,7 @@
 #include "diag/modules/ISIModule.h"
 #include "diag/modules/PCIeModule.h"
 #include "diag/modules/PMUModule.h"
+#include "diag/modules/SocModule.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -21,6 +22,7 @@ private:
 
     std::unique_ptr<PCIeModule> pcie_;
     std::unique_ptr<PMUModule> pmu_;
+    std::unique_ptr<SocModule> soc_;
     std::vector<std::unique_ptr<ISIModule>> isi_modules_;
     std::vector<std::unique_ptr<DDPModule>> ddp_modules_;
 
@@ -41,6 +43,8 @@ public:
     PMUModule* pmu() const { return pmu_.get(); }
     ISIModule* isi(size_t index) const;
     DDPModule* ddp(size_t index) const;
+    TestTarget* module(const std::string& type, uint32_t index) const;
+    std::vector<std::string> get_registered_test_names() const override;
 
     std::vector<TestTarget*> child_targets() const override;
     void print_tree() const;
