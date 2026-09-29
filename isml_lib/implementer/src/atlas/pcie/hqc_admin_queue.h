@@ -1,5 +1,6 @@
 #pragma once
 
+#include "diag/core/DevMem.h"
 #include "diag/core/Platform.h"
 #include "diag/core/TestInfo.h"
 
@@ -7,6 +8,7 @@
 #include <cstdint>
 
 class Logger;
+class HalContext;
 
 namespace atlas_impl {
 
@@ -73,8 +75,8 @@ static_assert(offsetof(HqcAdminCommand, payload.test.submit.dma.size) == 24,
 
 class HqcAdminQueue {
 public:
-    HqcAdminQueue(DeviceContext& device,
-                  MemoryRegion region,
+    HqcAdminQueue(MemoryRegion region,
+                  HalContext& hal,
                   Logger* logger);
 
     int full(bool& is_full) const;
@@ -89,9 +91,14 @@ private:
         uint64_t rptr;
     };
 
-    DeviceContext& device_;
     MemoryRegion region_;
+    HalContext& hal_;
     Logger* logger_ = nullptr;
+
+    // The queue offsets below are fixed hardware offsets. Reserve the whole
+    // range once, then use the same MemBuffer API as every other memory user.
+    static constexpr uint64_t QUEUE_REGION_SIZE = 0x21000;
+    mutable common::MemBuffer buffer_;
 
     // Atlas core-0 bring-up queue layout, expressed as byte offsets inside HQC
     // SRAM. Each queue owns 0x400 bytes (16 commands x 64 bytes); pointer

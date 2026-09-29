@@ -1,10 +1,10 @@
 #include "atlas/pcie/hqc_admin_queue.h"
+#include "diag/core/HalContext.h"
 #include "generic/generic_impl.h"
 
 #include <chrono>
 #include <limits>
 #include <sstream>
-#include <utility>
 
 namespace atlas_impl {
 namespace {
@@ -30,14 +30,6 @@ TestStatus hqc_status(int status)
 
 class AtlasPCIeImpl : public generic_impl::GenericPCIeImpl {
 public:
-    explicit AtlasPCIeImpl(ModuleImplContext ctx)
-        : generic_impl::GenericPCIeImpl(std::move(ctx))
-    {
-        ctx_.device_ctx.reg_base_offset = ctx_.reg_base_offset;
-        ctx_.device_ctx.module_type = "pcie";
-        ctx_.device_ctx.module_index = ctx_.index;
-    }
-
     TestStatus dma_copy(TestInfo& ti,
                         const DmaTransferRequest& req) override
     {
@@ -140,8 +132,11 @@ public:
         }
 
         const auto start = std::chrono::steady_clock::now();
-        HqcAdminQueue queue(ctx_.device_ctx,
-                            HQC_SRAM_0,
+        if (ti.hal == nullptr) {
+            return fail(ti, PHAL_STATUS_ERROR, "DMA requires a bound HAL context");
+        }
+        HqcAdminQueue queue(HQC_SRAM_0,
+                            *ti.hal,
                             ti.logger);
         int status = queue.push(command, req.timeout_ms);
         if (status != HQC_STATUS_OK) {
@@ -184,9 +179,9 @@ public:
 
 }
 
-std::unique_ptr<PCIeImpl> make_pcie_impl(const ModuleImplContext& ctx)
+std::unique_ptr<PCIeImpl> make_pcie_impl()
 {
-    return std::make_unique<AtlasPCIeImpl>(ctx);
+    return std::make_unique<AtlasPCIeImpl>();
 }
 
 }

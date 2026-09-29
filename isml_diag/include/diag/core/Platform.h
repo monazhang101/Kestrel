@@ -8,10 +8,6 @@
 #include <string>
 #include <vector>
 
-extern "C" {
-#include <phal/phal.h>
-}
-
 enum class TPUType { Unknown, Atlas, AtlasM };
 
 class Logger;
@@ -31,7 +27,6 @@ struct BarMapping {
     std::string name;
     void* mapped_base = nullptr;
     uint64_t device_base = 0;
-    uint64_t size = 0;
     uint64_t expected_size = 0;
     uint64_t resource_size = 0;
     uint64_t mapped_size = 0;
@@ -46,22 +41,10 @@ struct DeviceContext {
     uint16_t vendor_id = 0;
     uint16_t device_id = 0;
     TPUType tpu_type = TPUType::Unknown;
-    void* mapped_bar_base = nullptr;
-    uint64_t bar_device_base = 0;
-    uint64_t bar_size = 0;
     std::vector<BarMapping> bar_mappings;
-    // PCIe control registers are in BAR0, including aperture configuration.
-    uint64_t pcie_control_base = 0;
-
-    // PHAL module root in BAR0; raw common::bar offsets remain unchanged.
-    uint64_t reg_base_offset = 0;
-    uint64_t reg_size = 0;
-    std::string module_type;
     uint32_t module_index = 0;
     MemoryRegionMap memory_regions;
     std::shared_ptr<DeviceMemoryState> memory = std::make_shared<DeviceMemoryState>();
-    phal_ctx_t* phal = nullptr;
-    phal_ctx_t* pcie_phal = nullptr;
     Logger* logger = nullptr; // Borrowed only during a testcase.
     std::string target_name;
     // Copies passed to sibling modules share the physical device lock.
@@ -70,9 +53,6 @@ struct DeviceContext {
 
 struct ModuleInstanceConfig {
     uint32_t index = 0;
-    uint32_t bar_index = 0;
-    uint64_t reg_base_offset = 0;
-    uint64_t reg_size = 0;
 };
 
 struct TPUDeviceConfig {

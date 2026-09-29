@@ -26,8 +26,6 @@ class PCIeImpl {
 public:
     virtual ~PCIeImpl() = default;
 
-    virtual TestStatus bar_read32(TestInfo& ti) = 0;
-    virtual TestStatus bar_scan32(TestInfo& ti) = 0;
     // Caller selects a platform-reserved scratch range. Descriptor validation
     // does not discover physical capacity or reserve device memory.
     virtual TestStatus dma_copy(TestInfo& ti, const DmaTransferRequest& req) = 0;

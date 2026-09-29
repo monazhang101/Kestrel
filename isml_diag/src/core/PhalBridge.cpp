@@ -2,10 +2,8 @@
 
 #include "diag/core/Common.h"
 
-#include <mutex>
 #include <sstream>
 #include <utility>
-#include <vector>
 
 // PHAL lives in the standalone isml_ipc/ProtonHal repo. Keep real component
 // headers at direct PHAL call sites, such as module testcases and DevMem.cpp.
@@ -145,95 +143,63 @@ phal_status_t ihal_read32(void* handler, uintptr_t addr, uint32_t* data)
                : PHAL_STATUS_INVALID;
 }
 
-class PhalBridge::Impl {
+class PhalBridge::ScopedContext::State {
 public:
-    struct ContextSlot {
-        Logger logger; // Owned snapshot: no borrowed testcase logger survives in the cache.
-        DeviceContext device_ctx;
-        IhalIO ihalIO;
-        uint64_t base_offset = 0;
-        PhalProject project = PhalProject::Generic;
-        phal_ctx_t ctx{};
-        bool initialized = false;
+    Logger logger;
+    DeviceContext device_ctx;
+    IhalIO ihalIO;
+    phal_ctx_t ctx{};
+    bool initialized = false;
 
-        ~ContextSlot()
-        {
-            if (initialized) {
-                phal_deinit(&ctx);
-            }
-        }
-    };
-
-    std::mutex mutex;
-    std::vector<std::unique_ptr<ContextSlot>> contexts;
-
-    ContextSlot* find(const DeviceContext& device_ctx,
-                      uint64_t base_offset,
-                      PhalProject project)
+    ~State()
     {
-        for (const auto& slot : contexts) {
-            if (slot->device_ctx.bdf == device_ctx.bdf &&
-                slot->base_offset == base_offset &&
-                slot->project == project) {
-                return slot.get();
-            }
+        if (initialized) {
+            phal_deinit(&ctx);
         }
-        return nullptr;
     }
 };
 
-PhalBridge::PhalBridge()
-    : impl_(std::make_unique<Impl>())
+PhalBridge::ScopedContext::ScopedContext(std::unique_ptr<State> state)
+    : state_(std::move(state))
 {
 }
 
-PhalBridge::~PhalBridge() = default;
+PhalBridge::ScopedContext::ScopedContext() = default;
 
-PhalBridge::PhalBridge(PhalBridge&&) noexcept = default;
+PhalBridge::ScopedContext::~ScopedContext() = default;
 
-PhalBridge& PhalBridge::operator=(PhalBridge&&) noexcept = default;
+PhalBridge::ScopedContext::ScopedContext(ScopedContext&&) noexcept = default;
 
-void PhalBridge::reset()
+PhalBridge::ScopedContext& PhalBridge::ScopedContext::operator=(ScopedContext&&) noexcept = default;
+
+phal_ctx_t* PhalBridge::ScopedContext::get() const
 {
-    impl_ = std::make_unique<Impl>();
+    return state_ == nullptr ? nullptr : &state_->ctx;
 }
 
-phal_ctx_t* PhalBridge::get_context(const DeviceContext& ctx,
-                              uint64_t base_offset,
-                              PhalProject project,
-                              std::string* error)
+PhalBridge::ScopedContext PhalBridge::create_context(const DeviceContext& ctx,
+                                                      PhalProject project,
+                                                      std::string* error)
 {
-    if (impl_ == nullptr) {
-        impl_ = std::make_unique<Impl>();
-    }
-
     if (project == PhalProject::Generic) {
         project = phal_project_from_tpu_type(ctx.tpu_type);
     }
 
-    std::lock_guard<std::mutex> lock(impl_->mutex);
-    if (auto* existing = impl_->find(ctx, base_offset, project)) {
-        existing->logger.set_level(ctx.logger ? ctx.logger->get_level() : LogLevel::Info);
-        return &existing->ctx;
-    }
-
-    auto slot = std::make_unique<Impl::ContextSlot>();
-    slot->device_ctx = ctx;
-    slot->logger.set_level(ctx.logger ? ctx.logger->get_level() : LogLevel::Info);
-    slot->device_ctx.logger = &slot->logger;
-    slot->base_offset = base_offset;
-    slot->project = project;
-    slot->ihalIO.device_ctx = &slot->device_ctx;
+    auto state = std::make_unique<ScopedContext::State>();
+    state->device_ctx = ctx;
+    state->logger.set_level(ctx.logger ? ctx.logger->get_level() : LogLevel::Info);
+    state->device_ctx.logger = &state->logger;
+    state->ihalIO.device_ctx = &state->device_ctx;
 
     phal_config_t config{};
-    config.env_config.base = base_offset;
-    config.env_config.user_data = &slot->ihalIO;
+    config.env_config.base = CHIP_RCF_BASE;
+    config.env_config.user_data = &state->ihalIO;
 #if !defined(HAL_FIRMWARE_MODE)
     config.env_config.hw_ops = &hal_drv_ops;
 #endif
     config.project_config = to_phal_project(project);
 
-    auto status = phal_init(&slot->ctx, &config);
+    auto status = phal_init(&state->ctx, &config);
     if (status != PHAL_STATUS_OK) {
         if (error != nullptr) {
             *error = phal_error("phal_init", status);
@@ -241,13 +207,14 @@ phal_ctx_t* PhalBridge::get_context(const DeviceContext& ctx,
             *error += phal_project_macro(project);
             *error += " bdf=";
             *error += ctx.bdf;
-            *error += " control_bar=0";
+            *error += " chip_rcf_base=0x20000000";
         }
-        return nullptr;
+        return {};
     }
 
-    slot->initialized = true;
-    auto* phal_ctx = &slot->ctx;
-    impl_->contexts.push_back(std::move(slot));
-    return phal_ctx;
+    state->initialized = true;
+    // Keep the framework-owned chip root explicit even if a PHAL project
+    // performs additional initialization internally.
+    state->ctx.env.base = CHIP_RCF_BASE;
+    return ScopedContext(std::move(state));
 }

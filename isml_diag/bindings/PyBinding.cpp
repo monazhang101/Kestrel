@@ -15,7 +15,6 @@ static py::dict bar_mapping_to_dict(const BarMapping& bar)
     d["name"] = bar.name;
     d["mapped_base"] = reinterpret_cast<uintptr_t>(bar.mapped_base);
     d["device_base"] = bar.device_base;
-    d["size"] = bar.size;
     d["expected_size"] = bar.expected_size;
     d["resource_size"] = bar.resource_size;
     d["mapped_size"] = bar.mapped_size;
@@ -71,7 +70,6 @@ PYBIND11_MODULE(tpu_hal, m)
         .def_readwrite("bar_index", &BarMapping::bar_index)
         .def_readwrite("name", &BarMapping::name)
         .def_readwrite("device_base", &BarMapping::device_base)
-        .def_readwrite("size", &BarMapping::size)
         .def_readwrite("expected_size", &BarMapping::expected_size)
         .def_readwrite("resource_size", &BarMapping::resource_size)
         .def_readwrite("mapped_size", &BarMapping::mapped_size)
@@ -93,17 +91,7 @@ PYBIND11_MODULE(tpu_hal, m)
         .def_readwrite("bdf", &DeviceContext::bdf)
         .def_readwrite("vendor_id", &DeviceContext::vendor_id)
         .def_readwrite("device_id", &DeviceContext::device_id)
-        .def_readwrite("bar_device_base", &DeviceContext::bar_device_base)
-        .def_readwrite("bar_size", &DeviceContext::bar_size)
         .def_readwrite("bar_mappings", &DeviceContext::bar_mappings)
-        .def_property(
-            "mapped_bar_base",
-            [](const DeviceContext& ctx) {
-                return reinterpret_cast<uintptr_t>(ctx.mapped_bar_base);
-            },
-            [](DeviceContext& ctx, uintptr_t addr) {
-                ctx.mapped_bar_base = reinterpret_cast<void*>(addr);
-            });
 
     py::enum_<TestStatus>(m, "TestStatus")
         .value("OK", PHAL_STATUS_OK)
@@ -151,10 +139,7 @@ PYBIND11_MODULE(tpu_hal, m)
         .def("get_registered_test_names", &TestTarget::get_registered_test_names)
         .def("get_context",
              static_cast<DeviceContext& (TestTarget::*)()>(&TestTarget::get_context),
-             py::return_value_policy::reference_internal)
-        .def("get_bar_base_addr", [](const TestTarget& target) {
-            return reinterpret_cast<uintptr_t>(target.get_bar_base_addr());
-        });
+             py::return_value_policy::reference_internal);
 
     py::class_<TPUDevice, TestTarget>(m, "TPUDevice")
         .def("tpu_index", &TPUDevice::tpu_index)
@@ -162,8 +147,7 @@ PYBIND11_MODULE(tpu_hal, m)
 
     py::class_<PCIeModule, TestTarget>(m, "PCIeModule");
     py::class_<PMUModule, TestTarget>(m, "PMUModule");
-    py::class_<ISIModule, TestTarget>(m, "ISIModule")
-        .def("link_id", &ISIModule::link_id);
+    py::class_<ISIModule, TestTarget>(m, "ISIModule");
     py::class_<DDPModule, TestTarget>(m, "DDPModule");
 
     py::class_<DeviceManager>(m, "DeviceManager")

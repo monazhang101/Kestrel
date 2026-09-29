@@ -1,0 +1,8 @@
+#ifndef ISML_MOCK_ATLAS_CSR_PCIE_APP_REG_FOR_AXICLK_H
+#define ISML_MOCK_ATLAS_CSR_PCIE_APP_REG_FOR_AXICLK_H
+
+#include <stdint.h>
+
+static const uintptr_t PCIE_APP_REG_FOR_AXICLK_Q128_ENABLE_OFFSET = 0x0u;
+
+#endif

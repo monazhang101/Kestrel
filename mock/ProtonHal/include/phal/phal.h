@@ -69,6 +69,9 @@ phal_status_t phal_init(phal_ctx_t* ctx, const phal_config_t* config);
 void phal_deinit(phal_ctx_t* ctx);
 phal_status_t phal_write(phal_ctx_t* ctx, uintptr_t addr, uint32_t data);
 phal_status_t phal_read(phal_ctx_t* ctx, uintptr_t addr, uint32_t* data);
+phal_status_t phal_field_write(phal_ctx_t* ctx, uintptr_t addr,
+                               uint32_t bit_mask, uint32_t bit_position,
+                               uint32_t value);
 
 static inline uintptr_t phal_block_ctx_enter(phal_ctx_t* ctx, uintptr_t offset)
 {

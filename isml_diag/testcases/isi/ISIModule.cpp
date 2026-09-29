@@ -2,10 +2,8 @@
 
 ISIModule::ISIModule(const std::string& name, const DeviceContext& ctx,
                          const ModuleInstanceConfig& config)
-    : TestTarget(name, "isi", ctx), link_id_(config.index)
+    : TestTarget(name, "isi", ctx)
 {
-    ctx_.reg_base_offset = config.reg_base_offset;
-    ctx_.reg_size = config.reg_size;
     ctx_.module_index = config.index;
     _add_test("example", {},
               [this](TestInfo& ti) { return example(ti); });

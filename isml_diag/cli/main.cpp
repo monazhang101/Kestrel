@@ -34,8 +34,7 @@ static void print_usage(const char* program)
               << "Examples:\n"
               << "  " << program << " discover --tree\n"
               << "  " << program << " discover --backend phal --tree\n"
-              << "  " << program << " pcie_bar_read32 --target TPU0 --offset 0x20f80\n"
-              << "  " << program << " pcie_bar_read32_abs --target TPU0 --offset 0x36100000\n"
+              << "  " << program << " pcie_bar_read32 --target TPU0 --bar-index 0 --offset 0x20f80\n"
               << "  " << program << " pcie_dma_data_transfer\n"
               << "  " << program << " pcie_dma_data_transfer --target TPU0 --direction h2d --size-bytes 0x08000000 --pattern incremental --timeout-ms 30000\n"
               << "  " << program << " pcie_sequential_aperture_mapping --target TPU0 --log-level debug\n";

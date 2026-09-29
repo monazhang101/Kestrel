@@ -2,10 +2,8 @@
 
 DDPModule::DDPModule(const std::string& name, const DeviceContext& ctx,
                          const ModuleInstanceConfig& config)
-    : TestTarget(name, "ddp", ctx), ddp_id_(config.index)
+    : TestTarget(name, "ddp", ctx)
 {
-    ctx_.reg_base_offset = config.reg_base_offset;
-    ctx_.reg_size = config.reg_size;
     ctx_.module_index = config.index;
     _add_test("example", {},
               [this](TestInfo& ti) { return example(ti); });

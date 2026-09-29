@@ -4,19 +4,7 @@
 #include "diag/core/TestInfo.h"
 #include "diag/implementer/PCIeImpl.h"
 
-#include <cstdint>
 #include <memory>
-#include <string>
-
-struct ModuleImplContext {
-    std::string target_name;
-    DeviceContext device_ctx;
-    uint32_t index = 0;
-    uint32_t parent_index = 0;
-    uint32_t bar_index = 0;
-    uint64_t reg_base_offset = 0;
-    uint64_t reg_size = 0;
-};
 
 class Implementer {
 private:
@@ -28,5 +16,5 @@ public:
     TPUType tpu_type() const { return tpu_type_; }
 
     MemoryRegionMap memory_regions() const;
-    std::unique_ptr<PCIeImpl> pcie_impl(const ModuleImplContext& ctx) const;
+    std::unique_ptr<PCIeImpl> pcie_impl() const;
 };

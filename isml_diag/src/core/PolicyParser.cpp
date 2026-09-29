@@ -201,21 +201,12 @@ std::vector<ModuleInstanceConfig> parse_module_list(const std::vector<YamlLine>&
     std::vector<ModuleInstanceConfig> modules;
     auto section = find_line(lines, section_name);
     auto end = section_end(lines, section);
-    ModuleInstanceConfig* current = nullptr;
-
     for (size_t i = section + 1; i < end; ++i) {
         if (lines[i].indent == lines[section].indent + 2 &&
             starts_with(lines[i].text, "- index:")) {
             ModuleInstanceConfig module;
             module.index = static_cast<uint32_t>(parse_u64(yaml_value(lines[i].text)));
             modules.push_back(module);
-            current = &modules.back();
-        } else if (current != nullptr && starts_with(lines[i].text, "reg_base_offset:")) {
-            current->reg_base_offset = parse_u64(yaml_value(lines[i].text));
-        } else if (current != nullptr && starts_with(lines[i].text, "reg_size:")) {
-            current->reg_size = parse_u64(yaml_value(lines[i].text));
-        } else if (current != nullptr && starts_with(lines[i].text, "bar_index:")) {
-            current->bar_index = static_cast<uint32_t>(parse_u64(yaml_value(lines[i].text)));
         }
     }
 

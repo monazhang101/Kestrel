@@ -32,8 +32,16 @@ inline std::string hex_bytes(const void* data,
     const auto count = std::min(len, max_bytes);
     std::ostringstream stream;
     stream << "0x" << std::hex << std::setfill('0');
-    for (size_t i = 0; i < count; ++i) {
-        stream << std::setw(2) << static_cast<uint32_t>(bytes[i]);
+    // Print as little-endian words (highest address first) so a 4-byte value
+    // of 0x12345678 previews as "0x12345678" instead of "0x78563412".
+    constexpr size_t WORD_BYTES = 4;
+    size_t word_end = count;
+    while (word_end > 0) {
+        const auto word_begin = word_end >= WORD_BYTES ? word_end - WORD_BYTES : 0;
+        for (size_t i = word_end; i > word_begin; --i) {
+            stream << std::setw(2) << static_cast<uint32_t>(bytes[i - 1]);
+        }
+        word_end = word_begin;
     }
     return stream.str();
 }

@@ -1,15 +1,13 @@
 #include "diag/modules/SocModule.h"
 #include "diag/core/Common.h"
+#include "diag/core/HalContext.h"
 
 TestStatus SocModule::example(TestInfo& ti)
 {
-    auto& ddp0 = ti.module("ddp", 0);
-    auto& ddp1 = ti.module("ddp", 1);
-    auto& pcie = ti.module("pcie", 0);
-    // Separate DDP pools may use the same relative offset. HQC belongs to PCIe.
-    auto first = mem_alloc(ddp0, DDP_ILM, 4);
-    auto second = mem_alloc(ddp1, DDP_ILM, 4);
-    auto hqc = mem_alloc(pcie, HQC_SRAM_0, 4);
+    // Each memory type has a chip-level allocation pool.
+    auto first = ti.hal->device_mem_alloc(DDP0_ILM, 4);
+    auto second = ti.hal->device_mem_alloc(DDP1_ILM, 4);
+    auto hqc = ti.hal->device_mem_alloc(HQC_SRAM_0, 4);
     if (!first.valid() || !second.valid() || !hqc.valid()) return PHAL_STATUS_ERROR;
     auto status = mem_write(first, 0, 0x11223344);
     status |= mem_write(second, 0, 0x55667788);

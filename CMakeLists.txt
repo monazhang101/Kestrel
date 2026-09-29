@@ -53,7 +53,7 @@ else()
     set(ISML_USING_MOCK_PHAL OFF)
 
     if(NOT DEFINED FLOWRA_SOURCES_DIR)
-        set(FLOWRA_SOURCES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../.flowra_sources)
+        set(FLOWRA_SOURCES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/isml_ipc/external)
     endif()
     message(STATUS "PHAL flowra sources dir: ${FLOWRA_SOURCES_DIR}")
 
@@ -74,6 +74,8 @@ else()
         ${PHAL_ROOT}/src/components/isi/generic_impl.c
         ${PHAL_ROOT}/src/components/syncflag/syncflag.c
         ${PHAL_ROOT}/src/components/syncflag/generic_impl.c
+        ${PHAL_ROOT}/src/components/aic/aic.c
+        ${PHAL_ROOT}/src/components/aic/generic_impl.c
         ${PHAL_ROOT}/src/components/atbtu/atbtu.c
         ${PHAL_ROOT}/src/components/atbtu/generic_impl.c
         ${PHAL_ROOT}/src/components/hqc/hqc.c
@@ -87,6 +89,7 @@ else()
         ${PHAL_ROOT}/projects/atlas/syncflag/syncflag_impl.c
         ${PHAL_ROOT}/projects/atlas/atbtu/atbtu_impl.c
         ${PHAL_ROOT}/projects/atlas/hqc/hqc_impl.c
+        ${PHAL_ROOT}/projects/atlas/aic/aic_impl.c
         ${PHAL_ROOT}/projects/atlas_m/pcie/pcie_impl.c
         ${PHAL_ROOT}/projects/atlas_m/isi/isi_impl.c
         ${PHAL_ROOT}/projects/atlas_m/xdma/xdma_impl.c
@@ -102,6 +105,10 @@ target_include_directories(phal
         ${PHAL_ROOT}
         ${PHAL_ROOT}/include
 )
+
+if(ISML_USING_MOCK_PHAL)
+    target_include_directories(phal PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/mock)
+endif()
 
 if(NOT ISML_USING_MOCK_PHAL)
     target_include_directories(phal PRIVATE ${PHAL_CSR_INCLUDE_DIRS})
@@ -148,11 +155,11 @@ add_library(isml_diag
     isml_diag/src/core/HalContext.cpp
     isml_diag/src/device/DeviceManager.cpp
     isml_diag/src/device/TPUDevice.cpp
-    isml_diag/src/modules/ddp/DDPModule.cpp
-    isml_diag/src/modules/isi/ISIModule.cpp
-    isml_diag/src/modules/pcie/PCIeModule.cpp
-    isml_diag/src/modules/pmu/PMUModule.cpp
-    isml_diag/src/modules/soc/SocModule.cpp
+    isml_diag/testcases/ddp/DDPModule.cpp
+    isml_diag/testcases/isi/ISIModule.cpp
+    isml_diag/testcases/pcie/PCIeModule.cpp
+    isml_diag/testcases/pmu/PMUModule.cpp
+    isml_diag/testcases/soc/SocModule.cpp
     isml_diag/testcases/soc/example.cpp
     isml_diag/testcases/pmu/example.cpp
     isml_diag/testcases/ddp/example.cpp
@@ -169,6 +176,9 @@ target_include_directories(isml_diag
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/isml_kmod/include/uapi
 )
+if(NOT ISML_USING_MOCK_PHAL)
+    target_include_directories(isml_diag PRIVATE ${PHAL_CSR_INCLUDE_DIRS})
+endif()
 
 target_link_libraries(isml_diag PUBLIC isml_lib phal)
 

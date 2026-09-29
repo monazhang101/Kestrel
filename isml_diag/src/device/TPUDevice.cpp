@@ -5,25 +5,6 @@
 
 namespace {
 
-ModuleImplContext make_impl_context(const std::string& target_name,
-                                    const DeviceContext& ctx,
-                                    uint32_t index,
-                                    uint32_t parent_index,
-                                    uint32_t bar_index,
-                                    uint64_t reg_base_offset,
-                                    uint64_t reg_size)
-{
-    return {
-        target_name,
-        ctx,
-        index,
-        parent_index,
-        bar_index,
-        reg_base_offset,
-        reg_size
-    };
-}
-
 void print_child_tree(const TestTarget& target, const std::string& prefix)
 {
     const auto children = target.child_targets();
@@ -88,16 +69,9 @@ TPUDevice::TPUDevice(const std::string& logical_name,
         const auto& pcie_config = config_.pcie_modules.front();
         auto pcie_name = "PCIE_" + std::to_string(tpu_index_) + "_" +
                          std::to_string(pcie_config.index);
-        auto impl_ctx = make_impl_context(pcie_name,
-                                          ctx_,
-                                          pcie_config.index,
-                                          tpu_index_,
-                                          pcie_config.bar_index,
-                                          pcie_config.reg_base_offset,
-                                          pcie_config.reg_size);
         std::unique_ptr<PCIeImpl> pcie_impl;
         if (implementer_ != nullptr) {
-            pcie_impl = implementer_->pcie_impl(impl_ctx);
+            pcie_impl = implementer_->pcie_impl();
         }
         pcie_ = std::make_unique<PCIeModule>(
             pcie_name,

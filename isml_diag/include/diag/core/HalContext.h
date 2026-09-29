@@ -2,9 +2,12 @@
 
 #include "diag/core/Platform.h"
 #include "diag/core/PhalBridge.h"
+#include "diag/core/DevMem.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -68,22 +71,67 @@ private:
 
     HalType type_ = HalType::iHal;
     PhalBridge phal_bridge_;
+    // These contexts exist only while one testcase is running. The aperture
+    // context is separate because PCIe block entry changes env.base.
+    PhalBridge::ScopedContext phal_context_;
+    PhalBridge::ScopedContext aperture_phal_context_;
+    DeviceContext active_device_;
+    MemoryRegionMap active_memory_regions_{};
+    std::shared_ptr<DeviceMemoryState> active_memory_ =
+        std::make_shared<DeviceMemoryState>();
+    bool device_bound_ = false;
     std::vector<std::unique_ptr<std::vector<uint8_t>>> mapped_bar_storage_;
     std::vector<std::pair<void*, uint64_t>> mapped_bar_mappings_;
 
     void clear_mappings();
 
 public:
+    class TestcaseScope {
+    private:
+        HalContext* owner_ = nullptr;
+        explicit TestcaseScope(HalContext* owner) : owner_(owner) {}
+        friend class HalContext;
+
+    public:
+        TestcaseScope() = default;
+        ~TestcaseScope();
+        TestcaseScope(const TestcaseScope&) = delete;
+        TestcaseScope& operator=(const TestcaseScope&) = delete;
+        TestcaseScope(TestcaseScope&& other) noexcept;
+        TestcaseScope& operator=(TestcaseScope&& other) noexcept;
+        explicit operator bool() const { return owner_ != nullptr; }
+    };
+
     explicit HalContext(HalType type = HalType::iHal);
 
     HalType type() const { return type_; }
-    PhalBridge& phal() { return phal_bridge_; }
-    const PhalBridge& phal() const { return phal_bridge_; }
 
-    void reset(HalType type);
     std::vector<DeviceContext> scan_pci_devices() const;
     DeviceContext mmap_bar_space(DeviceContext ctx);
-    DmaBuffer alloc_host_dma_buffer(const DeviceContext& ctx, uint64_t size_bytes);
+    void bind_device(const DeviceContext& ctx, Logger* logger = nullptr);
+    // Create the two PHAL contexts used during one testcase. The returned
+    // scope owns their lifetime and deinitializes them on testcase exit.
+    TestcaseScope begin_testcase(std::string* error = nullptr);
+    const DeviceContext& device_context() const;
+    bool has_device() const { return device_bound_; }
+    const MemoryRegionMap& memory_regions() const { return active_memory_regions_; }
+
+    // The ordinary testcase context is exposed only to framework-created
+    // TestInfo instances. Device-memory callers use with_aperture_context().
+    phal_ctx_t* phal_context() const { return phal_context_.get(); }
+
+    // Run one complete aperture operation while holding the per-device
+    // aperture lock. The callback receives a context rooted at CHIP_RCF_BASE
+    // and entered into the PCIe block exactly once.
+    TestStatus with_aperture_context(
+        const std::function<TestStatus(phal_ctx_t*)>& operation,
+        std::string* error = nullptr);
+
+    common::MemBuffer device_mem_alloc(
+        MemoryRegion region,
+        uint64_t size_bytes,
+        std::optional<uint64_t> fixed_offset = std::nullopt);
+    DmaBuffer host_mem_alloc(uint64_t size_bytes);
     void free_host_dma_buffer(DmaBuffer& buffer);
     void clear();
 };

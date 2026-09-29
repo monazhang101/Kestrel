@@ -81,7 +81,6 @@ public:
     const std::string& get_name() const { return name_; }
     void set_device(TPUDevice* device) { device_ = device; }
     const TargetType& get_target_type() const { return target_type_; }
-    void* get_bar_base_addr() const { return ctx_.mapped_bar_base; }
     DeviceContext& get_context() { return ctx_; }
     const DeviceContext& get_context() const { return ctx_; }
     virtual std::vector<std::string> get_registered_test_names() const;

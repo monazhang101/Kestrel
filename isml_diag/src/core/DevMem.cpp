@@ -77,10 +77,14 @@ bool mmio_transfer(const DeviceContext& ctx, uint32_t bar_index,
     return true;
 }
 
-}
-
-namespace common::devmem {
-namespace {
+struct Window {
+    uint32_t bar_index = 0;
+    uint8_t aperture_index = 0;
+    uint8_t identity = 0;
+    uint64_t target_addr = 0;
+    uint64_t size = 0;
+    uint64_t bar_offset = 0;
+};
 
 bool fail(std::string* error, const std::string& message)
 {
@@ -187,41 +191,11 @@ bool transfer(phal_ctx_t* phal, Logger* logger, const DeviceContext& ctx,
     return true;
 }
 
-phal_ctx_t* pcie_context(TestInfo& ti, const DeviceContext& ctx, std::string* error)
-{
-    if (ti.hal == nullptr) {
-        fail(error, "HAL context is not available");
-        return nullptr;
-    }
-    return ti.hal->phal().get_context(
-        ctx, ctx.pcie_control_base,
-        phal_project_from_tpu_type(ctx.tpu_type), error);
-}
-}
-
-// Existing configurable/buffer API retained for callers choosing their window.
-bool read(TestInfo& ti, const DeviceContext& ctx, const Window& window,
-          uint64_t offset, void* data, size_t len, std::string* error)
-{
-    std::lock_guard<std::mutex> lock(ctx.memory->aperture_mutex);
-    auto* phal = pcie_context(ti, ctx, error);
-    return phal != nullptr && transfer(phal, ti.logger, ctx, window, offset,
-                                       data, nullptr, len, error);
-}
-
-bool write(TestInfo& ti, const DeviceContext& ctx, const Window& window,
-           uint64_t offset, const void* data, size_t len, std::string* error)
-{
-    std::lock_guard<std::mutex> lock(ctx.memory->aperture_mutex);
-    auto* phal = pcie_context(ti, ctx, error);
-    return phal != nullptr && transfer(phal, ti.logger, ctx, window, offset,
-                                       nullptr, data, len, error);
-}
 }
 
 namespace common {
 namespace {
-TestStatus dmem_transfer(DeviceContext& ctx, uint64_t addr, void* output,
+TestStatus dmem_transfer(HalContext& hal, DeviceContext& ctx, uint64_t addr, void* output,
                          const void* input, size_t len, size_t alignment)
 {
     const auto* region = find_df_region(ctx.memory_regions.df, MemoryRegion::DMEM);
@@ -231,25 +205,40 @@ TestStatus dmem_transfer(DeviceContext& ctx, uint64_t addr, void* output,
     }
     if ((output == nullptr && input == nullptr) || addr % alignment != 0 ||
         region->base % alignment != 0 ||
-        !mmio::is_valid_range(region->aperture_size, addr, len) ||
-        region->base > std::numeric_limits<uint64_t>::max() -
-                           (region->aperture_size - 1)) {
+        !mmio::is_valid_range(region->size, addr, len) ||
+        region->aperture_size == 0 ||
+        region->base > std::numeric_limits<uint64_t>::max() - addr) {
         if (ctx.logger) ctx.logger->error("invalid D-MEM address or buffer length");
         return PHAL_STATUS_INVALID;
     }
-    // TODO: concurrent aperture windows. For now serialize configuration + IO.
-    std::lock_guard<std::mutex> lock(ctx.memory->aperture_mutex);
-    // One framework scratch window. Never add the register block offset here.
-    const devmem::Window window{
-        4, 0, 0, region->base, region->aperture_size, 0};
-    std::string error;
-    const bool ok = devmem::transfer(ctx.pcie_phal, ctx.logger,
-        ctx, window, addr, output, input, len, &error);
-    if (!ok) {
-        if (ctx.logger) ctx.logger->error("D-MEM access failed: " + error);
-        return PHAL_STATUS_ERROR;
+    const auto window_base = addr - (addr % region->aperture_size);
+    const auto window_offset = addr - window_base;
+    if (window_base > std::numeric_limits<uint64_t>::max() - region->base ||
+        !mmio::is_valid_range(region->aperture_size, window_offset, len)) {
+        if (ctx.logger) ctx.logger->error("invalid D-MEM aperture range");
+        return PHAL_STATUS_INVALID;
     }
-    if (ctx.logger) ctx.logger->info(std::string(input ? "mem_write" : "mem_read") +
+    const Window window{
+        region->bar_index,
+        region->aperture_index,
+        region->identity,
+        region->base + window_base,
+        region->aperture_size,
+        0};
+    std::string error;
+    const auto status = hal.with_aperture_context(
+        [&](phal_ctx_t* phal) {
+            return transfer(phal, ctx.logger, ctx, window, window_offset,
+                            output, input, len, &error)
+                       ? PHAL_STATUS_OK
+                       : PHAL_STATUS_ERROR;
+        },
+        &error);
+    if (status != PHAL_STATUS_OK) {
+        if (ctx.logger) ctx.logger->error("D-MEM access failed: " + error);
+        return status;
+    }
+    if (ctx.logger) ctx.logger->debug(std::string(input ? "mem_write" : "mem_read") +
         " region=DMEM target=" + ctx.target_name +
         " address=" + hex(region->base + addr) +
         " size_bytes=" + std::to_string(len) +
@@ -270,17 +259,13 @@ TestStatus direct_rcf_transfer(DeviceContext& ctx, MemoryRegion id,
         if (ctx.logger) ctx.logger->error("RCF memory region is not supported");
         return PHAL_STATUS_UNIMPLEMENTED;
     }
-    if (ctx.module_type != region->module) {
-        if (ctx.logger) ctx.logger->error("RCF region belongs to module " + std::string(region->module));
-        return PHAL_STATUS_INVALID;
-    }
     if (addr % alignment != 0 ||
         !mmio::is_valid_range(region->size, addr, len) ||
-        ctx.reg_base_offset > std::numeric_limits<uint64_t>::max() - region->offset) {
+        region->bar_offset > std::numeric_limits<uint64_t>::max() - addr) {
         if (ctx.logger) ctx.logger->error("invalid RCF memory address or buffer length");
         return PHAL_STATUS_INVALID;
     }
-    const auto region_base = ctx.reg_base_offset + region->offset;
+    const auto region_base = region->bar_offset;
     if (region_base % alignment != 0 ||
         region_base > std::numeric_limits<uint64_t>::max() - addr) {
         if (ctx.logger) ctx.logger->error("invalid RCF memory BAR0 base or offset");
@@ -301,7 +286,7 @@ TestStatus direct_rcf_transfer(DeviceContext& ctx, MemoryRegion id,
         return PHAL_STATUS_ERROR;
     }
     if (ctx.logger) {
-        ctx.logger->info(std::string(input ? "mem_write" : "mem_read") +
+        ctx.logger->debug(std::string(input ? "mem_write" : "mem_read") +
             " region=" + region->name + " target=" + ctx.target_name +
             " bar0_offset=" + hex(bar0_offset) +
             " size_bytes=" + std::to_string(len) +
@@ -310,12 +295,12 @@ TestStatus direct_rcf_transfer(DeviceContext& ctx, MemoryRegion id,
     return PHAL_STATUS_OK;
 }
 
-TestStatus mem_transfer(DeviceContext& ctx, MemoryRegion region,
+TestStatus mem_transfer(HalContext& hal, DeviceContext& ctx, MemoryRegion region,
                         uint64_t addr, void* output,
                         const void* input, size_t len, size_t alignment)
 {
     if (region == MemoryRegion::DMEM) {
-        return dmem_transfer(ctx, addr, output, input, len, alignment);
+        return dmem_transfer(hal, ctx, addr, output, input, len, alignment);
     }
     if (find_df_region(ctx.memory_regions.df, region) != nullptr) {
         if (ctx.logger) ctx.logger->error("DF memory region is not supported");
@@ -326,44 +311,73 @@ TestStatus mem_transfer(DeviceContext& ctx, MemoryRegion region,
 }
 
 namespace {
-DeviceMemoryState::Key pool_key(const DeviceContext& ctx, MemoryRegion region)
+DeviceMemoryState::Key pool_key(MemoryRegion region)
 {
-    // DMEM is device-wide, regardless of the calling module.
-    return {region == DMEM ? "" : ctx.module_type,
-            region == DMEM ? 0 : ctx.module_index, region};
+    return region;
 }
 }
 
-MemBuffer mem_alloc(const DeviceContext& ctx, MemoryRegion region, uint64_t size)
+}
+
+MemBuffer HalContext::device_mem_alloc(MemoryRegion region,
+                                       uint64_t size,
+                                       std::optional<uint64_t> fixed_offset)
 {
     uint64_t capacity = 0;
     if (region == DMEM) {
-        const auto* entry = find_df_region(ctx.memory_regions.df, region);
+        const auto* entry = find_df_region(active_memory_regions_.df, region);
         if (entry && entry->supported) capacity = entry->size;
     } else {
-        const auto* entry = find_rcf_region(ctx.memory_regions.rcf, region);
-        if (entry && entry->supported && ctx.module_type == entry->module)
-            capacity = entry->size;
+        const auto* entry = find_rcf_region(active_memory_regions_.rcf, region);
+        if (entry && entry->supported) capacity = entry->size;
     }
-    if (!size || size % 4 || size > capacity) {
-        if (ctx.logger) ctx.logger->error("memory allocation: unsupported region, wrong module, or invalid size");
+    if (!device_bound_ || !active_memory_ ||
+        !size || size % 4 || size > capacity) {
+        if (active_device_.logger) {
+            active_device_.logger->error("memory allocation: unsupported region or invalid size");
+        }
         return {};
     }
+
+    uint64_t offset = 0;
+    if (fixed_offset.has_value()) {
+        offset = *fixed_offset;
+        if (offset % 4 || offset > capacity || size > capacity - offset) {
+            if (active_device_.logger) {
+                active_device_.logger->error("memory allocation: fixed offset is outside the region");
+            }
+            return {};
+        }
+    }
+
     MemBuffer result;
     // Prepare the handle before changing the allocation table.
-    auto context = std::make_unique<DeviceContext>(ctx);
-    std::lock_guard<std::mutex> lock(ctx.memory->allocation_mutex);
-    auto& occupied = ctx.memory->allocations[pool_key(ctx, region)];
-    uint64_t offset = 0;
-    for (const auto& entry : occupied) {
-        if (size <= entry.first - offset) break;
-        offset = entry.first + entry.second;
+    auto context = std::make_unique<DeviceContext>(active_device_);
+    context->memory = active_memory_;
+    context->memory_regions = active_memory_regions_;
+    std::lock_guard<std::mutex> lock(active_memory_->allocation_mutex);
+    auto& occupied = active_memory_->allocations[region];
+    if (!fixed_offset.has_value()) {
+        for (const auto& entry : occupied) {
+            if (size <= entry.first - offset) break;
+            offset = entry.first + entry.second;
+        }
     }
     if (offset > capacity || size > capacity - offset) {
-        if (ctx.logger) ctx.logger->error("memory allocation: no free contiguous range");
+        if (active_device_.logger) active_device_.logger->error("memory allocation: no free contiguous range");
         return {};
     }
+    if (fixed_offset.has_value()) {
+        for (const auto& entry : occupied) {
+            if (offset < entry.first + entry.second &&
+                entry.first < offset + size) {
+                if (active_device_.logger) active_device_.logger->error("memory allocation: fixed range overlaps an existing allocation");
+                return {};
+            }
+        }
+    }
     occupied.emplace(offset, size);
+    result.alloc_ctx_ = this;
     result.ctx_ = std::move(context);
     result.region_ = region;
     result.offset_ = offset;
@@ -371,81 +385,80 @@ MemBuffer mem_alloc(const DeviceContext& ctx, MemoryRegion region, uint64_t size
     return result;
 }
 
+namespace common {
+
 void MemBuffer::release()
 {
     if (!ctx_) return;
     // Keep the state alive until after unlocking, even for the last handle.
     auto context = std::move(ctx_);
     std::lock_guard<std::mutex> lock(context->memory->allocation_mutex);
-    const auto pool = context->memory->allocations.find(pool_key(*context, region_));
+    const auto pool = context->memory->allocations.find(pool_key(region_));
     if (pool != context->memory->allocations.end()) pool->second.erase(offset_);
+    alloc_ctx_ = nullptr;
     size_ = 0;
+}
+
+MemBuffer::MemBuffer(MemBuffer&& other) noexcept
+    : alloc_ctx_(other.alloc_ctx_),
+      ctx_(std::move(other.ctx_)),
+      region_(other.region_),
+      offset_(other.offset_),
+      size_(other.size_)
+{
+    other.alloc_ctx_ = nullptr;
+    other.offset_ = 0;
+    other.size_ = 0;
 }
 
 MemBuffer& MemBuffer::operator=(MemBuffer&& other) noexcept
 {
     if (this != &other) {
         release();
+        alloc_ctx_ = other.alloc_ctx_;
         ctx_ = std::move(other.ctx_);
         region_ = other.region_;
         offset_ = other.offset_;
         size_ = other.size_;
+        other.alloc_ctx_ = nullptr;
+        other.offset_ = 0;
+        other.size_ = 0;
     }
     return *this;
 }
 
-TestStatus MemBuffer::transfer(uint64_t offset, void* output, const void* input, size_t len)
+TestStatus MemBuffer::transfer(uint64_t offset,
+                               void* output, const void* input, size_t len)
 {
-    if (!valid() || offset % 4 || len % 4 ||
+    if (!valid() || alloc_ctx_ == nullptr || offset % 4 || len % 4 ||
         !mmio::is_valid_range(size_, offset, len)) return PHAL_STATUS_INVALID;
-    return mem_transfer(*ctx_, region_, offset_ + offset, output, input, len, 4);
+    return mem_transfer(*alloc_ctx_, *ctx_, region_, offset_ + offset,
+                        output, input, len, 4);
 }
 
-TestStatus mem_read(MemBuffer& buffer, uint64_t offset, uint32_t* data)
+TestStatus mem_read(MemBuffer& buffer,
+                    uint64_t offset, uint32_t* data)
 {
     return buffer.transfer(offset, data, nullptr, sizeof(uint32_t));
 }
 
-TestStatus mem_write(MemBuffer& buffer, uint64_t offset, uint32_t data)
+TestStatus mem_write(MemBuffer& buffer,
+                     uint64_t offset, uint32_t data)
 {
     return buffer.transfer(offset, nullptr, &data, sizeof(data));
 }
 
-TestStatus mem_read(MemBuffer& buffer, uint64_t offset, std::vector<uint8_t>* data)
+TestStatus mem_read(MemBuffer& buffer,
+                    uint64_t offset, std::vector<uint8_t>* data)
 {
     return buffer.transfer(offset, data ? data->data() : nullptr, nullptr,
                            data ? data->size() : 0);
 }
 
-TestStatus mem_write(MemBuffer& buffer, uint64_t offset, const std::vector<uint8_t>& data)
+TestStatus mem_write(MemBuffer& buffer,
+                     uint64_t offset, const std::vector<uint8_t>& data)
 {
     return buffer.transfer(offset, nullptr, data.data(), data.size());
 }
 
-TestStatus mem_read(DeviceContext& ctx, MemoryRegion region,
-                    uint64_t addr, uint32_t* data)
-{
-    return mem_transfer(ctx, region, addr, data, nullptr,
-                        sizeof(uint32_t), alignof(uint32_t));
-}
-
-TestStatus mem_write(DeviceContext& ctx, MemoryRegion region,
-                     uint64_t addr, uint32_t data)
-{
-    return mem_transfer(ctx, region, addr, nullptr, &data,
-                        sizeof(data), alignof(uint32_t));
-}
-
-TestStatus mem_read(DeviceContext& ctx, MemoryRegion region,
-                    uint64_t addr, std::vector<uint8_t>* data)
-{
-    return mem_transfer(ctx, region, addr, data ? data->data() : nullptr,
-                        nullptr, data ? data->size() : 0, 1);
-}
-
-TestStatus mem_write(DeviceContext& ctx, MemoryRegion region,
-                     uint64_t addr, const std::vector<uint8_t>& data)
-{
-    return mem_transfer(ctx, region, addr, nullptr, data.data(), data.size(), 1);
-}
 }

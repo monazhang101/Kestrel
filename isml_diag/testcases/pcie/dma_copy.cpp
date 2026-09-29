@@ -20,9 +20,8 @@ TestStatus PCIeModule::dma_data_transfer(TestInfo& ti)
     constexpr uint64_t DMA_ALIGNMENT = 32;
     constexpr uint64_t HOST_OFFSET = 0;
 
-    auto& ctx = ctx_;
     auto& logger = *ti.logger;
-    const auto* dmem = find_df_region(ctx.memory_regions.df, DMEM);
+    const auto* dmem = find_df_region(ti.hal->memory_regions().df, DMEM);
 
     if (impl_ == nullptr) {
         return make_unimplemented_status(ti, "PCIe implementation is not bound");
@@ -78,8 +77,8 @@ TestStatus PCIeModule::dma_data_transfer(TestInfo& ti)
         logger.error("unsupported DMA pattern=" + pattern);
         return PHAL_STATUS_INVALID;
     }
-    auto device_buffer = mem_alloc(ctx, DMEM, size_bytes);
-    auto return_buffer = host_case ? MemBuffer{} : mem_alloc(ctx, DMEM, size_bytes);
+    auto device_buffer = ti.hal->device_mem_alloc(DMEM, size_bytes);
+    auto return_buffer = host_case ? MemBuffer{} : ti.hal->device_mem_alloc(DMEM, size_bytes);
     if (!device_buffer.valid() || (!host_case && !return_buffer.valid()))
         return PHAL_STATUS_ERROR;
     const auto device_offset = device_buffer.offset();
@@ -97,9 +96,9 @@ TestStatus PCIeModule::dma_data_transfer(TestInfo& ti)
     // Read back setup writes before HQC submission: verify data and follow posted
     // BAR writes with a same-device MMIO read. Each API transfers the whole buffer.
     const auto prepare = [&](MemBuffer& buffer, const std::vector<uint8_t>& data) {
-        auto status = mem_write(buffer, 0, data);
+        auto status = mem_write( buffer, 0, data);
         if (status != PHAL_STATUS_OK) return status;
-        status = mem_read(buffer, 0, &actual);
+        status = mem_read( buffer, 0, &actual);
         if (status != PHAL_STATUS_OK) return status;
         if (actual != data) {
             logger.error("DMEM preparation mismatch: offset=" + hex(buffer.offset()));
@@ -137,14 +136,14 @@ TestStatus PCIeModule::dma_data_transfer(TestInfo& ti)
             return status;
         }
 
-        status = mem_read(return_buffer, 0, &actual);
+        status = mem_read( return_buffer, 0, &actual);
         if (status != PHAL_STATUS_OK) return status;
         if (actual != expected) {
             logger.error(direction + " DMA data mismatch");
             return PHAL_STATUS_ERROR;
         }
     } else {
-        auto host_buffer = ti.hal->alloc_host_dma_buffer(ctx, size_bytes);
+        auto host_buffer = ti.hal->host_mem_alloc(size_bytes);
         if (!host_buffer.valid()) {
             logger.error("host DMA allocation failed; check the matching /dev/isml_diag device");
             return PHAL_STATUS_ERROR;
@@ -171,7 +170,7 @@ TestStatus PCIeModule::dma_data_transfer(TestInfo& ti)
         }
 
         if (h2d) {
-            status = mem_read(device_buffer, 0, &actual);
+            status = mem_read( device_buffer, 0, &actual);
             if (status != PHAL_STATUS_OK) return status;
         }
         if (!common::pattern::compare(expected.data(), h2d ? actual.data() : host_data, expected.size())) {

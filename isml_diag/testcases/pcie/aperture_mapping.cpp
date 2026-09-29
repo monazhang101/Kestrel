@@ -1,6 +1,5 @@
 #include "diag/modules/PCIeModule.h"
 #include "diag/core/Common.h"
-#include "diag/core/PhalBridge.h"
 
 #include <algorithm>
 #include <array>
@@ -64,18 +63,18 @@ TestStatus PCIeModule::sequential_aperture_mapping(TestInfo& ti)
 {
     using common::bar::read;
     using common::bar::write;
+    if (ti.hal == nullptr) return PHAL_STATUS_ERROR;
     auto& ctx = ctx_;
-    auto* phal = ctx.pcie_phal;
     auto& logger = *ti.logger;
-    const auto* dmem = find_df_region(ctx.memory_regions.df, DMEM);
-    if (!dmem || !dmem->supported) return PHAL_STATUS_UNIMPLEMENTED;
-    // One allocation holds all 15 test ranges plus room for 1 MiB alignment.
-    auto buffer = mem_alloc(ctx, DMEM, 16 * APERTURE_SIZE);
-    if (!buffer.valid()) return PHAL_STATUS_ERROR;
-    const auto target_base = (dmem->base + buffer.offset() + APERTURE_SIZE - 1) &
-                             ~(APERTURE_SIZE - 1);
-    // Explicit window cases hold the same lock as ordinary DMEM IO throughout.
-    std::lock_guard<std::mutex> lock(ctx.memory->aperture_mutex);
+    std::string error;
+    return ti.hal->with_aperture_context([&](phal_ctx_t* phal) -> TestStatus {
+        const auto* dmem = find_df_region(ti.hal->memory_regions().df, DMEM);
+        if (!dmem || !dmem->supported) return PHAL_STATUS_UNIMPLEMENTED;
+        // One allocation holds all 15 test ranges plus room for 1 MiB alignment.
+        auto buffer = ti.hal->device_mem_alloc(DMEM, 16 * APERTURE_SIZE);
+        if (!buffer.valid()) return PHAL_STATUS_ERROR;
+        const auto target_base = (dmem->base + buffer.offset() + APERTURE_SIZE - 1) &
+                                 ~(APERTURE_SIZE - 1);
     std::vector<ApertureCase> cases;
     cases.reserve(15);
 
@@ -177,4 +176,5 @@ TestStatus PCIeModule::sequential_aperture_mapping(TestInfo& ti)
     }
     logger.info("restored aperture edges=" + std::to_string(restored));
     return status;
+    }, &error);
 }

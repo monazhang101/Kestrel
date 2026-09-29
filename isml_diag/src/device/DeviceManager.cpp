@@ -101,11 +101,6 @@ DeviceTree DeviceManager::discover()
         // Map the matched device BAR through the HAL context.
         auto mapped_ctx = hal_.mmap_bar_space(pci_device);
         mapped_ctx.tpu_type = policy_entry->tpu_type;
-        if (!policy_entry->device_config.pcie_modules.empty()) {
-            const auto& pcie = policy_entry->device_config.pcie_modules.front();
-            mapped_ctx.pcie_control_base = pcie.reg_base_offset;
-        }
-
         // Bind operation implementations for the matched TPU type.
         auto implementer = std::make_shared<Implementer>(policy_entry->tpu_type);
         mapped_ctx.memory_regions = implementer->memory_regions();
@@ -202,6 +197,7 @@ TestStatus DeviceManager::run_testcase(const std::string& target_name,
         logger_.error("unknown TPU target=" + target_name);
         return PHAL_STATUS_INVALID;
     }
+    hal_.bind_device(tpu->get_context(), &logger_);
     const auto separator = test_name.find('_');
     auto* target = separator == std::string::npos ? nullptr :
         tpu->module(test_name.substr(0, separator), 0);

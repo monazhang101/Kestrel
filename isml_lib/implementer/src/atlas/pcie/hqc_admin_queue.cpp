@@ -1,6 +1,7 @@
 #include "atlas/pcie/hqc_admin_queue.h"
 
 #include "diag/core/Common.h"
+#include "diag/core/HalContext.h"
 
 #include <array>
 #include <atomic>
@@ -18,25 +19,29 @@ constexpr uint64_t POLL_INTERVAL_MS = 1;
 
 }
 
-HqcAdminQueue::HqcAdminQueue(DeviceContext& device,
-                             MemoryRegion region,
+HqcAdminQueue::HqcAdminQueue(MemoryRegion region,
+                             HalContext& hal,
                              Logger* logger)
-    : device_(device),
-      region_(region),
+    : region_(region),
+      hal_(hal),
       logger_(logger)
 {
+    buffer_ = hal_.device_mem_alloc(region_, QUEUE_REGION_SIZE, 0);
+    if (!buffer_.valid() && logger_ != nullptr) {
+        logger_->error("HQC queue memory allocation failed");
+    }
 }
 
 int HqcAdminQueue::read32(uint64_t offset, uint32_t& value) const
 {
-    return mem_read(device_, region_, offset, &value) == PHAL_STATUS_OK
+    return mem_read(buffer_, offset, &value) == PHAL_STATUS_OK
                ? HQC_STATUS_OK
                : HQC_STATUS_IO_ERROR;
 }
 
 int HqcAdminQueue::write32(uint64_t offset, uint32_t value) const
 {
-    return mem_write(device_, region_, offset, value) == PHAL_STATUS_OK
+    return mem_write(buffer_, offset, value) == PHAL_STATUS_OK
                ? HQC_STATUS_OK
                : HQC_STATUS_IO_ERROR;
 }
