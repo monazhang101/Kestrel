@@ -253,5 +253,5 @@ load our isml_kmod driver:
 sudo dpkg -P proton-drv-vfio-pci-kernel-dkms
 sudo reboot
 
-sudo insmod ./isml_kmod/isml_diag.ko
+sudo insmod ./isml_kmod/build/isml_diag.ko
 ```

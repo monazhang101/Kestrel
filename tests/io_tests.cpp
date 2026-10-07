@@ -35,9 +35,9 @@ void phal_is_chip_scoped()
 
     phal_block_ctx_enter(root, TOP_U_PCIE_0_OFFSET);
     CHECK(root->env.base == PhalBridge::CHIP_RCF_BASE + TOP_U_PCIE_0_OFFSET);
-    CHECK(hal.with_aperture_context([&](phal_ctx_t* aperture) {
-        CHECK(aperture != root);
-        CHECK(aperture->env.base == PhalBridge::CHIP_RCF_BASE + TOP_U_PCIE_0_OFFSET);
+    CHECK(hal.with_pcie_context([&](phal_ctx_t* pcie) {
+        CHECK(pcie != root);
+        CHECK(pcie->env.base == PhalBridge::CHIP_RCF_BASE + TOP_U_PCIE_0_OFFSET);
         CHECK(root->env.base == PhalBridge::CHIP_RCF_BASE + TOP_U_PCIE_0_OFFSET);
         return PHAL_STATUS_OK;
     }) == PHAL_STATUS_OK);
@@ -79,6 +79,14 @@ void allocations_are_independent_of_phal_root()
     auto second = hal.device_mem_alloc(DMEM, 64);
     CHECK(first.valid() && second.valid());
     CHECK(first.offset() == 0 && second.offset() == 64);
+    CHECK(first.region_base() == 0x10000000 && first.address() == 0x10000000);
+    CHECK(second.address() == 0x10000040);
+
+    auto pmu_sram = hal.device_mem_alloc(PMU_SRAM, 4);
+    CHECK(pmu_sram.valid());
+    CHECK(pmu_sram.region_base() == 0x3b000800);
+    CHECK(pmu_sram.address() == 0x3b000800);
+
     CHECK(!hal.device_mem_alloc(DMEM, 3).valid());
     CHECK(!hal.device_mem_alloc(AIC_SMEM, 4).valid());
     first.release();

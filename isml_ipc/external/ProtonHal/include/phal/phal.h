@@ -28,6 +28,8 @@ typedef struct env env_t;
 typedef struct hw_ops {
     phal_status_t (*write)(env_t* env, uintptr_t addr, uint32_t data);
     phal_status_t (*read)(env_t* env, uintptr_t addr, uint32_t* data);
+    phal_status_t (*delay_us)(env_t* env, uint32_t count);
+    phal_status_t (*delay_ns)(env_t* env, uint32_t count);
 } hw_ops_t;
 
 struct env {
@@ -69,6 +71,8 @@ phal_status_t phal_init(phal_ctx_t* ctx, const phal_config_t* config);
 void phal_deinit(phal_ctx_t* ctx);
 phal_status_t phal_write(phal_ctx_t* ctx, uintptr_t addr, uint32_t data);
 phal_status_t phal_read(phal_ctx_t* ctx, uintptr_t addr, uint32_t* data);
+phal_status_t phal_delay_us(phal_ctx_t* ctx, uint32_t count);
+phal_status_t phal_delay_ns(phal_ctx_t* ctx, uint32_t count);
 phal_status_t phal_field_write(phal_ctx_t* ctx, uintptr_t addr,
                                uint32_t bit_mask, uint32_t bit_position,
                                uint32_t value);

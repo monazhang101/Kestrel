@@ -67,7 +67,7 @@ TestStatus PCIeModule::sequential_aperture_mapping(TestInfo& ti)
     auto& ctx = ctx_;
     auto& logger = *ti.logger;
     std::string error;
-    return ti.hal->with_aperture_context([&](phal_ctx_t* phal) -> TestStatus {
+    return ti.hal->with_pcie_context([&](phal_ctx_t* phal) -> TestStatus {
         const auto* dmem = find_df_region(ti.hal->memory_regions().df, DMEM);
         if (!dmem || !dmem->supported) return PHAL_STATUS_UNIMPLEMENTED;
         // One allocation holds all 15 test ranges plus room for 1 MiB alignment.

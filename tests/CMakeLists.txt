@@ -15,16 +15,16 @@ file(GLOB_RECURSE IO_TEST_SOURCES CONFIGURE_DEPENDS
 list(REMOVE_ITEM IO_TEST_SOURCES ${REPO}/isml_diag/src/core/HalContext.cpp)
 add_library(io_test_code STATIC ${IO_TEST_SOURCES}
     hal_fixture.cpp
-    ${REPO}/mock/ProtonHal/src/phal/init.c
-    ${REPO}/mock/ProtonHal/src/phal/ops.c
-    ${REPO}/mock/ProtonHal/src/components/pcie/pcie.c
-    ${REPO}/mock/ProtonHal/src/components/isi/isi.c)
+    ${REPO}/isml_ipc/external/ProtonHal/src/phal/init.c
+    ${REPO}/isml_ipc/external/ProtonHal/src/phal/ops.c
+    ${REPO}/isml_ipc/external/ProtonHal/src/components/pcie/pcie.c
+    ${REPO}/isml_ipc/external/ProtonHal/src/components/isi/isi.c)
 target_compile_features(io_test_code PUBLIC cxx_std_17)
 target_include_directories(io_test_code PUBLIC
     ${REPO}/isml_diag/include
     ${REPO}/isml_lib/implementer/include
-    ${REPO}/mock/ProtonHal/include
-    ${REPO}/mock
+    ${REPO}/isml_ipc/external/ProtonHal/include
+    ${REPO}/isml_ipc/external
     PRIVATE ${REPO}/isml_lib/implementer/src)
 target_compile_definitions(io_test_code PUBLIC HAL_DV_MODE=1 PHAL_TARGET_ENV_DV=1)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

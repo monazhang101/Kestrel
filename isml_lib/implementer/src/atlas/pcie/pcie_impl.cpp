@@ -1,179 +1,105 @@
-#include "atlas/pcie/hqc_admin_queue.h"
-#include "diag/core/HalContext.h"
+#include "diag/implementer/HqcDma.h"
 #include "generic/generic_impl.h"
 
-#include <chrono>
 #include <limits>
-#include <sstream>
+#include <string>
 
 namespace atlas_impl {
 namespace {
 
-// FW length is in 32-byte units; host addresses must also be 32-byte aligned.
-constexpr uint64_t DMA_ALIGNMENT = 32;
-// FW converts device byte offsets to 44-bit word offsets (4 bytes per word).
-// This is descriptor representability, not the physical memory capacity.
-constexpr uint64_t DEVICE_ADDRESS_LIMIT = uint64_t{1} << 46;
 TestStatus fail(TestInfo& ti, TestStatus status, const std::string& message)
 {
-    if (ti.logger != nullptr) {
-        ti.logger->error(message);
-    }
+    if (ti.logger != nullptr) ti.logger->error(message);
     return status;
 }
 
-TestStatus hqc_status(int status)
+DmaProfile profile_for(DmaTransferType type)
 {
-    return status == HQC_STATUS_TIMEOUT ? PHAL_STATUS_TIMEOUT
-                                        : PHAL_STATUS_ERROR;
+    switch (type) {
+    case DmaTransferType::H2D: return DmaProfile::H2D;
+    case DmaTransferType::D2H: return DmaProfile::D2H;
+    case DmaTransferType::D2I: return DmaProfile::D2I;
+    case DmaTransferType::I2D: return DmaProfile::I2D;
+    case DmaTransferType::D2S: return DmaProfile::D2S;
+    case DmaTransferType::S2D: return DmaProfile::S2D;
+    case DmaTransferType::D2V: return DmaProfile::D2V;
+    case DmaTransferType::V2D: return DmaProfile::V2D;
+    }
+    return DmaProfile::Default;
 }
 
-class AtlasPCIeImpl : public generic_impl::GenericPCIeImpl {
+void set_device_endpoint(DmaDescriptor& desc, bool source,
+                         DmaTransferType type, uint64_t offset)
+{
+    DmaMemory memory = DmaMemory::Dmem;
+    uint32_t core = 1;
+    uint32_t mem = 0;
+    switch (type) {
+    case DmaTransferType::D2I:
+        if (!source) { memory = DmaMemory::Imem; core = 2; mem = 2; }
+        break;
+    case DmaTransferType::I2D:
+        if (source) { memory = DmaMemory::Imem; core = 2; mem = 2; }
+        break;
+    case DmaTransferType::D2S:
+        if (!source) { memory = DmaMemory::Smem; core = 2; mem = 1; }
+        break;
+    case DmaTransferType::S2D:
+        if (source) { memory = DmaMemory::Smem; core = 2; mem = 1; }
+        break;
+    case DmaTransferType::D2V:
+        if (!source) { memory = DmaMemory::Vmem; core = 2; mem = 0; }
+        break;
+    case DmaTransferType::V2D:
+        if (source) { memory = DmaMemory::Vmem; core = 2; mem = 0; }
+        break;
+    default: break;
+    }
+    if (source) desc.set_src(memory, core, mem, offset);
+    else desc.set_dst(memory, core, mem, offset);
+}
+
+class AtlasPCIeImpl final : public generic_impl::GenericPCIeImpl {
 public:
-    TestStatus dma_copy(TestInfo& ti,
-                        const DmaTransferRequest& req) override
+    TestStatus dma_copy(TestInfo& ti, const DmaTransferRequest& req) override
     {
-        uint32_t test_type = 0;
-        const char* direction = nullptr;
-        switch (req.type) {
-        case DmaTransferType::H2D:
-            test_type = HQC_TEST_DMA_HOST_TO_DMEM; direction = "h2d"; break;
-        case DmaTransferType::D2H:
-            test_type = HQC_TEST_DMA_DMEM_TO_HOST; direction = "d2h"; break;
-        case DmaTransferType::D2I:
-            test_type = HQC_TEST_DMA_DMEM_TO_IMEM; direction = "d2i"; break;
-        case DmaTransferType::I2D:
-            test_type = HQC_TEST_DMA_IMEM_TO_DMEM; direction = "i2d"; break;
-        case DmaTransferType::D2S:
-            test_type = HQC_TEST_DMA_DMEM_TO_SMEM; direction = "d2s"; break;
-        case DmaTransferType::S2D:
-            test_type = HQC_TEST_DMA_SMEM_TO_DMEM; direction = "s2d"; break;
-        case DmaTransferType::D2V:
-        case DmaTransferType::V2D:
-            // VMEM cannot be tested on the current platform. Keep the paths
-            // and ABI constants, but never submit a placeholder to hardware.
-            return make_unimplemented_status(ti, "VMEM DMA is not enabled");
-        default:
-            return fail(ti, PHAL_STATUS_INVALID, "unknown DMA transfer type");
-        }
-        if (req.size_bytes == 0 ||
-            req.size_bytes > std::numeric_limits<uint32_t>::max() ||
-            (req.size_bytes % DMA_ALIGNMENT) != 0 || req.timeout_ms == 0) {
-            return fail(ti, PHAL_STATUS_INVALID,
-                        "DMA size must fit uint32 and be a nonzero multiple of 32; timeout must be nonzero");
-        }
-
-        const bool host_source = req.type == DmaTransferType::H2D;
-        const bool host_destination = req.type == DmaTransferType::D2H;
-        // Device endpoints are byte offsets. Reject low bits that FW would
-        // otherwise silently discard during byte-to-word conversion.
-        const auto valid_device_range = [&](uint64_t offset) {
-            return offset % 4 == 0 && offset < DEVICE_ADDRESS_LIMIT &&
-                   req.size_bytes <= DEVICE_ADDRESS_LIMIT - offset;
-        };
-        if ((!host_source && !valid_device_range(req.src_offset)) ||
-            (!host_destination && !valid_device_range(req.dst_offset))) {
-            return fail(ti, PHAL_STATUS_INVALID,
-                        "device DMA range must be 4-byte aligned and fit the FW word address");
-        }
-
-        uint64_t source = req.src_offset;
-        uint64_t destination = req.dst_offset;
-        if (host_source || host_destination) {
-            if (req.host_buffer == nullptr || !req.host_buffer->valid() ||
-                req.host_buffer->addr_kind() != "dma_addr") {
-                return fail(ti, PHAL_STATUS_INVALID,
-                            "host DMA requires a valid isml_kmod buffer");
-            }
-            const auto host_offset = host_source ? req.src_offset : req.dst_offset;
-            if (req.size_bytes > HOST_DMA_MAX_SIZE_BYTES ||
-                host_offset > req.host_buffer->size() ||
-                req.size_bytes > req.host_buffer->size() - host_offset ||
-                req.host_buffer->device_addr() >
-                    std::numeric_limits<uint64_t>::max() - host_offset) {
-                return fail(ti, PHAL_STATUS_INVALID, "host DMA range is invalid");
-            }
-            const auto host_addr = req.host_buffer->device_addr() + host_offset;
-            if (host_addr % DMA_ALIGNMENT != 0 ||
-                req.size_bytes - 1 > std::numeric_limits<uint64_t>::max() - host_addr) {
-                return fail(ti, PHAL_STATUS_INVALID,
-                            "host DMA address must be 32-byte aligned and not overflow");
-            }
-            if (host_source) {
-                source = host_addr;
-            } else {
-                destination = host_addr;
-            }
-        } else if (req.host_buffer != nullptr) {
-            return fail(ti, PHAL_STATUS_INVALID,
-                        "device-only DMA must not carry a host buffer");
-        }
-
-        HqcAdminCommand command = {};
-        command.header.cmd_type = HQC_ADMIN_CMD_TEST;
-        command.header.cmd_id = 0; // TODO: allocate and correlate cmd_id for concurrent requests.
-        command.payload.test.test_type = test_type;
-        auto& dma = command.payload.test.submit.dma;
-        dma.src_offset = source;
-        dma.dst_offset = destination;
-        dma.size = static_cast<uint32_t>(req.size_bytes);
-
-        if (ti.logger != nullptr) {
-            std::ostringstream message;
-            message << "HQC DMA command"
-                    << "\n       direction              = " << direction
-                    << "\n       descriptor_source      = 0x" << std::hex
-                    << dma.src_offset
-                    << "\n       descriptor_destination = 0x"
-                    << dma.dst_offset
-                    << "\n       size_bytes             = " << std::dec
-                    << req.size_bytes;
-            ti.logger->debug(message.str());
-        }
-
-        const auto start = std::chrono::steady_clock::now();
-        if (ti.hal == nullptr) {
+        if (ti.hal == nullptr)
             return fail(ti, PHAL_STATUS_ERROR, "DMA requires a bound HAL context");
-        }
-        HqcAdminQueue queue(HQC_SRAM_0,
-                            *ti.hal,
-                            ti.logger);
-        int status = queue.push(command, req.timeout_ms);
-        if (status != HQC_STATUS_OK) {
-            return fail(ti, hqc_status(status),
-                        "HQC admin SQ push failed, status=" + std::to_string(status));
+        if (req.size_bytes == 0 || req.size_bytes % 32 != 0 ||
+            req.size_bytes > std::numeric_limits<uint32_t>::max() || req.timeout_ms == 0) {
+            return fail(ti, PHAL_STATUS_INVALID,
+                        "DMA size must be a nonzero multiple of 32 and timeout must be nonzero");
         }
 
-        HqcAdminCommand completion = {};
-        status = queue.pop(completion, req.timeout_ms);
-        const auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                                  std::chrono::steady_clock::now() - start)
-                                  .count();
-        if (status != HQC_STATUS_OK) {
-            return fail(ti, hqc_status(status),
-                        "HQC admin CQ pop failed, status=" + std::to_string(status) +
-                            " duration_us=" + std::to_string(duration));
+        const bool h2d = req.type == DmaTransferType::H2D;
+        const bool d2h = req.type == DmaTransferType::D2H;
+        if ((h2d || d2h) && (req.host_buffer == nullptr || !req.host_buffer->valid()))
+            return fail(ti, PHAL_STATUS_INVALID, "host DMA requires a valid host DMA buffer");
+
+        HqcDmaEngine engine(*ti.hal);
+        DmaDescriptor desc(engine, profile_for(req.type));
+        TestStatus status = PHAL_STATUS_OK;
+        if (h2d) {
+            status = desc.set_src(*req.host_buffer, req.src_offset);
+            if (status == PHAL_STATUS_OK)
+                set_device_endpoint(desc, false, req.type, req.dst_offset);
+        } else if (d2h) {
+            set_device_endpoint(desc, true, req.type, req.src_offset);
+            status = desc.set_dst(*req.host_buffer, req.dst_offset);
+        } else {
+            set_device_endpoint(desc, true, req.type, req.src_offset);
+            set_device_endpoint(desc, false, req.type, req.dst_offset);
         }
-        if (completion.header.cmd_status != HQC_STATUS_OK) {
-            if (ti.logger != nullptr) {
-                ti.logger->error("HQC DMA completion returned cmd_status=" +
-                                 std::to_string(completion.header.cmd_status));
-            }
-            return PHAL_STATUS_ERROR;
-        }
+        if (status != PHAL_STATUS_OK) return status;
+        status = desc.set_size(req.size_bytes);
+        if (status != PHAL_STATUS_OK) return status;
 
         if (ti.logger != nullptr) {
-            std::ostringstream message;
-            message << "HQC DMA completed"
-                    << "\n       direction      = " << direction
-                    << "\n       size_bytes     = " << req.size_bytes
-                    << "\n       duration_us    = " << duration
-                    << "\n       address_kind   = "
-                    << (req.host_buffer != nullptr ? req.host_buffer->addr_kind()
-                                                   : "device_byte_offset");
-            ti.logger->info(message.str());
+            ti.logger->debug("direct HQC DD submit: size=" +
+                             std::to_string(req.size_bytes) +
+                             " sync_flag=" + std::to_string(desc.sync_flag()));
         }
-        return PHAL_STATUS_OK;
+        return desc.execute(req.timeout_ms);
     }
 };
 

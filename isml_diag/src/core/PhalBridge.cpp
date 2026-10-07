@@ -2,7 +2,9 @@
 
 #include "diag/core/Common.h"
 
+#include <chrono>
 #include <sstream>
+#include <thread>
 #include <utility>
 
 // PHAL lives in the standalone isml_ipc/ProtonHal repo. Keep real component
@@ -55,11 +57,30 @@ static phal_status_t hal_drv_read(env_t* env, uintptr_t addr, uint32_t* data)
     return status;
 }
 
+// Host scheduler delays may exceed the requested duration; these callbacks
+// do not provide precise hardware timing or MMIO completion guarantees.
+static phal_status_t hal_drv_delay_us(env_t* env, uint32_t count)
+{
+    if (env == nullptr) return PHAL_STATUS_INVALID;
+    std::this_thread::sleep_for(std::chrono::microseconds(count));
+    return PHAL_STATUS_OK;
+}
+
+static phal_status_t hal_drv_delay_ns(env_t* env, uint32_t count)
+{
+    if (env == nullptr) return PHAL_STATUS_INVALID;
+    // Keep nanosecond units so sub-microsecond requests are not truncated to 0.
+    std::this_thread::sleep_for(std::chrono::nanoseconds(count));
+    return PHAL_STATUS_OK;
+}
+
 hw_ops_t make_hal_drv_ops()
 {
     hw_ops_t ops{};
     ops.write = hal_drv_write;
     ops.read = hal_drv_read;
+    ops.delay_us = hal_drv_delay_us;
+    ops.delay_ns = hal_drv_delay_ns;
     return ops;
 }
 
