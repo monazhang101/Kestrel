@@ -117,13 +117,13 @@ public:
     const MemoryRegionMap& memory_regions() const { return active_memory_regions_; }
 
     // The ordinary testcase context is exposed only to framework-created
-    // TestInfo instances. Device-memory callers use with_aperture_context().
+    // TestInfo instances. PCIe callers use with_pcie_context().
     phal_ctx_t* phal_context() const { return phal_context_.get(); }
 
-    // Run one complete aperture operation while holding the per-device
-    // aperture lock. The callback receives a context rooted at CHIP_RCF_BASE
-    // and entered into the PCIe block exactly once.
-    TestStatus with_aperture_context(
+    // Run a PCIe operation with the shared per-device context and lock. The
+    // callback receives a context rooted in TOP_U_PCIE_0_OFFSET, so both
+    // aperture users and nested HQC CSR users can share this path.
+    TestStatus with_pcie_context(
         const std::function<TestStatus(phal_ctx_t*)>& operation,
         std::string* error = nullptr);
 

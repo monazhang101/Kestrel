@@ -22,11 +22,13 @@ set(ISML_DIAG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/isml_diag)
 set(ISML_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/isml_lib)
 set(ISML_IMPLEMENTER_DIR ${ISML_LIB_DIR}/implementer)
 
-# Keep the same PHAL target contract in real and local-mock builds. Hardware
-# builds require the in-tree ProtonHal; the small API-compatible mock must be
-# explicitly enabled and is only for local compile/smoke testing.
+# ProtonHal and the generated Atlas CSR headers are supplied by the external
+# dependency tree. The legacy smoke option is retained for compatibility, but
+# it now resolves to the same external ProtonHal tree.
 set(PHAL_REAL_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/isml_ipc/external/ProtonHal)
-set(PHAL_MOCK_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/mock/ProtonHal)
+# The external tree is the only ProtonHal source now.  Keep the legacy option
+# usable for local smoke builds, but point it at the same dependency tree.
+set(PHAL_MOCK_ROOT ${PHAL_REAL_ROOT})
 
 if(ISML_USE_MOCK_PHAL)
     set(PHAL_ROOT ${PHAL_MOCK_ROOT})
@@ -39,8 +41,7 @@ if(ISML_USE_MOCK_PHAL)
     )
     set(PHAL_PROJECT_IMPL_SOURCES)
     message(WARNING
-        "PHAL backend: bundled mock (${PHAL_ROOT}); "
-        "compile/smoke testing only, hardware validation is unsupported")
+        "PHAL backend: external ProtonHal in smoke mode (${PHAL_ROOT})")
 elseif(NOT EXISTS "${PHAL_REAL_ROOT}/src/phal/init.c" OR
        NOT EXISTS "${PHAL_REAL_ROOT}/include/phal/components/pcie/pcie.h")
     message(FATAL_ERROR
@@ -107,7 +108,7 @@ target_include_directories(phal
 )
 
 if(ISML_USING_MOCK_PHAL)
-    target_include_directories(phal PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/mock)
+    target_include_directories(phal PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/isml_ipc/external)
 endif()
 
 if(NOT ISML_USING_MOCK_PHAL)
@@ -132,7 +133,7 @@ add_library(isml_lib
     isml_lib/implementer/src/implementer.cpp
     isml_lib/implementer/src/generic/generic_impl.cpp
     isml_lib/implementer/src/atlas/memory_regions.cpp
-    isml_lib/implementer/src/atlas/pcie/hqc_admin_queue.cpp
+    isml_lib/implementer/src/atlas/pcie/hqc_dma.cpp
     isml_lib/implementer/src/atlas/pcie/pcie_impl.cpp
     isml_lib/implementer/src/atlas_m/pcie/pcie_impl.cpp
 )
@@ -144,6 +145,10 @@ target_include_directories(isml_lib
     PRIVATE
         ${ISML_IMPLEMENTER_DIR}/src
 )
+
+if(NOT ISML_USING_MOCK_PHAL)
+    target_include_directories(isml_lib PRIVATE ${PHAL_CSR_INCLUDE_DIRS})
+endif()
 
 target_link_libraries(isml_lib PUBLIC phal)
 
@@ -174,7 +179,7 @@ target_include_directories(isml_diag
         ${ISML_DIAG_DIR}/include
         ${ISML_IMPLEMENTER_DIR}/include
     PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/isml_kmod/include/uapi
+        ${CMAKE_CURRENT_SOURCE_DIR}/isml_kmod
 )
 if(NOT ISML_USING_MOCK_PHAL)
     target_include_directories(isml_diag PRIVATE ${PHAL_CSR_INCLUDE_DIRS})

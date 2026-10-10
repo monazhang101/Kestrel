@@ -14,6 +14,20 @@ phal_status_t phal_read(phal_ctx_t* ctx, uintptr_t addr, uint32_t* data)
     return ctx->env.ops->read(&ctx->env, addr, data);
 }
 
+phal_status_t phal_delay_us(phal_ctx_t* ctx, uint32_t count)
+{
+    if (ctx == 0 || ctx->env.ops == 0 || ctx->env.ops->delay_us == 0)
+        return PHAL_STATUS_INVALID;
+    return ctx->env.ops->delay_us(&ctx->env, count);
+}
+
+phal_status_t phal_delay_ns(phal_ctx_t* ctx, uint32_t count)
+{
+    if (ctx == 0 || ctx->env.ops == 0 || ctx->env.ops->delay_ns == 0)
+        return PHAL_STATUS_INVALID;
+    return ctx->env.ops->delay_ns(&ctx->env, count);
+}
+
 phal_status_t phal_field_write(phal_ctx_t* ctx, uintptr_t addr,
                                uint32_t bit_mask, uint32_t bit_position,
                                uint32_t value)

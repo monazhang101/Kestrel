@@ -40,7 +40,13 @@ public:
     MemBuffer(MemBuffer&& other) noexcept;
     MemBuffer& operator=(MemBuffer&& other) noexcept;
     bool valid() const { return alloc_ctx_ != nullptr && ctx_ != nullptr; }
+    MemoryRegion region() const { return region_; }
     uint64_t offset() const { return offset_; } // Byte offset within the region.
+    // Region start in its hardware address space: DMEM device address or
+    // BAR-relative address for RCF memory.
+    uint64_t region_base() const;
+    // Absolute allocation address in the region's hardware address space.
+    uint64_t address() const;
     uint64_t size() const { return valid() ? size_ : 0; }
     void release();
     // Failed asynchronous IO may still use this range. Keep it occupied until

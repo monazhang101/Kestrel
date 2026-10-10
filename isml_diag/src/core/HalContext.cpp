@@ -438,17 +438,17 @@ const DeviceContext& HalContext::device_context() const
     return active_device_;
 }
 
-TestStatus HalContext::with_aperture_context(
+TestStatus HalContext::with_pcie_context(
     const std::function<TestStatus(phal_ctx_t*)>& operation,
     std::string* error)
 {
     if (error != nullptr) error->clear();
     if (!operation) {
-        if (error != nullptr) *error = "aperture operation callback is empty";
+        if (error != nullptr) *error = "PCIe operation callback is empty";
         return PHAL_STATUS_INVALID;
     }
     if (!device_bound_ || !aperture_phal_context_) {
-        if (error != nullptr) *error = "aperture PHAL context is not initialized";
+        if (error != nullptr) *error = "PCIe PHAL context is not initialized";
         return PHAL_STATUS_ERROR;
     }
 

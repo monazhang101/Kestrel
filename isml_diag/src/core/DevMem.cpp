@@ -226,7 +226,7 @@ TestStatus dmem_transfer(HalContext& hal, DeviceContext& ctx, uint64_t addr, voi
         region->aperture_size,
         0};
     std::string error;
-    const auto status = hal.with_aperture_context(
+    const auto status = hal.with_pcie_context(
         [&](phal_ctx_t* phal) {
             return transfer(phal, ctx.logger, ctx, window, window_offset,
                             output, input, len, &error)
@@ -425,6 +425,25 @@ MemBuffer& MemBuffer::operator=(MemBuffer&& other) noexcept
         other.size_ = 0;
     }
     return *this;
+}
+
+uint64_t MemBuffer::region_base() const
+{
+    if (!valid()) return 0;
+    if (region_ == MemoryRegion::DMEM) {
+        const auto* region = find_df_region(ctx_->memory_regions.df, region_);
+        return region != nullptr && region->supported ? region->base : 0;
+    }
+    const auto* region = find_rcf_region(ctx_->memory_regions.rcf, region_);
+    return region != nullptr && region->supported ? region->bar_offset : 0;
+}
+
+uint64_t MemBuffer::address() const
+{
+    const auto base = region_base();
+    return base <= std::numeric_limits<uint64_t>::max() - offset_
+        ? base + offset_
+        : 0;
 }
 
 TestStatus MemBuffer::transfer(uint64_t offset,

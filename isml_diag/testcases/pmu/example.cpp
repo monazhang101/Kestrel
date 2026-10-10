@@ -1,6 +1,9 @@
 #include "diag/modules/PMUModule.h"
 #include "diag/core/Common.h"
+#include "diag/core/Format.h"
 #include "diag/core/HalContext.h"
+
+using common::format::hex;
 
 TestStatus PMUModule::example(TestInfo& ti)
 {
@@ -18,6 +21,10 @@ TestStatus PMUModule::example(TestInfo& ti)
     // Allocate a private word; its offset is chosen by the framework.
     auto dmem = ti.hal->device_mem_alloc(DMEM, 4);
     if (!dmem.valid()) return PHAL_STATUS_ERROR;
+    ti.logger->info("PMU example DMEM allocation: offset=" + hex(dmem.offset()) +
+                    " region_base=" + hex(dmem.region_base()) +
+                    " absolute_addr=" + hex(dmem.address()) +
+                    " size_bytes=" + std::to_string(dmem.size()));
     status |= mem_read(dmem, 0x0, &data);
     if (status == PHAL_STATUS_OK) {
         uint32_t actual = 0;
