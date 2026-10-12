@@ -8,7 +8,6 @@ extern "C" {
 
 #include <exception>
 #include <limits>
-#include <sstream>
 #include <stdexcept>
 #include <utility>
 
@@ -66,46 +65,10 @@ bool TestTarget::validate_format(const TestArgumentDefinition& definition,
     return false;
 }
 
-bool TestTarget::validate_range(const TestArgumentDefinition& definition,
-                                const std::string& value,
-                                const TestArgumentPolicy& policy,
-                                std::string& error)
-{
-    if (policy.range.empty()) return true;
-
-    if (is_numeric_format(definition.format) && policy.range.size() == 2) {
-        uint64_t parsed = 0;
-        uint64_t minimum = 0;
-        uint64_t maximum = 0;
-        if (!parse_u64(value, parsed) || !parse_u64(policy.range[0], minimum) ||
-            !parse_u64(policy.range[1], maximum) || minimum > maximum) {
-            error = "invalid numeric policy range for argument: " + definition.name;
-            return false;
-        }
-        if (parsed >= minimum && parsed <= maximum) return true;
-    } else {
-        for (const auto& allowed : policy.range) {
-            if (value == allowed) return true;
-        }
-    }
-
-    std::ostringstream message;
-    message << "argument " << definition.name << "=" << value
-            << " is outside policy range [";
-    for (size_t i = 0; i < policy.range.size(); ++i) {
-        if (i != 0) message << ", ";
-        message << policy.range[i];
-    }
-    message << "]";
-    error = message.str();
-    return false;
-}
-
 TestStatus TestTarget::run_testcase(const std::string& test_name,
                                     const TestArgs& args,
                                     Logger* logger,
-                                    HalContext* hal,
-                                    const TestcasePolicy* policy)
+                                    HalContext* hal)
 {
     std::lock_guard<std::mutex> lock(*ctx_.testcase_mutex);
     Logger default_logger;
@@ -142,14 +105,6 @@ TestStatus TestTarget::run_testcase(const std::string& test_name,
         if (!validate_format(definition, value, error)) {
             ti.logger->error(error);
             return PHAL_STATUS_INVALID;
-        }
-        if (policy != nullptr) {
-            const auto argument = policy->arguments.find(definition.name);
-            if (argument != policy->arguments.end() &&
-                !validate_range(definition, value, argument->second, error)) {
-                ti.logger->error(error);
-                return PHAL_STATUS_INVALID;
-            }
         }
     }
     ti.args = std::move(resolved_args);

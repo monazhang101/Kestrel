@@ -15,12 +15,9 @@ using TargetType = std::string;
 
 class TPUDevice;
 
-struct TestArgumentPolicy {
-    std::vector<std::string> range;
-};
-
 struct TestcasePolicy {
-    std::unordered_map<std::string, TestArgumentPolicy> arguments;
+    // Each entry is one ordered invocation of the registered testcase.
+    std::vector<TestArgs> runs;
 };
 
 using TestcasePolicies = std::unordered_map<std::string, TestcasePolicy>;
@@ -61,11 +58,6 @@ private:
     static bool validate_format(const TestArgumentDefinition& definition,
                                 const std::string& value,
                                 std::string& error);
-    static bool validate_range(const TestArgumentDefinition& definition,
-                               const std::string& value,
-                               const TestArgumentPolicy& policy,
-                               std::string& error);
-
 public:
     TestTarget(const std::string& name,
                TargetType target_type,
@@ -75,8 +67,7 @@ public:
     virtual TestStatus run_testcase(const std::string& test_name,
                                     const TestArgs& args = {},
                                     Logger* logger = nullptr,
-                                    HalContext* hal = nullptr,
-                                    const TestcasePolicy* policy = nullptr);
+                                    HalContext* hal = nullptr);
 
     const std::string& get_name() const { return name_; }
     void set_device(TPUDevice* device) { device_ = device; }

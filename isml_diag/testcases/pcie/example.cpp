@@ -17,6 +17,7 @@ extern "C" {
 }
 
 #include <array>
+#include <cstring>
 
 using common::format::hex;
 
@@ -37,9 +38,12 @@ TestStatus PCIeModule::dma_h2d_example(TestInfo& ti)
         return PHAL_STATUS_ERROR;
     }
 
-    auto* payload = static_cast<uint32_t*>(host.cpu_base());
-    for (uint32_t i = 0; i < SIZE_BYTES / sizeof(uint32_t); ++i)
-        payload[i] = 0xa5000000u + i;
+    const auto payload = common::pattern::generate(SIZE_BYTES, "incremental");
+    if (payload.empty()) {
+        ti.logger->error("DMA example pattern generation failed");
+        return PHAL_STATUS_ERROR;
+    }
+    std::memcpy(host.cpu_base(), payload.data(), payload.size());
 
     HqcDmaEngine engine(*ti.hal);
     DmaDescriptor descriptor(engine, DmaProfile::H2D);
@@ -104,50 +108,17 @@ TestStatus PCIeModule::example(TestInfo& ti)
 
     if (status != PHAL_STATUS_OK) return status;
 
-    std::ostringstream message;
-    uint32_t rd_data = 0;
-    const uint32_t dmc_valid[] = {1, 1, 1};
-    uint64_t dmc_cap = 0x100000000 * 8; // 4G * 8 = 32G
-
-    // test harvesting
-    // Visit the head and tail of every valid DMC address space: write then
-    // read back, with a value that identifies ddp/dmc/head-or-tail.
-    for (uint32_t ddp = 0; ddp < ddp_num; ++ddp) {
-        for (uint32_t dmc = 0; dmc < sizeof(dmc_valid) / sizeof(dmc_valid[0]); ++dmc) {
-            if (!dmc_valid[dmc]) continue;
-            const uint64_t dmc_base = dmc_cap * (ddp * 3 + dmc);
-            const uint64_t edges[] = {0x0, dmc_cap / 2 - 4}; // head / tail (word aligned)
-            for (uint32_t edge = 0; edge < 2; ++edge) {
-                const uint32_t pattern = (ddp << 24) | (dmc << 20) |
-                                         (edge ? 0xE : 0x0) | 0x100;
-                auto word = ti.hal->device_mem_alloc(
-                    DMEM, sizeof(uint32_t), dmc_base + edges[edge]);
-                if (!word.valid()) {
-                    status |= PHAL_STATUS_ERROR;
-                    continue;
-                }
-                auto op = mem_write(word, 0, pattern);
-                op |= mem_read(word, 0, &rd_data);
-                if (op == PHAL_STATUS_OK && rd_data != pattern) {
-                    ti.logger->error("harvest mismatch: ddp=" + std::to_string(ddp) +
-                                     " dmc=" + std::to_string(dmc) +
-                                     " offset=" + hex(dmc_base + edges[edge]) +
-                                     " expected=" + hex(pattern, 8) +
-                                     " actual=" + hex(rd_data, 8));
-                    op |= PHAL_STATUS_ERROR;
-                }
-                status |= op;
-                message.str("");
-                message << "harvest: ddp=" << ddp << " dmc=" << dmc
-                        << " edge=" << (edge ? "tail" : "head")
-                        << " offset: " << hex(dmc_base + edges[edge])
-                        << " data: " << hex(rd_data)
-                        << " status: " << op;
-                ti.logger->info(message.str());
-            }
-        }
-    }
-
+    // Demonstrate host-controlled SBR after all endpoint BAR accesses. The
+    // helper changes only the upstream bridge's standard reset bit; the caller
+    // owns assertion and post-deassertion delays.
+    constexpr uint32_t SBR_ASSERT_DELAY_US = 100000;
+    constexpr uint32_t SBR_RECOVERY_DELAY_US = 100000;
+    status = ti.hal->secondary_bus_reset(true);
     if (status != PHAL_STATUS_OK) return status;
-    return status;
+    phal_delay_us(ti.phal_ctx, SBR_ASSERT_DELAY_US);
+
+    status = ti.hal->secondary_bus_reset(false);
+    if (status != PHAL_STATUS_OK) return status;
+    phal_delay_us(ti.phal_ctx, SBR_RECOVERY_DELAY_US);
+    return PHAL_STATUS_OK;
 }

@@ -51,7 +51,8 @@ private:
                            const TestTarget& parent);
 
 public:
-    explicit DeviceManager(HalType hal_type = HalType::iHal);
+    explicit DeviceManager(HalType hal_type = HalType::iHal,
+                           const std::string& policy_dir = "isml_diag/policies");
 
     DeviceManager(const DeviceManager&) = delete;
     DeviceManager& operator=(const DeviceManager&) = delete;
@@ -67,5 +68,6 @@ public:
     TestStatus run_testcase(const std::string& target_name,
                             const std::string& test_name,
                             const TestArgs& args = {});
+    std::vector<TestArgs> get_testcase_runs(const std::string& test_name) const;
     void print_tree() const;
 };

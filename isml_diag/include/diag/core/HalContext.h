@@ -127,6 +127,10 @@ public:
         const std::function<TestStatus(phal_ctx_t*)>& operation,
         std::string* error = nullptr);
 
+    // Set or clear the standard Secondary Bus Reset bit on the upstream
+    // Type-1 PCI bridge and verify the requested state by reading it back.
+    TestStatus secondary_bus_reset(bool reset);
+
     common::MemBuffer device_mem_alloc(
         MemoryRegion region,
         uint64_t size_bytes,

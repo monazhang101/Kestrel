@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <iterator>
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 namespace {
@@ -87,26 +88,6 @@ uint64_t parse_u64(const std::string& value)
 uint16_t parse_u16(const std::string& value)
 {
     return static_cast<uint16_t>(parse_u64(value));
-}
-
-std::vector<std::string> parse_inline_list(std::string value)
-{
-    value = trim(value);
-    if (value.size() < 2 || value.front() != '[' || value.back() != ']') {
-        return {};
-    }
-
-    value = value.substr(1, value.size() - 2);
-    std::vector<std::string> items;
-    std::stringstream stream(value);
-    std::string item;
-    while (std::getline(stream, item, ',')) {
-        item = strip_quotes(item);
-        if (!item.empty()) {
-            items.push_back(std::move(item));
-        }
-    }
-    return items;
 }
 
 TPUType tpu_type_from_product(const std::string& product)
@@ -257,13 +238,11 @@ TestcasePolicies parse_testcase_policies(const std::vector<YamlLine>& lines)
 {
     TestcasePolicies policies;
     const auto section = find_line(lines, "testcases:");
-    if (section == lines.size()) {
-        return policies;
-    }
+    const auto begin = section == lines.size() ? 0 : section + 1;
+    const auto end = section == lines.size() ? lines.size() : section_end(lines, section);
+    const auto test_indent = section == lines.size() ? 0 : lines[section].indent + 2;
 
-    const auto end = section_end(lines, section);
-    const auto test_indent = lines[section].indent + 2;
-    for (size_t i = section + 1; i < end; ++i) {
+    for (size_t i = begin; i < end; ++i) {
         if (lines[i].indent != test_indent ||
             lines[i].text.empty() || lines[i].text.back() != ':') {
             continue;
@@ -271,32 +250,37 @@ TestcasePolicies parse_testcase_policies(const std::vector<YamlLine>& lines)
 
         const auto test_name = lines[i].text.substr(0, lines[i].text.size() - 1);
         const auto test_end = section_end(lines, i);
-        const auto arguments = find_line(lines, "arguments:", i + 1, test_end);
-        if (arguments == lines.size()) {
-            i = test_end - 1;
-            continue;
-        }
-
         auto& test_policy = policies[test_name];
-        const auto arguments_end = section_end(lines, arguments);
-        const auto argument_indent = lines[arguments].indent + 2;
-        for (size_t j = arguments + 1; j < arguments_end; ++j) {
-            if (lines[j].indent != argument_indent ||
-                lines[j].text.empty() || lines[j].text.back() != ':') {
-                continue;
-            }
+        for (size_t j = i + 1; j < test_end; ++j) {
+            if (lines[j].indent <= test_indent) continue;
 
-            const auto argument_name =
-                lines[j].text.substr(0, lines[j].text.size() - 1);
-            const auto argument_end = section_end(lines, j);
-            for (size_t k = j + 1; k < argument_end; ++k) {
-                if (starts_with(lines[k].text, "range:")) {
-                    test_policy.arguments[argument_name].range =
-                        parse_inline_list(yaml_value(lines[k].text));
-                    break;
+            auto run_text = lines[j].text;
+            if (starts_with(run_text, "- ")) run_text = trim(run_text.substr(2));
+
+            TestArgs run;
+            std::stringstream stream(run_text);
+            std::string assignment;
+            while (std::getline(stream, assignment, ',')) {
+                const auto equals = assignment.find('=');
+                if (equals == std::string::npos) {
+                    throw std::runtime_error(
+                        "invalid parameter list entry for " + test_name + ": " + assignment);
+                }
+                auto name = trim(assignment.substr(0, equals));
+                auto value = strip_quotes(assignment.substr(equals + 1));
+                if (name.empty() || value.empty()) {
+                    throw std::runtime_error(
+                        "empty parameter name or value for " + test_name + ": " + assignment);
+                }
+                // Keep the policy spelling compact while preserving the public
+                // testcase argument name used by _add_test() and the CLI.
+                if (name == "timeout") name = "timeout_ms";
+                if (!run.emplace(name, value).second) {
+                    throw std::runtime_error(
+                        "duplicate parameter for " + test_name + ": " + name);
                 }
             }
-            j = argument_end - 1;
+            if (!run.empty()) test_policy.runs.push_back(std::move(run));
         }
         i = test_end - 1;
     }

@@ -123,6 +123,11 @@ TestStatus HalContext::with_pcie_context(
     return status;
 }
 
+TestStatus HalContext::secondary_bus_reset(bool)
+{
+    return PHAL_STATUS_UNIMPLEMENTED;
+}
+
 std::vector<DeviceContext> HalContext::scan_pci_devices() const
 {
     DeviceContext device;

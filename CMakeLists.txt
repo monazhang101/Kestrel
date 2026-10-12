@@ -21,6 +21,18 @@ option(ISML_BUILD_TESTS "Build software IO contract tests (no hardware access)" 
 set(ISML_DIAG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/isml_diag)
 set(ISML_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/isml_lib)
 set(ISML_IMPLEMENTER_DIR ${ISML_LIB_DIR}/implementer)
+set(ISML_POLICY_SOURCE_DIR ${ISML_DIAG_DIR}/policies)
+set(ISML_POLICY_BINARY_DIR ${CMAKE_BINARY_DIR}/policies)
+
+# Keep a deployable policy copy next to the artifacts in the directory chosen
+# by cmake -B. Configure creates it immediately; every build resynchronizes it.
+file(REMOVE_RECURSE "${ISML_POLICY_BINARY_DIR}")
+file(COPY "${ISML_POLICY_SOURCE_DIR}" DESTINATION "${CMAKE_BINARY_DIR}")
+add_custom_target(isml_diag_policies ALL
+    COMMAND ${CMAKE_COMMAND} -E remove_directory "${ISML_POLICY_BINARY_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${ISML_POLICY_SOURCE_DIR}" "${ISML_POLICY_BINARY_DIR}"
+    COMMENT "Syncing ISML diagnostic policies")
 
 # ProtonHal and the generated Atlas CSR headers are supplied by the external
 # dependency tree. The legacy smoke option is retained for compatibility, but
@@ -194,6 +206,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
 endif()
 
 set_target_properties(isml_diag PROPERTIES OUTPUT_NAME isml_diag)
+add_dependencies(isml_diag isml_diag_policies)
 
 if(ISML_BUILD_CLI)
     add_executable(isml_diag_cli isml_diag/cli/main.cpp)

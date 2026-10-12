@@ -155,12 +155,12 @@ bool prepare_window(phal_ctx_t* phal, Logger* logger,
     if (logger != nullptr) {
         std::ostringstream stream;
         stream << "Device-memory aperture configured"
-               << "\n       bar_index        = " << window.bar_index
-               << "\n       aperture_index   = "
+               << " bar_index=" << window.bar_index
+               << " aperture_index="
                << static_cast<uint32_t>(window.aperture_index)
-               << "\n       target_addr      = " << hex(window.target_addr)
-               << "\n       window_size      = " << hex(window.size)
-               << "\n       data_bar_offset  = " << hex(window.bar_offset);
+               << " target_addr=" << hex(window.target_addr)
+               << " window_size=" << hex(window.size)
+               << " data_bar_offset=" << hex(window.bar_offset);
         logger->debug(stream.str());
     }
     return true;

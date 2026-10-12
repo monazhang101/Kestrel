@@ -1,5 +1,6 @@
 #include "diag/device/DeviceManager.h"
 
+#include <filesystem>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -23,13 +24,16 @@ static void print_usage(const char* program)
     std::cout << "Usage:\n"
               << "  " << program << " discover [--backend phal|ihal|dryrun] [--tree]\n"
               << "  " << program << " <module_test_name> [--target TPU0] [--<argument> <value>]...\n"
+              << "  " << program << " <module_test_name> [--target TPU0] -all\n"
               << "\n"
               << "Default target: TPU0; default backend: ihal\n"
               << "Global logging: --log-level error|info|debug|trace (default: info)\n"
+              << "Policy directory: --policy-dir <path> (default: beside the executable)\n"
               << "DMA: pcie_dma_data_transfer [--direction h2d|d2h|d2i2d|d2s2d]\n"
               << "     [--size-bytes <bytes>] [--pattern zero|incremental|random] [--timeout-ms <ms>]\n"
               << "     Defaults: h2d, 4096 bytes (4 KiB), random, 1000 ms.\n"
               << "     H2D: one DMA transfer, then one MMIO readback for verification.\n"
+              << "     Use -all to run every parameter line from the testcase policy.\n"
               << "\n"
               << "Examples:\n"
               << "  " << program << " discover --tree\n"
@@ -114,12 +118,17 @@ static bool has_flag(int argc, char** argv, const std::string& name)
 static bool parse_test_args(int argc,
                             char** argv,
                             TestArgs& args,
+                            bool& run_all,
                             std::string& error)
 {
     for (int i = 2; i < argc; ++i) {
         const std::string option = argv[i];
+        if (option == "-all") {
+            run_all = true;
+            continue;
+        }
         if (option == "--target" || option == "--backend" ||
-            option == "--log-level") {
+            option == "--log-level" || option == "--policy-dir") {
             if (i + 1 >= argc) {
                 error = option + " requires a value";
                 return false;
@@ -175,6 +184,18 @@ static LogLevel parse_log_level(const std::string& level)
     return LogLevel::Info;
 }
 
+static std::string default_policy_dir(const char* program)
+{
+    std::error_code error;
+    const auto proc_executable = std::filesystem::read_symlink("/proc/self/exe", error);
+    if (!error) return (proc_executable.parent_path() / "policies").string();
+    error.clear();
+    const auto executable = std::filesystem::absolute(program, error);
+    const auto directory = error ? std::filesystem::current_path()
+                                 : executable.parent_path();
+    return (directory / "policies").string();
+}
+
 int main(int argc, char** argv)
 {
     if (argc < 2 || std::string(argv[1]) == "help" || std::string(argv[1]) == "--help") {
@@ -182,7 +203,10 @@ int main(int argc, char** argv)
         return argc < 2 ? 1 : 0;
     }
 
-    DeviceManager device_manager(parse_backend(get_option(argc, argv, "--backend", "iHal")));
+    const auto policy_dir = get_option(
+        argc, argv, "--policy-dir", default_policy_dir(argv[0]));
+    DeviceManager device_manager(
+        parse_backend(get_option(argc, argv, "--backend", "iHal")), policy_dir);
 
     device_manager.set_log_level(
         parse_log_level(get_option(argc, argv, "--log-level", "info")));
@@ -208,10 +232,36 @@ int main(int argc, char** argv)
     const auto target = get_option(argc, argv, "--target", "TPU0");
 
     TestArgs args;
+    bool run_all = false;
     std::string error;
-    if (!parse_test_args(argc, argv, args, error)) {
+    if (!parse_test_args(argc, argv, args, run_all, error)) {
         std::cerr << error << std::endl;
         return 1;
+    }
+    if (run_all && !args.empty()) {
+        std::cerr << "-all cannot be combined with testcase arguments" << std::endl;
+        return 1;
+    }
+    if (run_all) {
+        const auto runs = device_manager.get_testcase_runs(command);
+        if (runs.empty()) {
+            std::cerr << "no parameter list configured for testcase: " << command << std::endl;
+            return static_cast<int>(PHAL_STATUS_INVALID);
+        }
+
+        int aggregate = static_cast<int>(PHAL_STATUS_OK);
+        size_t passed = 0;
+        for (size_t index = 0; index < runs.size(); ++index) {
+            std::cout << "[RUN " << index + 1 << "/" << runs.size() << "] "
+                      << target << "::" << command << std::endl;
+            const auto result = run_test(device_manager, target, command, runs[index]);
+            aggregate |= result;
+            if (result == static_cast<int>(PHAL_STATUS_OK)) ++passed;
+        }
+        std::cout << "[SUMMARY] completed=" << runs.size()
+                  << " passed=" << passed
+                  << " failed=" << runs.size() - passed << std::endl;
+        return aggregate;
     }
     return run_test(device_manager, target, command, args);
 }

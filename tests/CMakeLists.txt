@@ -8,6 +8,14 @@ endif()
 # Compile the production testcase/dispatch code with a test-only mapping owner;
 # no sysfs access, DMA allocation, or hardware behavior is simulated here.
 set(REPO ${CMAKE_CURRENT_LIST_DIR}/..)
+set(TEST_POLICY_SOURCE_DIR ${REPO}/isml_diag/policies)
+set(TEST_POLICY_BINARY_DIR ${CMAKE_BINARY_DIR}/policies)
+file(REMOVE_RECURSE "${TEST_POLICY_BINARY_DIR}")
+file(COPY "${TEST_POLICY_SOURCE_DIR}" DESTINATION "${CMAKE_BINARY_DIR}")
+add_custom_target(io_test_policies ALL
+    COMMAND ${CMAKE_COMMAND} -E remove_directory "${TEST_POLICY_BINARY_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${TEST_POLICY_SOURCE_DIR}" "${TEST_POLICY_BINARY_DIR}")
 file(GLOB_RECURSE IO_TEST_SOURCES CONFIGURE_DEPENDS
     ${REPO}/isml_diag/src/*.cpp
     ${REPO}/isml_diag/testcases/*.cpp
@@ -38,15 +46,17 @@ add_test(NAME io_contract COMMAND io_tests)
 set_tests_properties(io_contract PROPERTIES WORKING_DIRECTORY ${REPO})
 add_executable(io_test_cli ${REPO}/isml_diag/cli/main.cpp)
 target_link_libraries(io_test_cli PRIVATE io_test_code)
+add_dependencies(io_test_cli io_test_policies)
 add_test(NAME cli_help COMMAND io_test_cli --help)
 add_test(NAME cli_discover COMMAND io_test_cli discover --tree)
-set_tests_properties(cli_discover PROPERTIES WORKING_DIRECTORY ${REPO})
+set_tests_properties(cli_discover PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
 add_test(NAME cli_default_target COMMAND io_test_cli pcie_bar_read32 --bar-index 0 --offset 4)
 add_test(NAME cli_tpu_target COMMAND io_test_cli pcie_bar_read32 --target TPU0 --bar-index 0 --offset 4)
 set_tests_properties(cli_default_target cli_tpu_target PROPERTIES
-    WORKING_DIRECTORY ${REPO} PASS_REGULAR_EXPRESSION "TPU0::pcie_bar_read32")
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR} PASS_REGULAR_EXPRESSION "TPU0::pcie_bar_read32")
 
 add_test(NAME cli_dma_arguments COMMAND ${CMAKE_COMMAND}
     -DCLI=$<TARGET_FILE:io_test_cli> -DREPO=${REPO}
+    -DWORK_DIR=${CMAKE_BINARY_DIR}
     -P ${CMAKE_CURRENT_LIST_DIR}/cli_dma_arguments.cmake)

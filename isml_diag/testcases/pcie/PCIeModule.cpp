@@ -11,17 +11,20 @@ PCIeModule::PCIeModule(const std::string& name,
       impl_(std::move(impl))
 {
     ctx_.module_index = config.index;
-    _add_test("bar_read32",
-              {{"bar_index", "0", "u32"},
-               {"offset", "", "offset"}},
-              [this](TestInfo& ti) { return bar_read32(ti); });
+    // _add_test adds "pcie_": CLI name is pcie_bar_read32.
+    // ----------------------- Example cases -----------------------
     _add_test("example", {},
               [this](TestInfo& ti) { return example(ti); });
     _add_test("dma_h2d_example", {},
               [this](TestInfo& ti) { return dma_h2d_example(ti); });
+    // ----------------------- Example cases -----------------------
+
+    _add_test("bar_read32",
+              {{"bar_index", "0", "u32"},
+               {"offset", "", "offset"}},
+              [this](TestInfo& ti) { return bar_read32(ti); });
     _add_test("sequential_aperture_mapping", {},
               [this](TestInfo& ti) { return sequential_aperture_mapping(ti); });
-    // _add_test adds "pcie_": CLI name is pcie_dma_data_transfer.
     // TestTarget supplies these defaults through ti.args when flags are omitted.
     _add_test("dma_data_transfer",
               {{"direction", "h2d", "string"},

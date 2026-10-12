@@ -128,6 +128,25 @@ void csr_headers_are_available()
     CHECK(TOP_U_PCIE_0_OFFSET != TOP_U_CHIP_OFFSET);
 }
 
+void testcase_parameter_lists_are_loaded_in_order()
+{
+    const auto catalog = load_testcase_policies("isml_diag/policies/testcases");
+    const auto& runs = catalog.at("pcie").at("dma_data_transfer").runs;
+    CHECK(runs.size() == 4);
+    CHECK(runs[0].at("direction") == "h2d");
+    CHECK(runs[0].at("size_bytes") == "4096");
+    CHECK(runs[0].find("timeout_ms") == runs[0].end());
+    CHECK(runs[1].at("direction") == "d2h");
+    CHECK(runs[1].at("size_bytes") == "0x100000");
+    CHECK(runs[1].at("timeout_ms") == "30000");
+    CHECK(runs[2].at("direction") == "d2s2d");
+    CHECK(runs[2].at("size_bytes") == "128");
+    CHECK(runs[2].find("timeout_ms") == runs[2].end());
+    CHECK(runs[3].at("direction") == "d2i2d");
+    CHECK(runs[3].at("size_bytes") == "256");
+    CHECK(runs[3].find("timeout_ms") == runs[3].end());
+}
+
 }
 
 int main()
@@ -138,6 +157,7 @@ int main()
         allocations_are_independent_of_phal_root();
         device_memory_api_owns_aperture_context();
         csr_headers_are_available();
+        testcase_parameter_lists_are_loaded_in_order();
         std::cout << "IO contracts passed (software only; no hardware validation)\n";
         return 0;
     } catch (const std::exception& error) {

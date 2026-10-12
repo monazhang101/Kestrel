@@ -1,16 +1,18 @@
 #include "diag/device/DeviceManager.h"
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
 
-DeviceManager::DeviceManager(HalType hal_type)
+DeviceManager::DeviceManager(HalType hal_type, const std::string& policy_dir)
     : hal_(hal_type),
-      testcase_policies_(load_testcase_policies("isml_diag/policies/testcases")),
+      testcase_policies_(load_testcase_policies(
+          (std::filesystem::path(policy_dir) / "testcases").string())),
       policy_(load_product_policy({
-          "isml_diag/policies/product/atlas_ubb.yaml",
-          "isml_diag/policies/product/atlas_m.yaml",
+          (std::filesystem::path(policy_dir) / "product" / "atlas_ubb.yaml").string(),
+          (std::filesystem::path(policy_dir) / "product" / "atlas_m.yaml").string(),
       }))
 {
 }
@@ -206,13 +208,20 @@ TestStatus DeviceManager::run_testcase(const std::string& target_name,
         return PHAL_STATUS_INVALID;
     }
 
-    const TestcasePolicy* test_policy = nullptr;
-    const auto target_policies = testcase_policies_.find(target->get_target_type());
-    if (target_policies != testcase_policies_.end()) {
-        const auto policy = target_policies->second.find(test_name.substr(separator + 1));
-        if (policy != target_policies->second.end()) test_policy = &policy->second;
-    }
-    return target->run_testcase(test_name, args, &logger_, &hal_, test_policy);
+    return target->run_testcase(test_name, args, &logger_, &hal_);
+}
+
+std::vector<TestArgs> DeviceManager::get_testcase_runs(const std::string& test_name) const
+{
+    const auto separator = test_name.find('_');
+    if (separator == std::string::npos) return {};
+
+    const auto target_policies = testcase_policies_.find(test_name.substr(0, separator));
+    if (target_policies == testcase_policies_.end()) return {};
+
+    const auto policy = target_policies->second.find(test_name.substr(separator + 1));
+    return policy == target_policies->second.end() ? std::vector<TestArgs>{}
+                                                   : policy->second.runs;
 }
 
 void DeviceManager::print_tree() const

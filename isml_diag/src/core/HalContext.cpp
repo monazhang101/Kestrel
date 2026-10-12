@@ -27,13 +27,18 @@ namespace {
 
 constexpr std::array<uint32_t, 3> PROBE_BAR_INDICES = {0, 2, 4};
 
-// PCI configuration-space Command register and the bits required before the
-// CPU maps BARs or the device initiates DMA. Values come from the PCI spec.
+// Standard PCI/PCIe configuration-space fields used by the host access path.
+// Type-1 Bridge Control bit 6 is the standard Secondary Bus Reset control.
 constexpr off_t PCI_COMMAND_OFFSET = 0x04;
 constexpr uint16_t PCI_COMMAND_MEMORY_SPACE = 0x0002;
 constexpr uint16_t PCI_COMMAND_BUS_MASTER = 0x0004;
 constexpr uint16_t PCI_COMMAND_REQUIRED_BITS =
     PCI_COMMAND_MEMORY_SPACE | PCI_COMMAND_BUS_MASTER;
+constexpr off_t PCI_HEADER_TYPE_OFFSET = 0x0e;             // Common Header Type.
+constexpr uint8_t PCI_HEADER_TYPE_MASK = 0x7f;             // Ignore multifunction bit 7.
+constexpr uint8_t PCI_HEADER_TYPE_BRIDGE = 0x01;           // PCI-to-PCI bridge header.
+constexpr off_t PCI_BRIDGE_CONTROL_OFFSET = 0x3e;          // Type-1 Bridge Control.
+constexpr uint16_t PCI_BRIDGE_CONTROL_BUS_RESET = 0x0040;  // Secondary Bus Reset, bit 6.
 
 std::string bar_pair_name(uint32_t bar_index)
 {
@@ -110,6 +115,35 @@ uint64_t fake_bar_device_base_for_bdf(const std::string& bdf, uint32_t bar_index
 std::string setpci_enable_command(const std::string& bdf)
 {
     return "sudo setpci -s " + bdf + " COMMAND=0006:0006";
+}
+
+bool upstream_bridge_config(const std::string& endpoint_bdf,
+                            std::filesystem::path& config_path,
+                            std::string& bridge_bdf,
+                            std::string& error)
+{
+    // The endpoint's parent in sysfs is its immediate upstream PCI bridge.
+    std::error_code filesystem_error;
+    const auto endpoint_path = std::filesystem::canonical(
+        std::filesystem::path("/sys/bus/pci/devices") / endpoint_bdf,
+        filesystem_error);
+    if (filesystem_error) {
+        error = "resolve PCI device failed for " + endpoint_bdf + ": " +
+                filesystem_error.message();
+        return false;
+    }
+
+    const auto bridge_path = endpoint_path.parent_path();
+    config_path = bridge_path / "config";
+    if (bridge_path.empty() ||
+        !std::filesystem::exists(config_path, filesystem_error) ||
+        filesystem_error) {
+        error = "upstream PCI bridge config is unavailable for " + endpoint_bdf;
+        return false;
+    }
+
+    bridge_bdf = bridge_path.filename().string();
+    return true;
 }
 
 bool is_permission_error(int error_code)
@@ -468,6 +502,116 @@ TestStatus HalContext::with_pcie_context(
     // nested block active after returning.
     phal->env.base = PhalBridge::CHIP_RCF_BASE;
     return status;
+}
+
+TestStatus HalContext::secondary_bus_reset(bool reset)
+{
+    const auto fail = [&](TestStatus status, const std::string& message) {
+        if (active_device_.logger != nullptr) {
+            active_device_.logger->error(message);
+        }
+        return status;
+    };
+
+    if (!device_bound_ || active_device_.bdf.empty()) {
+        return fail(PHAL_STATUS_INVALID,
+                    "secondary bus reset requires a bound PCI device");
+    }
+    if (type_ != HalType::iHal) {
+        return fail(PHAL_STATUS_UNIMPLEMENTED,
+                    "secondary bus reset requires the Linux iHal backend");
+    }
+
+    // Resolve the selected TPU endpoint to its immediate upstream bridge.
+    std::filesystem::path config_path;
+    std::string bridge_bdf;
+    std::string resolve_error;
+    if (!upstream_bridge_config(active_device_.bdf,
+                                config_path,
+                                bridge_bdf,
+                                resolve_error)) {
+        return fail(PHAL_STATUS_ERROR, resolve_error);
+    }
+
+    // Bridge Control is accessed through the bridge's PCI config-space file.
+    const int fd = open(config_path.c_str(), O_RDWR | O_CLOEXEC);
+    if (fd < 0) {
+        return fail(PHAL_STATUS_ERROR,
+                    "open upstream PCI bridge config failed for " + bridge_bdf +
+                    ": " + std::strerror(errno));
+    }
+
+    // Secondary Bus Reset is defined only in the Type-1 bridge header.
+    uint8_t header_type = 0;
+    auto bytes = pread(fd, &header_type, sizeof(header_type), PCI_HEADER_TYPE_OFFSET);
+    if (bytes != static_cast<ssize_t>(sizeof(header_type))) {
+        const auto read_error = errno;
+        close(fd);
+        return fail(PHAL_STATUS_ERROR,
+                    "read PCI header type failed for " + bridge_bdf +
+                    (bytes < 0 ? ": " + std::string(std::strerror(read_error))
+                               : ": short read"));
+    }
+    if ((header_type & PCI_HEADER_TYPE_MASK) != PCI_HEADER_TYPE_BRIDGE) {
+        close(fd);
+        return fail(PHAL_STATUS_ERROR,
+                    "upstream PCI device is not a Type-1 bridge: " + bridge_bdf);
+    }
+
+    // Preserve every Bridge Control field except the requested reset bit.
+    uint16_t bridge_control = 0;
+    bytes = pread(fd,
+                  &bridge_control,
+                  sizeof(bridge_control),
+                  PCI_BRIDGE_CONTROL_OFFSET);
+    if (bytes != static_cast<ssize_t>(sizeof(bridge_control))) {
+        const auto read_error = errno;
+        close(fd);
+        return fail(PHAL_STATUS_ERROR,
+                    "read PCI Bridge Control failed for " + bridge_bdf +
+                    (bytes < 0 ? ": " + std::string(std::strerror(read_error))
+                               : ": short read"));
+    }
+
+    const uint16_t requested = reset
+        ? static_cast<uint16_t>(bridge_control | PCI_BRIDGE_CONTROL_BUS_RESET)
+        : static_cast<uint16_t>(bridge_control & ~PCI_BRIDGE_CONTROL_BUS_RESET);
+    // Write the requested reset state to the standard Bridge Control register.
+    bytes = pwrite(fd, &requested, sizeof(requested), PCI_BRIDGE_CONTROL_OFFSET);
+    if (bytes != static_cast<ssize_t>(sizeof(requested))) {
+        const auto write_error = errno;
+        close(fd);
+        return fail(PHAL_STATUS_ERROR,
+                    "write PCI Bridge Control failed for " + bridge_bdf +
+                    (bytes < 0 ? ": " + std::string(std::strerror(write_error))
+                               : ": short write"));
+    }
+
+    // Read the register back and verify that bit 6 reached the requested state.
+    uint16_t verified = 0;
+    bytes = pread(fd, &verified, sizeof(verified), PCI_BRIDGE_CONTROL_OFFSET);
+    const auto verify_error = errno;
+    close(fd);
+    if (bytes != static_cast<ssize_t>(sizeof(verified))) {
+        return fail(PHAL_STATUS_ERROR,
+                    "verify PCI Bridge Control failed for " + bridge_bdf +
+                    (bytes < 0 ? ": " + std::string(std::strerror(verify_error))
+                               : ": short read"));
+    }
+
+    const bool observed_reset =
+        (verified & PCI_BRIDGE_CONTROL_BUS_RESET) != 0;
+    if (observed_reset != reset) {
+        return fail(PHAL_STATUS_ERROR,
+                    "Secondary Bus Reset readback mismatch for " + bridge_bdf);
+    }
+
+    if (active_device_.logger != nullptr) {
+        active_device_.logger->info(
+            "Secondary Bus Reset " + std::string(reset ? "asserted" : "deasserted") +
+            ": endpoint=" + active_device_.bdf + " bridge=" + bridge_bdf);
+    }
+    return PHAL_STATUS_OK;
 }
 
 std::vector<DeviceContext> HalContext::scan_pci_devices() const
