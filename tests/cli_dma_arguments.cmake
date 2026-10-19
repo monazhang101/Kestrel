@@ -15,6 +15,7 @@ function(check_dma size timeout)
 endfunction()
 
 check_dma(4096 1000)
+check_dma(65536 1000 --drv none --size-bytes 65536)
 check_dma(134217728 30000 --target TPU0 --direction h2d
     --size-bytes 0x08000000 --pattern incremental --timeout-ms 30000)
 check_dma(4096 60001 --timeout-ms 60001)
@@ -31,6 +32,17 @@ endfunction()
 
 check_invalid("module prefix" dma_data_transfer)
 check_invalid("argument=size" pcie_dma_data_transfer --size 4096)
+check_invalid("invalid drv=other" pcie_dma_data_transfer --drv other)
+
+execute_process(COMMAND "${CLI}" pcie_dma_h2d_example --drv none
+    WORKING_DIRECTORY "${WORK_DIR}" RESULT_VARIABLE example_result
+    OUTPUT_VARIABLE example_output ERROR_VARIABLE example_error)
+if(NOT example_result EQUAL 2 OR
+   NOT example_output MATCHES "DMA example allocation failed" OR
+   NOT example_output MATCHES "TPU0::pcie_dma_h2d_example")
+    message(FATAL_ERROR
+        "DMA example drv dispatch failed (${example_result}): ${example_output}${example_error}")
+endif()
 
 execute_process(COMMAND "${CLI}" pcie_dma_data_transfer -all
     WORKING_DIRECTORY "${WORK_DIR}" RESULT_VARIABLE all_result

@@ -122,6 +122,52 @@ inline bool write(void* dev_mem_base,
     return true;
 }
 
+inline bool read64(void* dev_mem_base,
+                   uint64_t dev_mem_size,
+                   uint64_t dev_mem_offset,
+                   uint64_t& value)
+{
+    if constexpr (sizeof(uintptr_t) < sizeof(uint64_t)) {
+        return false;
+    }
+    if (dev_mem_base == nullptr ||
+        !is_valid_range(dev_mem_size, dev_mem_offset, sizeof(value))) {
+        return false;
+    }
+
+    const auto addr = reinterpret_cast<uintptr_t>(
+        static_cast<uint8_t*>(dev_mem_base) + dev_mem_offset);
+    if (addr % alignof(uint64_t) != 0) {
+        return false;
+    }
+
+    value = *reinterpret_cast<volatile uint64_t*>(addr);
+    return true;
+}
+
+inline bool write64(void* dev_mem_base,
+                    uint64_t dev_mem_size,
+                    uint64_t dev_mem_offset,
+                    uint64_t value)
+{
+    if constexpr (sizeof(uintptr_t) < sizeof(uint64_t)) {
+        return false;
+    }
+    if (dev_mem_base == nullptr ||
+        !is_valid_range(dev_mem_size, dev_mem_offset, sizeof(value))) {
+        return false;
+    }
+
+    const auto addr = reinterpret_cast<uintptr_t>(
+        static_cast<uint8_t*>(dev_mem_base) + dev_mem_offset);
+    if (addr % alignof(uint64_t) != 0) {
+        return false;
+    }
+
+    *reinterpret_cast<volatile uint64_t*>(addr) = value;
+    return true;
+}
+
 }
 
 // -------------------------------------------------------------
@@ -181,6 +227,28 @@ inline bool write32(const DeviceContext& ctx,
                     uint32_t value)
 {
     return write(ctx, bar_index, offset, &value, sizeof(value));
+}
+
+inline bool read64(const DeviceContext& ctx,
+                   uint32_t bar_index,
+                   uint64_t offset,
+                   uint64_t& value)
+{
+    const auto* bar = find(ctx, bar_index);
+    return bar != nullptr && bar->mapped &&
+           common::mmio::read64(bar->mapped_base, bar->mapped_size,
+                                offset, value);
+}
+
+inline bool write64(const DeviceContext& ctx,
+                    uint32_t bar_index,
+                    uint64_t offset,
+                    uint64_t value)
+{
+    const auto* bar = find(ctx, bar_index);
+    return bar != nullptr && bar->mapped && bar->writable &&
+           common::mmio::write64(bar->mapped_base, bar->mapped_size,
+                                 offset, value);
 }
 
 }

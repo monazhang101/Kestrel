@@ -27,9 +27,13 @@ class MemBuffer {
     uint64_t size_ = 0;
     TestStatus transfer(uint64_t offset,
                         void* output, const void* input, size_t len);
+    TestStatus transfer64(uint64_t offset,
+                          uint64_t* output, const uint64_t* input);
     friend class ::HalContext;
     friend TestStatus mem_read(MemBuffer&, uint64_t, uint32_t*);
     friend TestStatus mem_write(MemBuffer&, uint64_t, uint32_t);
+    friend TestStatus mem_read64(MemBuffer&, uint64_t, uint64_t*);
+    friend TestStatus mem_write64(MemBuffer&, uint64_t, uint64_t);
     friend TestStatus mem_read(MemBuffer&, uint64_t, std::vector<uint8_t>*);
     friend TestStatus mem_write(MemBuffer&, uint64_t, const std::vector<uint8_t>&);
 public:
@@ -56,11 +60,17 @@ public:
 
 TestStatus mem_read(MemBuffer& buffer, uint64_t offset, uint32_t* data);
 TestStatus mem_write(MemBuffer& buffer, uint64_t offset, uint32_t data);
+// Native 64-bit aperture payload access is supported only for DMEM buffers.
+// Non-DMEM regions and addresses that are not 8-byte aligned are rejected.
+TestStatus mem_read64(MemBuffer& buffer, uint64_t offset, uint64_t* data);
+TestStatus mem_write64(MemBuffer& buffer, uint64_t offset, uint64_t data);
 TestStatus mem_read(MemBuffer& buffer, uint64_t offset, std::vector<uint8_t>* data);
 TestStatus mem_write(MemBuffer& buffer, uint64_t offset, const std::vector<uint8_t>& data);
 
 }
 
 using common::mem_read;
+using common::mem_read64;
 using common::mem_write;
+using common::mem_write64;
 using common::MemBuffer;

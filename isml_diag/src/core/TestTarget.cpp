@@ -118,6 +118,11 @@ TestStatus TestTarget::run_testcase(const std::string& test_name,
             ti.logger->error("HAL is not bound to testcase device: " + ctx_.bdf);
             return PHAL_STATUS_ERROR;
         }
+        const auto driver = ti.args.find("drv");
+        if (driver != ti.args.end()) {
+            const auto status = hal->configure_host_dma(driver->second);
+            if (status != PHAL_STATUS_OK) return status;
+        }
         std::string phal_error;
         auto testcase_scope = hal->begin_testcase(&phal_error);
         if (!testcase_scope) {

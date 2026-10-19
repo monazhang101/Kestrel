@@ -191,6 +191,37 @@ bool transfer(phal_ctx_t* phal, Logger* logger, const DeviceContext& ctx,
     return true;
 }
 
+bool aperture_transfer64(phal_ctx_t* phal, Logger* logger,
+                         const DeviceContext& ctx, const Window& window,
+                         uint64_t offset, uint64_t* output,
+                         const uint64_t* input, std::string* error)
+{
+    if (error != nullptr) error->clear();
+    if (input == nullptr && output == nullptr)
+        return fail(error, "device-memory buffer is null");
+    const bool writing = input != nullptr;
+    const auto* bar = common::bar::find(ctx, window.bar_index);
+    if (writing && (bar == nullptr || !bar->mapped || !bar->writable))
+        return fail(error, "device-memory data BAR is not writable");
+    if (!prepare_window(phal, logger, ctx, window, offset,
+                        sizeof(uint64_t), error)) return false;
+
+    uint64_t value = writing ? *input : 0;
+    const bool ok = writing
+        ? common::bar::write64(ctx, window.bar_index,
+                               window.bar_offset + offset, value)
+        : common::bar::read64(ctx, window.bar_index,
+                              window.bar_offset + offset, value);
+    if (!ok) return fail(error, "64-bit device-memory BAR access failed");
+    if (!writing) *output = value;
+    if (logger != nullptr) {
+        logger->debug(std::string(writing ? "D-MEM write64" : "D-MEM read64") +
+            " target_addr=" + hex(window.target_addr + offset) +
+            " value=" + hex(value, 16));
+    }
+    return true;
+}
+
 }
 
 namespace common {
@@ -243,6 +274,59 @@ TestStatus dmem_transfer(HalContext& hal, DeviceContext& ctx, uint64_t addr, voi
         " address=" + hex(region->base + addr) +
         " size_bytes=" + std::to_string(len) +
         " data_preview=" + hex_bytes(input ? input : output, len));
+    return PHAL_STATUS_OK;
+}
+
+TestStatus dmem_transfer64(HalContext& hal, DeviceContext& ctx, uint64_t addr,
+                           uint64_t* output, const uint64_t* input)
+{
+    const auto* region = find_df_region(ctx.memory_regions.df, MemoryRegion::DMEM);
+    if (region == nullptr || !region->supported) {
+        if (ctx.logger) ctx.logger->error("DMEM region is not supported");
+        return PHAL_STATUS_UNIMPLEMENTED;
+    }
+    constexpr uint64_t ALIGNMENT = sizeof(uint64_t);
+    if ((output == nullptr && input == nullptr) || addr % ALIGNMENT != 0 ||
+        region->base % ALIGNMENT != 0 ||
+        !mmio::is_valid_range(region->size, addr, ALIGNMENT) ||
+        region->aperture_size == 0 ||
+        region->base > std::numeric_limits<uint64_t>::max() - addr) {
+        if (ctx.logger) ctx.logger->error("invalid 64-bit D-MEM address or buffer");
+        return PHAL_STATUS_INVALID;
+    }
+
+    const auto window_base = addr - (addr % region->aperture_size);
+    const auto window_offset = addr - window_base;
+    if (window_base > std::numeric_limits<uint64_t>::max() - region->base ||
+        !mmio::is_valid_range(region->aperture_size, window_offset, ALIGNMENT)) {
+        if (ctx.logger) ctx.logger->error("invalid 64-bit D-MEM aperture range");
+        return PHAL_STATUS_INVALID;
+    }
+
+    const Window window{
+        region->bar_index,
+        region->aperture_index,
+        region->identity,
+        region->base + window_base,
+        region->aperture_size,
+        0};
+    std::string error;
+    const auto status = hal.with_pcie_context(
+        [&](phal_ctx_t* phal) {
+            return aperture_transfer64(phal, ctx.logger, ctx, window,
+                                       window_offset, output, input, &error)
+                       ? PHAL_STATUS_OK
+                       : PHAL_STATUS_ERROR;
+        },
+        &error);
+    if (status != PHAL_STATUS_OK) {
+        if (ctx.logger) ctx.logger->error("64-bit D-MEM access failed: " + error);
+        return status;
+    }
+    if (ctx.logger) ctx.logger->debug(std::string(input ? "mem_write64" : "mem_read64") +
+        " region=DMEM target=" + ctx.target_name +
+        " address=" + hex(region->base + addr) +
+        " value=" + hex(input ? *input : *output, 16));
     return PHAL_STATUS_OK;
 }
 
@@ -321,7 +405,8 @@ DeviceMemoryState::Key pool_key(MemoryRegion region)
 
 MemBuffer HalContext::device_mem_alloc(MemoryRegion region,
                                        uint64_t size,
-                                       std::optional<uint64_t> fixed_offset)
+                                       std::optional<uint64_t> fixed_offset,
+                                       uint64_t alignment)
 {
     uint64_t capacity = 0;
     if (region == DMEM) {
@@ -332,7 +417,8 @@ MemBuffer HalContext::device_mem_alloc(MemoryRegion region,
         if (entry && entry->supported) capacity = entry->size;
     }
     if (!device_bound_ || !active_memory_ ||
-        !size || size % 4 || size > capacity) {
+        !size || size % 4 || size > capacity || alignment < 4 ||
+        alignment % 4 || (alignment & (alignment - 1)) != 0) {
         if (active_device_.logger) {
             active_device_.logger->error("memory allocation: unsupported region or invalid size");
         }
@@ -342,7 +428,7 @@ MemBuffer HalContext::device_mem_alloc(MemoryRegion region,
     uint64_t offset = 0;
     if (fixed_offset.has_value()) {
         offset = *fixed_offset;
-        if (offset % 4 || offset > capacity || size > capacity - offset) {
+        if (offset % alignment || offset > capacity || size > capacity - offset) {
             if (active_device_.logger) {
                 active_device_.logger->error("memory allocation: fixed offset is outside the region");
             }
@@ -358,9 +444,19 @@ MemBuffer HalContext::device_mem_alloc(MemoryRegion region,
     std::lock_guard<std::mutex> lock(active_memory_->allocation_mutex);
     auto& occupied = active_memory_->allocations[region];
     if (!fixed_offset.has_value()) {
+        const auto align_up = [alignment](uint64_t value, uint64_t& aligned) {
+            const auto mask = alignment - 1;
+            if (value > std::numeric_limits<uint64_t>::max() - mask) return false;
+            aligned = (value + mask) & ~mask;
+            return true;
+        };
+        if (!align_up(offset, offset)) return {};
         for (const auto& entry : occupied) {
-            if (size <= entry.first - offset) break;
-            offset = entry.first + entry.second;
+            if (offset <= entry.first && size <= entry.first - offset) break;
+            if (entry.first > std::numeric_limits<uint64_t>::max() - entry.second)
+                return {};
+            const auto entry_end = entry.first + entry.second;
+            if (offset < entry_end && !align_up(entry_end, offset)) return {};
         }
     }
     if (offset > capacity || size > capacity - offset) {
@@ -455,6 +551,17 @@ TestStatus MemBuffer::transfer(uint64_t offset,
                         output, input, len, 4);
 }
 
+TestStatus MemBuffer::transfer64(uint64_t offset,
+                                 uint64_t* output, const uint64_t* input)
+{
+    if (!valid() || alloc_ctx_ == nullptr || region_ != DMEM ||
+        offset % sizeof(uint64_t) != 0 ||
+        !mmio::is_valid_range(size_, offset, sizeof(uint64_t))) {
+        return PHAL_STATUS_INVALID;
+    }
+    return dmem_transfer64(*alloc_ctx_, *ctx_, offset_ + offset, output, input);
+}
+
 TestStatus mem_read(MemBuffer& buffer,
                     uint64_t offset, uint32_t* data)
 {
@@ -465,6 +572,18 @@ TestStatus mem_write(MemBuffer& buffer,
                      uint64_t offset, uint32_t data)
 {
     return buffer.transfer(offset, nullptr, &data, sizeof(data));
+}
+
+TestStatus mem_read64(MemBuffer& buffer,
+                      uint64_t offset, uint64_t* data)
+{
+    return buffer.transfer64(offset, data, nullptr);
+}
+
+TestStatus mem_write64(MemBuffer& buffer,
+                       uint64_t offset, uint64_t data)
+{
+    return buffer.transfer64(offset, nullptr, &data);
 }
 
 TestStatus mem_read(MemBuffer& buffer,

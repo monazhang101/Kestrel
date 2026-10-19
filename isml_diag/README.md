@@ -120,8 +120,24 @@ status |= mem_read(fixed, 0, &actual);
 - AIC SMEM/IMEM/VMEM allocation is not implemented.
 
 Host DMA buffers use `ti.hal->host_mem_alloc(size_bytes)`. The current host-DMA
-path is iHal-only, limited to 128 MiB per allocation, and requires the matching
-`/dev/isml_diag*` device.
+path is iHal-only. `drv=isml_diag` is the default, supports up to 128 MiB per
+allocation, and requires the matching `/dev/isml_diag*` device.
+
+`drv=none` supports driverless DMA transfers up to 2 MiB. Every device in the
+target's IOMMU group must already be unbound; the framework does not bind or
+unbind drivers. The framework switches the group to IOMMU identity mode and
+keeps that mode after the testcase. It obtains the physical address through
+`/proc/self/pagemap`, so the command must run as root or with the required
+capabilities.
+
+Requests no larger than the system page size use one ordinary page. Larger
+requests use one physically contiguous 2 MiB HugeTLB page. If no free 2 MiB
+page exists, the framework attempts to increase the size-specific HugeTLB pool
+by one and keeps that reservation for later tests. This is equivalent on the
+current x86_64 tester to increasing `vm.nr_hugepages`; it never reduces an
+existing pool. If the kernel cannot reserve the page, the framework tries a
+request-sized anonymous mapping and accepts it only when all physical pages are
+contiguous. The testcase fails rather than passing a fragmented address to DMA.
 
 ## Build and verify
 

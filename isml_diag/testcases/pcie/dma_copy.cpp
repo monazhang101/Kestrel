@@ -145,7 +145,7 @@ TestStatus PCIeModule::dma_data_transfer(TestInfo& ti)
     } else {
         auto host_buffer = ti.hal->host_mem_alloc(size_bytes);
         if (!host_buffer.valid()) {
-            logger.error("host DMA allocation failed; check the matching /dev/isml_diag device");
+            logger.error("host DMA allocation failed; see the preceding HAL error");
             return PHAL_STATUS_ERROR;
         }
         auto* host_data = static_cast<uint8_t*>(host_buffer.cpu_base()) + HOST_OFFSET;

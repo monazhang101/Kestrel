@@ -35,7 +35,25 @@ void HalContext::bind_device(const DeviceContext& ctx, Logger* logger)
         : std::make_shared<DeviceMemoryState>();
     active_device_.memory = active_memory_;
     active_device_.memory_regions = active_memory_regions_;
+    host_dma_mode_ = HostDmaMode::IsmlDiag;
     device_bound_ = true;
+}
+
+TestStatus HalContext::configure_host_dma(const std::string& driver)
+{
+    if (driver == "isml_diag") {
+        host_dma_mode_ = HostDmaMode::IsmlDiag;
+        return PHAL_STATUS_OK;
+    }
+    if (driver == "none") {
+        host_dma_mode_ = HostDmaMode::None;
+        return PHAL_STATUS_OK;
+    }
+    if (active_device_.logger != nullptr) {
+        active_device_.logger->error(
+            "invalid drv=" + driver + "; expected isml_diag or none");
+    }
+    return PHAL_STATUS_INVALID;
 }
 
 HalContext::TestcaseScope HalContext::begin_testcase(std::string* error)
@@ -154,6 +172,17 @@ DeviceContext HalContext::mmap_bar_space(DeviceContext ctx)
 }
 
 DmaBuffer HalContext::host_mem_alloc(uint64_t) { return {}; }
-void HalContext::free_host_dma_buffer(DmaBuffer& buffer) { buffer.alloc_ctx_ = nullptr; }
+void HalContext::free_host_dma_buffer(DmaBuffer& buffer)
+{
+    buffer.alloc_ctx_ = nullptr;
+    buffer.cpu_base_ = nullptr;
+    buffer.device_addr_ = 0;
+    buffer.size_ = 0;
+    buffer.handle_ = 0;
+    buffer.backend_fd_ = -1;
+    buffer.mapped_size_ = 0;
+    buffer.memory_locked_ = false;
+    buffer.addr_kind_.clear();
+}
 DmaBuffer::~DmaBuffer() { release(); }
 void DmaBuffer::release() { if (alloc_ctx_) alloc_ctx_->free_host_dma_buffer(*this); }

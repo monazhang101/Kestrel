@@ -122,6 +122,32 @@ void device_memory_api_owns_aperture_context()
     CHECK(hal.phal_context()->env.base == PhalBridge::CHIP_RCF_BASE);
 }
 
+void dmem_supports_native_64_bit_access()
+{
+    HalContext hal;
+    auto device = make_device(hal, "dmem64");
+    auto testcase_scope = hal.begin_testcase();
+    CHECK(testcase_scope);
+
+    auto prefix = hal.device_mem_alloc(DMEM, 4);
+    auto buffer = hal.device_mem_alloc(DMEM, 16, std::nullopt, 8);
+    CHECK(prefix.valid() && buffer.valid());
+    CHECK(buffer.offset() == 8);
+
+    constexpr uint64_t expected = UINT64_C(0x1122334455667788);
+    uint64_t actual = 0;
+    CHECK(mem_write64(buffer, 0, expected) == PHAL_STATUS_OK);
+    CHECK(mem_read64(buffer, 0, &actual) == PHAL_STATUS_OK);
+    CHECK(actual == expected);
+    CHECK(mem_read64(buffer, 4, &actual) == PHAL_STATUS_INVALID);
+    CHECK(mem_write64(buffer, 4, expected) == PHAL_STATUS_INVALID);
+
+    auto non_dmem = hal.device_mem_alloc(PMU_SRAM, 8, std::nullopt, 8);
+    CHECK(non_dmem.valid());
+    CHECK(mem_read64(non_dmem, 0, &actual) == PHAL_STATUS_INVALID);
+    CHECK(mem_write64(non_dmem, 0, expected) == PHAL_STATUS_INVALID);
+}
+
 void csr_headers_are_available()
 {
     CHECK(TOP_U_CHIP_OFFSET == 0x20000000u);
@@ -156,6 +182,7 @@ int main()
         framework_injects_context();
         allocations_are_independent_of_phal_root();
         device_memory_api_owns_aperture_context();
+        dmem_supports_native_64_bit_access();
         csr_headers_are_available();
         testcase_parameter_lists_are_loaded_in_order();
         std::cout << "IO contracts passed (software only; no hardware validation)\n";

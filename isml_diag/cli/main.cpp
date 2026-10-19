@@ -29,9 +29,10 @@ static void print_usage(const char* program)
               << "Default target: TPU0; default backend: ihal\n"
               << "Global logging: --log-level error|info|debug|trace (default: info)\n"
               << "Policy directory: --policy-dir <path> (default: beside the executable)\n"
-              << "DMA: pcie_dma_data_transfer [--direction h2d|d2h|d2i2d|d2s2d]\n"
+              << "DMA: pcie_dma_data_transfer [--drv isml_diag|none]\n"
+              << "     [--direction h2d|d2h|d2i2d|d2s2d]\n"
               << "     [--size-bytes <bytes>] [--pattern zero|incremental|random] [--timeout-ms <ms>]\n"
-              << "     Defaults: h2d, 4096 bytes (4 KiB), random, 1000 ms.\n"
+              << "     Defaults: drv=isml_diag, h2d, 4096 bytes (4 KiB), random, 1000 ms.\n"
               << "     H2D: one DMA transfer, then one MMIO readback for verification.\n"
               << "     Use -all to run every parameter line from the testcase policy.\n"
               << "\n"
@@ -40,7 +41,7 @@ static void print_usage(const char* program)
               << "  " << program << " discover --backend phal --tree\n"
               << "  " << program << " pcie_bar_read32 --target TPU0 --bar-index 0 --offset 0x20f80\n"
               << "  " << program << " pcie_dma_data_transfer\n"
-              << "  " << program << " pcie_dma_data_transfer --target TPU0 --direction h2d --size-bytes 0x08000000 --pattern incremental --timeout-ms 30000\n"
+              << "  " << program << " pcie_dma_data_transfer --target TPU0 --drv none --direction h2d --size-bytes 0x10000 --pattern incremental --timeout-ms 30000\n"
               << "  " << program << " pcie_sequential_aperture_mapping --target TPU0 --log-level debug\n";
 }
 
