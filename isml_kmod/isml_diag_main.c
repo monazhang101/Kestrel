@@ -1,7 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0
+#include <linux/atomic.h>
+#include <linux/capability.h>
+#include <linux/delay.h>
 #include <linux/dma-mapping.h>
 #include <linux/fs.h>
 #include <linux/idr.h>
+#include <linux/interrupt.h>
+#include <linux/io.h>
 #include <linux/kref.h>
 #include <linux/list.h>
 #include <linux/miscdevice.h>
@@ -18,12 +23,46 @@
 #define ISML_VENDOR_ID 0x16c3
 #define ISML_DEVICE_ID 0xabcd
 
+/*
+ * Experimental MSI-X request register in the host BAR0 view. Atlas maps the
+ * internal PCIe CSR base 0x16000000 at BAR0 offset 0x36000000.
+ * Remove these definitions with isml_irq_selftest().
+ */
+#define ISML_IRQ_SELFTEST_BAR 0
+#define ISML_IRQ_SELFTEST_OFFSET 0x36010228ULL
+#define ISML_IRQ_SELFTEST_REG_SIZE 0x34
+#define ISML_IRQ_SELFTEST_REQ BIT(0)
+#define ISML_IRQ_SELFTEST_VECTOR_SHIFT 7
+#define ISML_IRQ_SELFTEST_VECTOR_MASK GENMASK(11, 7)
+
+/* lspci reports the MSI-X table in BAR0 at offset 0, 16 bytes per entry. */
+#define ISML_MSIX_TABLE_BAR 0
+#define ISML_MSIX_TABLE_OFFSET 0ULL
+#define ISML_MSIX_ENTRY_SIZE (4 * sizeof(u32))
+#define ISML_MSIX_ADDR_LO_OFFSET 0
+#define ISML_MSIX_ADDR_HI_OFFSET 4
+#define ISML_MSIX_DATA_OFFSET 8
+#define ISML_MSIX_VECTOR_CONTROL_OFFSET 12
+#define ISML_MSIX_VECTOR_MASKED BIT(0)
+
+#define ISML_MSI_MESSAGE_DATA_OFFSET 4
+#define ISML_MSI_MESSAGE_ADDR_LO_OFFSET 8
+#define ISML_MSI_MESSAGE_ADDR_HI_OFFSET 12
+
+#define ISML_INT_CONFIG0_OFFSET 0x2c
+#define ISML_INT_CONFIG5_OFFSET 0x30
+#define ISML_INT_CONFIG5_ENABLE BIT(4)
+
 struct isml_device {
 	struct pci_dev *pdev;
 	struct miscdevice miscdev;
 	char name[24];
 	int instance;
 	u32 dma_mask_bits;
+	int irq;
+	int irq_vectors;
+	atomic64_t irq_count;
+	struct mutex irq_test_lock;
 };
 
 struct isml_dma_buffer {
@@ -44,6 +83,147 @@ struct isml_file {
 };
 
 static DEFINE_IDA(isml_device_ids);
+
+static irqreturn_t isml_irq_handler(int irq, void *data)
+{
+	struct isml_device *isml = data;
+	s64 count = atomic64_inc_return(&isml->irq_count);
+
+	/* Phase-1 smoke path: this is a dedicated MSI-X vector. */
+	dev_info_ratelimited(&isml->pdev->dev,
+			     "MSI-X interrupt: irq=%d count=%lld\n",
+			     irq, (long long)count);
+	return IRQ_HANDLED;
+}
+
+static int isml_irq_selftest(struct isml_device *isml,
+			     struct isml_diag_irq_selftest *test)
+{
+	struct pci_dev *pdev = isml->pdev;
+	u8 __iomem *message_regs;
+	u8 __iomem *table_entry;
+	resource_size_t bar_size;
+	u32 request_value;
+
+	if (test->vector >= isml->irq_vectors || test->flags)
+		return -EINVAL;
+	if (!(pci_resource_flags(pdev, ISML_IRQ_SELFTEST_BAR) & IORESOURCE_MEM))
+		return -ENODEV;
+
+	bar_size = pci_resource_len(pdev, ISML_IRQ_SELFTEST_BAR);
+	if (ISML_IRQ_SELFTEST_OFFSET > bar_size ||
+	    bar_size - ISML_IRQ_SELFTEST_OFFSET < ISML_IRQ_SELFTEST_REG_SIZE ||
+	    ISML_MSIX_TABLE_OFFSET > bar_size ||
+	    bar_size - ISML_MSIX_TABLE_OFFSET < ISML_MSIX_ENTRY_SIZE)
+		return -ERANGE;
+
+	message_regs = pci_iomap_range(pdev, ISML_IRQ_SELFTEST_BAR,
+					ISML_IRQ_SELFTEST_OFFSET,
+					ISML_IRQ_SELFTEST_REG_SIZE);
+	if (!message_regs)
+		return -ENOMEM;
+	table_entry = pci_iomap_range(pdev, ISML_MSIX_TABLE_BAR,
+				      ISML_MSIX_TABLE_OFFSET,
+				      ISML_MSIX_ENTRY_SIZE);
+	if (!table_entry) {
+		pci_iounmap(pdev, message_regs);
+		return -ENOMEM;
+	}
+
+	request_value = ISML_IRQ_SELFTEST_REQ |
+		(test->vector << ISML_IRQ_SELFTEST_VECTOR_SHIFT);
+	request_value &= ISML_IRQ_SELFTEST_REQ | ISML_IRQ_SELFTEST_VECTOR_MASK;
+
+	mutex_lock(&isml->irq_test_lock);
+	test->msix_addr_lo = readl(table_entry + ISML_MSIX_ADDR_LO_OFFSET);
+	test->msix_addr_hi = readl(table_entry + ISML_MSIX_ADDR_HI_OFFSET);
+	test->msix_data = readl(table_entry + ISML_MSIX_DATA_OFFSET);
+	test->msix_vector_control =
+		readl(table_entry + ISML_MSIX_VECTOR_CONTROL_OFFSET);
+	test->trigger_status = 0;
+	if (!test->msix_addr_lo && !test->msix_addr_hi) {
+		test->trigger_status = -ENXIO;
+		goto unlock;
+	}
+	if (test->msix_vector_control & ISML_MSIX_VECTOR_MASKED) {
+		test->trigger_status = -EAGAIN;
+		goto unlock;
+	}
+
+	test->int_config5_before =
+		readl(message_regs + ISML_INT_CONFIG5_OFFSET);
+	writel(test->int_config5_before | ISML_INT_CONFIG5_ENABLE,
+	       message_regs + ISML_INT_CONFIG5_OFFSET);
+	test->int_config5_enabled =
+		readl(message_regs + ISML_INT_CONFIG5_OFFSET);
+	if (!(test->int_config5_enabled & ISML_INT_CONFIG5_ENABLE)) {
+		test->trigger_status = -EIO;
+		goto restore_int_config5;
+	}
+
+	test->int_config0_before =
+		readl(message_regs + ISML_INT_CONFIG0_OFFSET);
+	writel(test->msix_addr_lo,
+	       message_regs + ISML_INT_CONFIG0_OFFSET);
+	test->int_config0_programmed =
+		readl(message_regs + ISML_INT_CONFIG0_OFFSET);
+
+	/* Mode B: copy Linux's MSI-X table entry into the device message CSRs. */
+	writel(test->msix_data,
+	       message_regs + ISML_MSI_MESSAGE_DATA_OFFSET);
+	writel(test->msix_addr_lo,
+	       message_regs + ISML_MSI_MESSAGE_ADDR_LO_OFFSET);
+	writel(test->msix_addr_hi,
+	       message_regs + ISML_MSI_MESSAGE_ADDR_HI_OFFSET);
+	test->message_data_readback =
+		readl(message_regs + ISML_MSI_MESSAGE_DATA_OFFSET);
+	test->message_addr_lo_readback =
+		readl(message_regs + ISML_MSI_MESSAGE_ADDR_LO_OFFSET);
+	test->message_addr_hi_readback =
+		readl(message_regs + ISML_MSI_MESSAGE_ADDR_HI_OFFSET);
+
+	test->irq_count_before = atomic64_read(&isml->irq_count);
+	test->request_value = request_value;
+	writel(request_value, message_regs);
+	readl(message_regs); /* Flush the posted write before observing self-clear. */
+	usleep_range(10000, 12000);
+	test->request_readback = readl(message_regs);
+
+	if (test->request_readback & ISML_IRQ_SELFTEST_REQ) {
+		writel(request_value & ~ISML_IRQ_SELFTEST_REQ, message_regs);
+		readl(message_regs);
+	}
+	test->request_after_clear = readl(message_regs);
+	test->irq_count_after = atomic64_read(&isml->irq_count);
+
+	writel(test->int_config0_before,
+	       message_regs + ISML_INT_CONFIG0_OFFSET);
+	readl(message_regs + ISML_INT_CONFIG0_OFFSET);
+
+restore_int_config5:
+	writel(test->int_config5_before,
+	       message_regs + ISML_INT_CONFIG5_OFFSET);
+	readl(message_regs + ISML_INT_CONFIG5_OFFSET);
+
+unlock:
+	mutex_unlock(&isml->irq_test_lock);
+
+	pci_iounmap(pdev, table_entry);
+	pci_iounmap(pdev, message_regs);
+	dev_info(&pdev->dev,
+		 "MSI-X selftest: vector=%u table=%08x:%08x data=%#x control=%#x message_readback=%08x:%08x/%#x int_config5=%#x->%#x int_config0=%#x->%#x status=%d request=%#x readback=%#x final=%#x irq_count=%llu->%llu\n",
+		 test->vector, test->msix_addr_hi, test->msix_addr_lo,
+		 test->msix_data, test->msix_vector_control,
+		 test->message_addr_hi_readback,
+		 test->message_addr_lo_readback,
+		 test->message_data_readback,
+		 test->int_config5_before, test->int_config5_enabled,
+		 test->int_config0_before, test->int_config0_programmed,
+		 test->trigger_status, test->request_value, test->request_readback,
+		 test->request_after_clear, test->irq_count_before,
+		 test->irq_count_after);
+	return 0;
+}
 
 static void isml_dma_buffer_release(struct kref *ref)
 {
@@ -184,6 +364,23 @@ static long isml_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 		kref_put(&buffer->ref, isml_dma_buffer_release);
 		return 0;
 	}
+	case ISML_DIAG_IOCTL_IRQ_SELFTEST: {
+		struct isml_diag_irq_selftest test;
+		int ret;
+
+		if (!capable(CAP_SYS_RAWIO))
+			return -EPERM;
+		if (copy_from_user(&test, user_arg, sizeof(test)))
+			return -EFAULT;
+		if (test.size != sizeof(test) ||
+		    test.version != ISML_DIAG_IRQ_SELFTEST_VERSION)
+			return -EINVAL;
+
+		ret = isml_irq_selftest(ctx->isml, &test);
+		if (ret)
+			return ret;
+		return copy_to_user(user_arg, &test, sizeof(test)) ? -EFAULT : 0;
+	}
 	default:
 		return -ENOTTY;
 	}
@@ -281,11 +478,28 @@ static int isml_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	}
 
 	isml->dma_mask_bits = dma_get_mask(&pdev->dev) > DMA_BIT_MASK(32) ? 64 : 32;
+	atomic64_set(&isml->irq_count, 0);
+	mutex_init(&isml->irq_test_lock);
+
+	/* Experiment 1: require exactly one MSI-X vector; do not fall back to INTx. */
+	ret = pci_alloc_irq_vectors(pdev, 1, 1, PCI_IRQ_MSIX);
+	if (ret < 0)
+		goto disable_device;
+	isml->irq_vectors = ret;
+	isml->irq = pci_irq_vector(pdev, 0);
+	if (isml->irq < 0) {
+		ret = isml->irq;
+		goto free_irq_vectors;
+	}
+
+	ret = request_irq(isml->irq, isml_irq_handler, 0, "isml_diag", isml);
+	if (ret)
+		goto free_irq_vectors;
 
 	instance = ida_alloc(&isml_device_ids, GFP_KERNEL);
 	if (instance < 0) {
 		ret = instance;
-		goto disable_device;
+		goto free_irq;
 	}
 	isml->instance = instance;
 	snprintf(isml->name, sizeof(isml->name), "isml_diag%d", instance);
@@ -297,14 +511,20 @@ static int isml_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 	ret = misc_register(&isml->miscdev);
 	if (ret) {
 		ida_free(&isml_device_ids, instance);
-		goto disable_device;
+		goto free_irq;
 	}
 
 	pci_set_drvdata(pdev, isml);
-	dev_info(&pdev->dev, "%s ready, DMA mask %u-bit\n",
-		 isml->name, isml->dma_mask_bits);
+	dev_info(&pdev->dev,
+		 "%s ready, DMA mask %u-bit, MSI-X vectors %d, irq %d\n",
+		 isml->name, isml->dma_mask_bits,
+		 isml->irq_vectors, isml->irq);
 	return 0;
 
+free_irq:
+	free_irq(isml->irq, isml);
+free_irq_vectors:
+	pci_free_irq_vectors(pdev);
 disable_device:
 	pci_clear_master(pdev);
 	pci_disable_device(pdev);
@@ -316,6 +536,8 @@ static void isml_remove(struct pci_dev *pdev)
 	struct isml_device *isml = pci_get_drvdata(pdev);
 	misc_deregister(&isml->miscdev);
 	ida_free(&isml_device_ids, isml->instance);
+	free_irq(isml->irq, isml);
+	pci_free_irq_vectors(pdev);
 	pci_clear_master(pdev);
 	pci_disable_device(pdev);
 }
