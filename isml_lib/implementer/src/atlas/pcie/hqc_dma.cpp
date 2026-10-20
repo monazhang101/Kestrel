@@ -1,5 +1,7 @@
 #include "diag/implementer/HqcDma.h"
 
+#include "diag/core/Format.h"
+
 extern "C" {
 #include <atlas_csr_sw/src/h/TOP.h>
 #include <atlas_csr_sw/src/h/TOP_deps/PCIE/PCIE.h>
@@ -11,11 +13,13 @@ extern "C" {
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <string>
 
 namespace {
 constexpr uint64_t ALIGNMENT = 32;
 constexpr uint32_t POLL_US = 2;
 constexpr uint32_t CTRL_TIMEOUT = 8000000;
+constexpr auto POLL_LOG_INTERVAL = std::chrono::seconds(1);
 constexpr uint32_t DDP_COUNT = 4;
 constexpr uint32_t DDP_Q_PHASE[DDP_COUNT] = {0, 1, 2, 3};
 constexpr uint32_t DDP_Q_STATION_ID[DDP_COUNT] = {0xc, 0xd, 0xe, 0xf};
@@ -23,6 +27,43 @@ constexpr uintptr_t DDP_OFFSETS[DDP_COUNT] = {
     TOP_U_DDP_0_OFFSET, TOP_U_DDP_1_OFFSET,
     TOP_U_DDP_2_OFFSET, TOP_U_DDP_3_OFFSET};
 
+Logger* dma_logger(HalContext& hal)
+{
+    return hal.device_context().logger;
+}
+
+void log_flow(HalContext& hal, const std::string& message)
+{
+    if (auto* logger = dma_logger(hal); logger != nullptr) logger->flow(message);
+}
+
+void log_regio(HalContext& hal, const std::string& message)
+{
+    if (auto* logger = dma_logger(hal); logger != nullptr) logger->regio(message);
+}
+
+void log_error(HalContext& hal, const std::string& message)
+{
+    if (auto* logger = dma_logger(hal); logger != nullptr) logger->error(message);
+}
+
+int64_t elapsed_ms(std::chrono::steady_clock::time_point start)
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - start).count();
+}
+
+void log_poll_sample(HalContext& hal, const std::string& name,
+                     phal_ctx_t* ctx, uintptr_t offset, uint64_t attempts,
+                     std::chrono::steady_clock::time_point start,
+                     uint32_t value)
+{
+    log_regio(hal, name + " polling sample: bar0_offset=" +
+                       common::format::hex(ctx->env.base + offset) +
+                       " attempts=" + std::to_string(attempts) +
+                       " elapsed_ms=" + std::to_string(elapsed_ms(start)) +
+                       " value=" + common::format::hex(value, 8));
+}
 
 uint64_t endpoint_address(const DmaEndpoint& endpoint)
 {
@@ -203,6 +244,7 @@ TestStatus DmaDescriptor::execute(uint64_t timeout)
 TestStatus HqcDmaEngine::init_desc_ctrl()
 {
     if (initialized_) return PHAL_STATUS_OK;
+    log_flow(hal_, "DMA configuration: HQC descriptor control");
     const auto status = hal_.with_pcie_context([&](phal_ctx_t* ctx) {
         phal_block_ctx_enter(ctx, PCIE_U_HQC_0_OFFSET);
         phal_block_ctx_enter(ctx, HQC_U_PCIE_HQC_REG_0_OFFSET);
@@ -260,6 +302,7 @@ TestStatus HqcDmaEngine::init_ddp_ctrl()
     if (ddp_initialized_) return PHAL_STATUS_OK;
     auto* ctx = hal_.phal_context();
     if (ctx == nullptr) return PHAL_STATUS_ERROR;
+    log_flow(hal_, "DMA configuration: DDP routing");
     phal_status_t status = PHAL_STATUS_OK;
     for (uint32_t index = 0; index < DDP_COUNT; ++index) {
         phal_block_ctx_enter(ctx, DDP_OFFSETS[index]);
@@ -292,6 +335,9 @@ TestStatus HqcDmaEngine::copy_descriptor(DmaDescriptor& desc)
     if (!desc.descriptor_sram_.valid()) return PHAL_STATUS_ERROR;
     std::vector<uint8_t> bytes(DmaDescriptor::BYTE_SIZE);
     std::memcpy(bytes.data(), desc.words(), bytes.size());
+    log_flow(hal_, "HQC descriptor write: sram_offset=" +
+                       common::format::hex(desc.descriptor_sram_.offset()) +
+                       " size_bytes=" + std::to_string(bytes.size()));
     status = mem_write(desc.descriptor_sram_, 0, bytes);
     if (status != PHAL_STATUS_OK) return status;
     return send_descriptor(desc, 0); // Use default core id 0
@@ -300,6 +346,10 @@ TestStatus HqcDmaEngine::copy_descriptor(DmaDescriptor& desc)
 TestStatus HqcDmaEngine::send_descriptor(DmaDescriptor& desc, uint32_t core_id)
 {
     if (core_id > 1) return PHAL_STATUS_INVALID;
+    log_flow(hal_, "HQC descriptor submission: core_id=" + std::to_string(core_id) +
+                       " sram_offset=" +
+                       common::format::hex(desc.descriptor_sram_.offset()) +
+                       " size_bytes=" + std::to_string(DmaDescriptor::BYTE_SIZE));
     return hal_.with_pcie_context([&](phal_ctx_t* ctx) {
         phal_block_ctx_enter(ctx, PCIE_U_HQC_0_OFFSET);
         phal_block_ctx_enter(ctx, HQC_U_PCIE_HQC_REG_0_OFFSET);
@@ -330,15 +380,48 @@ TestStatus HqcDmaEngine::send_descriptor(DmaDescriptor& desc, uint32_t core_id)
         uint32_t idle = 0;
         phal_status_t status = PHAL_STATUS_OK;
         bool idle_seen = false;
-        for (uint32_t i = 0; i < CTRL_TIMEOUT; ++i) {
-            status = phal_read(ctx, idle_offset, &idle);
-            if (status != PHAL_STATUS_OK) break;
-            if (idle & idle_bm) {
-                idle_seen = true;
-                break;
+        uint64_t attempts = 0;
+        const auto poll_start = std::chrono::steady_clock::now();
+        auto next_sample = poll_start + POLL_LOG_INTERVAL;
+        log_flow(hal_, "HQC idle polling started: core_id=" +
+                           std::to_string(core_id) +
+                           " max_attempts=" + std::to_string(CTRL_TIMEOUT));
+        {
+            ScopedPhalRegIoSuppression suppress_regio(ctx);
+            for (uint32_t i = 0; i < CTRL_TIMEOUT; ++i) {
+                status = phal_read(ctx, idle_offset, &idle);
+                attempts = static_cast<uint64_t>(i) + 1;
+                const auto now = std::chrono::steady_clock::now();
+                if (attempts == 1 || now >= next_sample) {
+                    log_poll_sample(hal_, "HQC idle", ctx, idle_offset,
+                                    attempts, poll_start, idle);
+                    if (now >= next_sample) next_sample = now + POLL_LOG_INTERVAL;
+                }
+                if (status != PHAL_STATUS_OK) break;
+                if (idle & idle_bm) {
+                    idle_seen = true;
+                    break;
+                }
+                phal_delay_us(ctx, POLL_US);
+                if (i + 1 == CTRL_TIMEOUT) status = PHAL_STATUS_TIMEOUT;
             }
-            phal_delay_us(ctx, POLL_US);
-            if (i + 1 == CTRL_TIMEOUT) status = PHAL_STATUS_TIMEOUT;
+        }
+        if (idle_seen) {
+            log_flow(hal_, "HQC idle polling complete: core_id=" +
+                               std::to_string(core_id) +
+                               " attempts=" + std::to_string(attempts) +
+                               " elapsed_ms=" + std::to_string(elapsed_ms(poll_start)));
+        } else if (status == PHAL_STATUS_TIMEOUT) {
+            log_error(hal_, "HQC idle polling timed out: core_id=" +
+                                std::to_string(core_id) +
+                                " attempts=" + std::to_string(attempts) +
+                                " elapsed_ms=" + std::to_string(elapsed_ms(poll_start)) +
+                                " last_value=" + common::format::hex(idle, 8));
+        } else {
+            log_error(hal_, "HQC idle polling failed: core_id=" +
+                                std::to_string(core_id) +
+                                " attempts=" + std::to_string(attempts) +
+                                " status=" + std::to_string(static_cast<int>(status)));
         }
         if (status == PHAL_STATUS_OK && idle_seen) {
             const uint64_t fetch_address = ATL_HQC_SRAM_MCU_LOCAL_BASE +
@@ -379,6 +462,7 @@ TestStatus HqcDmaEngine::check_sync_flag_done(uint32_t flag) const
 TestStatus HqcDmaEngine::clear_sync_flag_done(uint32_t flag) const
 {
     if (flag > SOC_HQC_SYNCFLAG_MAX_ID) return PHAL_STATUS_INVALID;
+    log_flow(hal_, "Syncflag clear: flag=" + std::to_string(flag));
     TestStatus result = PHAL_STATUS_ERROR;
     hal_.with_pcie_context([&](phal_ctx_t* ctx) {
         phal_block_ctx_enter(ctx, PCIE_U_HQC_0_OFFSET);
@@ -391,12 +475,53 @@ TestStatus HqcDmaEngine::clear_sync_flag_done(uint32_t flag) const
 
 TestStatus HqcDmaEngine::wait_sync_flag(uint32_t flag, uint64_t timeout_ms) const
 {
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
-    while (std::chrono::steady_clock::now() < deadline) {
-        const auto status = check_sync_flag_done(flag);
-        if (status == PHAL_STATUS_OK) return status;
-        if (status != PHAL_STATUS_INVALID) return status;
-        phal_delay_us(hal_.phal_context(), POLL_US);
+    if (flag > SOC_HQC_SYNCFLAG_MAX_ID) return PHAL_STATUS_INVALID;
+    log_flow(hal_, "Syncflag polling started: flag=" + std::to_string(flag) +
+                       " timeout_ms=" + std::to_string(timeout_ms));
+    const auto start = std::chrono::steady_clock::now();
+    const auto deadline = start + std::chrono::milliseconds(timeout_ms);
+    uint64_t attempts = 0;
+    uint32_t value = 0;
+    const auto status = hal_.with_pcie_context([&](phal_ctx_t* ctx) {
+        phal_block_ctx_enter(ctx, PCIE_U_HQC_0_OFFSET);
+        phal_status_t poll_status = PHAL_STATUS_OK;
+        auto next_sample = start + POLL_LOG_INTERVAL;
+        {
+            ScopedPhalRegIoSuppression suppress_regio(ctx);
+            while (std::chrono::steady_clock::now() < deadline) {
+                poll_status = phal_read(
+                    ctx, SOC_HQC_SYNCFLAG_CSR_DONE_OFFSET(flag), &value);
+                ++attempts;
+                const auto now = std::chrono::steady_clock::now();
+                if (attempts == 1 || now >= next_sample) {
+                    log_poll_sample(hal_, "Syncflag", ctx,
+                                    SOC_HQC_SYNCFLAG_CSR_DONE_OFFSET(flag),
+                                    attempts, start, value);
+                    if (now >= next_sample) next_sample = now + POLL_LOG_INTERVAL;
+                }
+                if (poll_status != PHAL_STATUS_OK || (value & 0x1u)) break;
+                phal_delay_us(ctx, POLL_US);
+            }
+        }
+        if (poll_status == PHAL_STATUS_OK && !(value & 0x1u)) {
+            poll_status = PHAL_STATUS_TIMEOUT;
+        }
+        phal_block_ctx_exit(ctx, PCIE_U_HQC_0_OFFSET);
+        return poll_status;
+    });
+    if (status == PHAL_STATUS_OK) {
+        log_flow(hal_, "Syncflag polling complete: flag=" + std::to_string(flag) +
+                           " attempts=" + std::to_string(attempts) +
+                           " elapsed_ms=" + std::to_string(elapsed_ms(start)));
+    } else if (status == PHAL_STATUS_TIMEOUT) {
+        log_error(hal_, "Syncflag polling timed out: flag=" + std::to_string(flag) +
+                            " attempts=" + std::to_string(attempts) +
+                            " elapsed_ms=" + std::to_string(elapsed_ms(start)) +
+                            " last_value=" + common::format::hex(value, 8));
+    } else {
+        log_error(hal_, "Syncflag polling failed: flag=" + std::to_string(flag) +
+                            " attempts=" + std::to_string(attempts) +
+                            " status=" + std::to_string(static_cast<int>(status)));
     }
-    return PHAL_STATUS_TIMEOUT;
+    return status;
 }

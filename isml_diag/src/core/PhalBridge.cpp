@@ -27,13 +27,16 @@ void log_phal_io(const char* operation, env_t* env, uintptr_t addr,
 {
     const auto* io = static_cast<const IhalIO*>(env->priv);
     auto* logger = io->device_ctx != nullptr ? io->device_ctx->logger : nullptr;
-    if (logger == nullptr || (status == PHAL_STATUS_OK && logger->get_level() < LogLevel::Debug)) return;
+    if (logger == nullptr) return;
+    if (status == PHAL_STATUS_OK &&
+        (logger->get_level() < LogLevel::RegIo ||
+         io->regio_suppression_depth.load(std::memory_order_relaxed) != 0)) return;
     using common::format::hex;
     const auto message = std::string(operation) + " bdf=" + io->device_ctx->bdf +
         " env_base=" + hex(env->base) + " offset=" + hex(addr) +
         " bar0_offset=" + hex(env->base + addr) + " value=" + hex(data, 8) +
         " status=" + std::to_string(static_cast<int>(status));
-    if (status == PHAL_STATUS_OK) logger->debug(message);
+    if (status == PHAL_STATUS_OK) logger->regio(message);
     else logger->error(message);
 }
 
@@ -132,6 +135,20 @@ PhalProject phal_project_from_tpu_type(TPUType tpu_type)
         return PhalProject::Generic;
     }
     return PhalProject::Generic;
+}
+
+ScopedPhalRegIoSuppression::ScopedPhalRegIoSuppression(phal_ctx_t* ctx)
+{
+    if (ctx == nullptr || ctx->env.priv == nullptr) return;
+    io_ = static_cast<IhalIO*>(ctx->env.priv);
+    io_->regio_suppression_depth.fetch_add(1, std::memory_order_relaxed);
+}
+
+ScopedPhalRegIoSuppression::~ScopedPhalRegIoSuppression()
+{
+    if (io_ != nullptr) {
+        io_->regio_suppression_depth.fetch_sub(1, std::memory_order_relaxed);
+    }
 }
 
 phal_status_t ihal_write32(void* handler, uintptr_t addr, uint32_t data)

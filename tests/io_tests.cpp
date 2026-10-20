@@ -6,22 +6,39 @@
 
 #include <atlas_csr_sw/src/h/TOP.h>
 
+#include <functional>
 #include <iostream>
+#include <sstream>
 #include <stdexcept>
 
 #define CHECK(expr) do { if (!(expr)) throw std::runtime_error(#expr); } while (false)
 
 namespace {
 
-DeviceContext make_device(HalContext& hal, const char* bdf = "test")
+DeviceContext make_device(HalContext& hal, const char* bdf = "test",
+                          Logger* logger = nullptr)
 {
     DeviceContext ctx;
     ctx.bdf = bdf;
     ctx.tpu_type = TPUType::Atlas;
     ctx.memory_regions = Implementer(TPUType::Atlas).memory_regions();
     auto mapped = hal.mmap_bar_space(std::move(ctx));
-    hal.bind_device(mapped);
+    hal.bind_device(mapped, logger);
     return mapped;
+}
+
+std::string capture_stdout(const std::function<void()>& operation)
+{
+    std::ostringstream output;
+    auto* previous = std::cout.rdbuf(output.rdbuf());
+    try {
+        operation();
+    } catch (...) {
+        std::cout.rdbuf(previous);
+        throw;
+    }
+    std::cout.rdbuf(previous);
+    return output.str();
 }
 
 void phal_is_chip_scoped()
@@ -173,6 +190,67 @@ void testcase_parameter_lists_are_loaded_in_order()
     CHECK(runs[3].find("timeout_ms") == runs[3].end());
 }
 
+void logging_uses_flow_and_regio_levels()
+{
+    Logger logger;
+    logger.set_level(LogLevel::Flow);
+    auto output = capture_stdout([&] {
+        logger.info("owner");
+        logger.flow("phase");
+        logger.regio("register");
+    });
+    CHECK(output.find("[INFO] owner") != std::string::npos);
+    CHECK(output.find("[FLOW] phase") != std::string::npos);
+    CHECK(output.find("register") == std::string::npos);
+
+    logger.set_level(LogLevel::RegIo);
+    output = capture_stdout([&] {
+        logger.flow("phase");
+        logger.regio("register");
+    });
+    CHECK(output.find("[FLOW] phase") != std::string::npos);
+    CHECK(output.find("[REGIO] register") != std::string::npos);
+
+    logger.set_level(LogLevel::Debug);
+    output = capture_stdout([&] { logger.debug("legacy-debug"); });
+    CHECK(output.find("[FLOW] legacy-debug") != std::string::npos);
+    logger.set_level(LogLevel::Trace);
+    output = capture_stdout([&] { logger.trace("legacy-trace"); });
+    CHECK(output.find("[REGIO] legacy-trace") != std::string::npos);
+}
+
+void phal_regio_suppression_is_scoped()
+{
+    Logger logger;
+    logger.set_level(LogLevel::RegIo);
+    HalContext hal;
+    auto device = make_device(hal, "phal-regio", &logger);
+    auto testcase_scope = hal.begin_testcase();
+    CHECK(testcase_scope);
+    auto* phal = hal.phal_context();
+    CHECK(phal != nullptr);
+    phal->env.base = 0;
+
+    uint32_t value = 0;
+    auto output = capture_stdout([&] {
+        CHECK(phal_read(phal, 0, &value) == PHAL_STATUS_OK);
+    });
+    CHECK(output.find("[REGIO] phal_read") != std::string::npos);
+
+    output = capture_stdout([&] {
+        ScopedPhalRegIoSuppression suppress(phal);
+        CHECK(phal_read(phal, 0, &value) == PHAL_STATUS_OK);
+    });
+    CHECK(output.empty());
+
+    phal->env.base = PhalBridge::CHIP_RCF_BASE;
+    output = capture_stdout([&] {
+        ScopedPhalRegIoSuppression suppress(phal);
+        CHECK(phal_read(phal, 0, &value) != PHAL_STATUS_OK);
+    });
+    CHECK(output.find("[ERROR] phal_read") != std::string::npos);
+}
+
 }
 
 int main()
@@ -185,6 +263,8 @@ int main()
         dmem_supports_native_64_bit_access();
         csr_headers_are_available();
         testcase_parameter_lists_are_loaded_in_order();
+        logging_uses_flow_and_regio_levels();
+        phal_regio_suppression_is_scoped();
         std::cout << "IO contracts passed (software only; no hardware validation)\n";
         return 0;
     } catch (const std::exception& error) {

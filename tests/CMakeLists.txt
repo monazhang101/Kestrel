@@ -48,8 +48,17 @@ add_executable(io_test_cli ${REPO}/isml_diag/cli/main.cpp)
 target_link_libraries(io_test_cli PRIVATE io_test_code)
 add_dependencies(io_test_cli io_test_policies)
 add_test(NAME cli_help COMMAND io_test_cli --help)
+set_tests_properties(cli_help PROPERTIES
+    PASS_REGULAR_EXPRESSION "error\\|info\\|flow\\|regio")
+add_test(NAME cli_flow_log_level COMMAND io_test_cli pcie_bar_read32 --bar-index 0 --offset 4 --log-level flow)
+add_test(NAME cli_regio_log_level COMMAND io_test_cli pcie_bar_read32 --bar-index 0 --offset 4 --log-level regio)
+add_test(NAME cli_legacy_debug_log_level COMMAND io_test_cli pcie_bar_read32 --bar-index 0 --offset 4 --log-level debug)
+add_test(NAME cli_legacy_trace_log_level COMMAND io_test_cli pcie_bar_read32 --bar-index 0 --offset 4 --log-level trace)
 add_test(NAME cli_discover COMMAND io_test_cli discover)
-set_tests_properties(cli_discover PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+set_tests_properties(
+    cli_discover cli_flow_log_level cli_regio_log_level
+    cli_legacy_debug_log_level cli_legacy_trace_log_level
+    PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
 add_test(NAME cli_reject_backend COMMAND io_test_cli discover --backend ihal)
 set_tests_properties(cli_reject_backend PROPERTIES

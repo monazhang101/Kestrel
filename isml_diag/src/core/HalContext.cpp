@@ -385,7 +385,7 @@ bool ensure_free_2mb_hugepage(Logger* logger, std::string& error)
     }
 
     if (logger != nullptr) {
-        logger->info("2 MiB HugeTLB pool: nr_hugepages=" +
+        logger->flow("2 MiB HugeTLB pool: nr_hugepages=" +
                      std::to_string(total_pages) + " -> " +
                      std::to_string(actual_total) +
                      "; reservation will be kept");
@@ -436,7 +436,7 @@ bool ensure_iommu_identity(const std::string& bdf,
     if (!read_first_line(type_path, original_type, error)) return false;
     if (original_type == "identity") {
         if (logger != nullptr) {
-            logger->info("IOMMU group " + group_path.filename().string() +
+            logger->flow("IOMMU group " + group_path.filename().string() +
                          " is already identity");
         }
         return true;
@@ -468,7 +468,7 @@ bool ensure_iommu_identity(const std::string& bdf,
         return false;
     }
     if (logger != nullptr) {
-        logger->info("IOMMU group " + group_path.filename().string() + ": " +
+        logger->flow("IOMMU group " + group_path.filename().string() + ": " +
                      original_type + " -> identity; identity mode will be kept");
     }
     return true;
@@ -864,7 +864,7 @@ TestStatus HalContext::secondary_bus_reset(bool reset)
     }
 
     if (active_device_.logger != nullptr) {
-        active_device_.logger->info(
+        active_device_.logger->flow(
             "Secondary Bus Reset " + std::string(reset ? "asserted" : "deasserted") +
             ": endpoint=" + active_device_.bdf + " bridge=" + bridge_bdf);
     }
@@ -1055,7 +1055,7 @@ DmaBuffer HalContext::host_mem_alloc(uint64_t size_bytes)
                         message += "; automatic reservation failed: " +
                                    hugepage_reservation_error;
                     }
-                    active_device_.logger->debug(message);
+                    active_device_.logger->flow(message);
                 }
             }
             if (cpu_base != MAP_FAILED) {
@@ -1125,7 +1125,7 @@ DmaBuffer HalContext::host_mem_alloc(uint64_t size_bytes)
         if (active_device_.logger != nullptr) {
             std::ostringstream address;
             address << std::hex << physical_address;
-            active_device_.logger->info(
+            active_device_.logger->flow(
                 "drv=none host DMA buffer: requested_bytes=" +
                 std::to_string(size_bytes) +
                 " mapped_bytes=" + std::to_string(mapped_size) +

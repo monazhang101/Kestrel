@@ -95,9 +95,9 @@ public:
         if (status != PHAL_STATUS_OK) return status;
 
         if (ti.logger != nullptr) {
-            ti.logger->debug("direct HQC DD submit: size=" +
-                             std::to_string(req.size_bytes) +
-                             " sync_flag=" + std::to_string(desc.sync_flag()));
+            ti.logger->flow("DMA descriptor prepared: size_bytes=" +
+                            std::to_string(req.size_bytes) +
+                            " sync_flag=" + std::to_string(desc.sync_flag()));
         }
         return desc.execute(req.timeout_ms);
     }

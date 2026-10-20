@@ -103,8 +103,10 @@ PYBIND11_MODULE(tpu_hal, m)
     py::enum_<LogLevel>(m, "LogLevel")
         .value("ERROR", LogLevel::Error)
         .value("INFO", LogLevel::Info)
-        .value("DEBUG", LogLevel::Debug)
-        .value("TRACE", LogLevel::Trace);
+        .value("FLOW", LogLevel::Flow)
+        .value("REGIO", LogLevel::RegIo)
+        .value("DEBUG", LogLevel::Flow)
+        .value("TRACE", LogLevel::RegIo);
 
     py::class_<DeviceDiscoveryInfo>(m, "DeviceDiscoveryInfo")
         .def(py::init<>())

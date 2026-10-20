@@ -6,6 +6,7 @@ extern "C" {
 #include <phal/phal.h>
 }
 
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -20,6 +21,21 @@ PhalProject phal_project_from_tpu_type(TPUType tpu_type);
 
 struct IhalIO {
     const DeviceContext* device_ctx = nullptr;
+    std::atomic_uint32_t regio_suppression_depth{0};
+};
+
+// Suppress successful per-register PHAL logs within a bounded operation such
+// as polling. Errors remain visible, and the caller emits sampled summaries.
+class ScopedPhalRegIoSuppression {
+private:
+    IhalIO* io_ = nullptr;
+
+public:
+    explicit ScopedPhalRegIoSuppression(phal_ctx_t* ctx);
+    ~ScopedPhalRegIoSuppression();
+
+    ScopedPhalRegIoSuppression(const ScopedPhalRegIoSuppression&) = delete;
+    ScopedPhalRegIoSuppression& operator=(const ScopedPhalRegIoSuppression&) = delete;
 };
 
 class PhalBridge {

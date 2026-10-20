@@ -35,7 +35,7 @@ bool mmio_transfer(const DeviceContext& ctx, uint32_t bar_index,
     auto next_progress = start + MMIO_PROGRESS_INTERVAL;
 
     if (show_progress) {
-        logger->info(std::string("MMIO ") + (writing ? "write" : "read") +
+        logger->flow(std::string("MMIO ") + (writing ? "write" : "read") +
                      " started: size_bytes=" + std::to_string(len));
     }
 
@@ -61,7 +61,7 @@ bool mmio_transfer(const DeviceContext& ctx, uint32_t bar_index,
                         static_cast<double>(len))
                     << "% (" << completed << '/' << len
                     << " bytes), elapsed_s=" << elapsed;
-            logger->info(message.str());
+            logger->flow(message.str());
             next_progress = now + MMIO_PROGRESS_INTERVAL;
         }
     }
@@ -69,7 +69,7 @@ bool mmio_transfer(const DeviceContext& ctx, uint32_t bar_index,
     if (show_progress) {
         const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start).count();
-        logger->info(std::string("MMIO ") + (writing ? "write" : "read") +
+        logger->flow(std::string("MMIO ") + (writing ? "write" : "read") +
                      " progress: 100.0% (" + std::to_string(len) + '/' +
                      std::to_string(len) + " bytes), elapsed_ms=" +
                      std::to_string(elapsed));
@@ -126,6 +126,18 @@ bool prepare_window(phal_ctx_t* phal, Logger* logger,
     requested.target_addr = window.target_addr;
     requested.size = window.size;
 
+    if (logger != nullptr) {
+        std::ostringstream stream;
+        stream << "Aperture configuration"
+               << " bar_index=" << window.bar_index
+               << " aperture_index="
+               << static_cast<uint32_t>(window.aperture_index)
+               << " target_addr=" << hex(window.target_addr)
+               << " window_size=" << hex(window.size)
+               << " data_bar_offset=" << hex(window.bar_offset);
+        logger->flow(stream.str());
+    }
+
     auto status = phal_pcie_aperture_set(phal,
                                          window.bar_index,
                                          window.aperture_index,
@@ -152,17 +164,6 @@ bool prepare_window(phal_ctx_t* phal, Logger* logger,
         return fail(error, "PCIe aperture readback does not match the requested window");
     }
 
-    if (logger != nullptr) {
-        std::ostringstream stream;
-        stream << "Device-memory aperture configured"
-               << " bar_index=" << window.bar_index
-               << " aperture_index="
-               << static_cast<uint32_t>(window.aperture_index)
-               << " target_addr=" << hex(window.target_addr)
-               << " window_size=" << hex(window.size)
-               << " data_bar_offset=" << hex(window.bar_offset);
-        logger->debug(stream.str());
-    }
     return true;
 }
 
@@ -183,7 +184,7 @@ bool transfer(phal_ctx_t* phal, Logger* logger, const DeviceContext& ctx,
                                   output, input, len, logger);
     if (!ok) return fail(error, "device-memory BAR access failed");
     if (logger != nullptr) {
-        logger->debug(std::string(writing ? "D-MEM write" : "D-MEM read") +
+        logger->regio(std::string(writing ? "D-MEM write" : "D-MEM read") +
             " target_addr=" + hex(window.target_addr + offset) +
             " size_bytes=" + std::to_string(len) + " data_preview=" +
             hex_bytes(writing ? input : output, len));
@@ -215,7 +216,7 @@ bool aperture_transfer64(phal_ctx_t* phal, Logger* logger,
     if (!ok) return fail(error, "64-bit device-memory BAR access failed");
     if (!writing) *output = value;
     if (logger != nullptr) {
-        logger->debug(std::string(writing ? "D-MEM write64" : "D-MEM read64") +
+        logger->regio(std::string(writing ? "D-MEM write64" : "D-MEM read64") +
             " target_addr=" + hex(window.target_addr + offset) +
             " value=" + hex(value, 16));
     }
@@ -269,7 +270,7 @@ TestStatus dmem_transfer(HalContext& hal, DeviceContext& ctx, uint64_t addr, voi
         if (ctx.logger) ctx.logger->error("D-MEM access failed: " + error);
         return status;
     }
-    if (ctx.logger) ctx.logger->debug(std::string(input ? "mem_write" : "mem_read") +
+    if (ctx.logger) ctx.logger->regio(std::string(input ? "mem_write" : "mem_read") +
         " region=DMEM target=" + ctx.target_name +
         " address=" + hex(region->base + addr) +
         " size_bytes=" + std::to_string(len) +
@@ -323,7 +324,7 @@ TestStatus dmem_transfer64(HalContext& hal, DeviceContext& ctx, uint64_t addr,
         if (ctx.logger) ctx.logger->error("64-bit D-MEM access failed: " + error);
         return status;
     }
-    if (ctx.logger) ctx.logger->debug(std::string(input ? "mem_write64" : "mem_read64") +
+    if (ctx.logger) ctx.logger->regio(std::string(input ? "mem_write64" : "mem_read64") +
         " region=DMEM target=" + ctx.target_name +
         " address=" + hex(region->base + addr) +
         " value=" + hex(input ? *input : *output, 16));
@@ -370,7 +371,7 @@ TestStatus direct_rcf_transfer(DeviceContext& ctx, MemoryRegion id,
         return PHAL_STATUS_ERROR;
     }
     if (ctx.logger) {
-        ctx.logger->debug(std::string(input ? "mem_write" : "mem_read") +
+        ctx.logger->regio(std::string(input ? "mem_write" : "mem_read") +
             " region=" + region->name + " target=" + ctx.target_name +
             " bar0_offset=" + hex(bar0_offset) +
             " size_bytes=" + std::to_string(len) +

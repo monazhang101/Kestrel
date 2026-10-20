@@ -51,8 +51,11 @@ inline std::string test_status_name(TestStatus status)
 enum class LogLevel {
     Error = 0,
     Info = 1,
-    Debug = 2,
-    Trace = 3,
+    Flow = 2,
+    RegIo = 3,
+    // Backward-compatible names. New code should use Flow and RegIo.
+    Debug = Flow,
+    Trace = RegIo,
 };
 
 class Logger {
@@ -81,8 +84,10 @@ public:
 
     void error(const std::string& message) const { write(LogLevel::Error, "ERROR", message); }
     void info(const std::string& message) const { write(LogLevel::Info, "INFO", message); }
-    void debug(const std::string& message) const { write(LogLevel::Debug, "DEBUG", message); }
-    void trace(const std::string& message) const { write(LogLevel::Trace, "TRACE", message); }
+    void flow(const std::string& message) const { write(LogLevel::Flow, "FLOW", message); }
+    void regio(const std::string& message) const { write(LogLevel::RegIo, "REGIO", message); }
+    void debug(const std::string& message) const { flow(message); }
+    void trace(const std::string& message) const { regio(message); }
 };
 
 struct TestInfo {

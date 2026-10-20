@@ -27,7 +27,7 @@ static void print_usage(const char* program)
               << "  " << program << " <module_test_name> [--target TPU0] -all\n"
               << "\n"
               << "Default target: TPU0\n"
-              << "Global logging: --log-level error|info|debug|trace (default: info)\n"
+              << "Global logging: --log-level error|info|flow|regio (default: info)\n"
               << "Policy directory: --policy-dir <path> (default: beside the executable)\n"
               << "DMA: pcie_dma_data_transfer [--drv isml_drv|none]\n"
               << "     [--direction h2d|d2h|d2i2d|d2s2d]\n"
@@ -41,7 +41,7 @@ static void print_usage(const char* program)
               << "  " << program << " pcie_bar_read32 --target TPU0 --bar-index 0 --offset 0x20f80\n"
               << "  " << program << " pcie_dma_data_transfer\n"
               << "  " << program << " pcie_dma_data_transfer --target TPU0 --drv none --direction h2d --size-bytes 0x10000 --pattern incremental --timeout-ms 30000\n"
-              << "  " << program << " pcie_sequential_aperture_mapping --target TPU0 --log-level debug\n";
+              << "  " << program << " pcie_sequential_aperture_mapping --target TPU0 --log-level regio\n";
 }
 
 static void print_bar_map_status(const std::vector<BarMapping>& bars)
@@ -151,11 +151,11 @@ static LogLevel parse_log_level(const std::string& level)
     if (level == "error") {
         return LogLevel::Error;
     }
-    if (level == "debug") {
-        return LogLevel::Debug;
+    if (level == "flow" || level == "debug") {
+        return LogLevel::Flow;
     }
-    if (level == "trace") {
-        return LogLevel::Trace;
+    if (level == "regio" || level == "trace") {
+        return LogLevel::RegIo;
     }
     return LogLevel::Info;
 }
