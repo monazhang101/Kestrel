@@ -119,9 +119,9 @@ status |= mem_read(fixed, 0, &actual);
   BAR4/aperture0 for IO. A mutex covers aperture configuration and payload IO.
 - AIC SMEM/IMEM/VMEM allocation is not implemented.
 
-Host DMA buffers use `ti.hal->host_mem_alloc(size_bytes)`. The current host-DMA
-path is iHal-only. `drv=isml_diag` is the default, supports up to 128 MiB per
-allocation, and requires the matching `/dev/isml_diag*` device.
+Host DMA buffers use `ti.hal->host_mem_alloc(size_bytes)`. `drv=isml_drv` is
+the default, supports up to 128 MiB per allocation, and requires the matching
+`/dev/isml_drv*` device.
 
 `drv=none` supports driverless DMA transfers up to 2 MiB. Every device in the
 target's IOMMU group must already be unbound; the framework does not bind or
@@ -172,11 +172,11 @@ sudo reboot
 ```
 - Load isml_kmod by:
 ```sh
-sudo insmod ./isml_kmod/build/isml_diag.ko
+sudo insmod ./isml_kmod/build/isml_drv.ko
 ```
 - Check whether isml_diag is ready to run test cases:
 ```sh
-sudo ./build-fpga/isml_diag discover --tree
+sudo ./build-fpga/isml_diag discover
 ```
 
 ## PCIe DMA and aperture cases

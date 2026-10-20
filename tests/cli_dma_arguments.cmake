@@ -15,6 +15,7 @@ function(check_dma size timeout)
 endfunction()
 
 check_dma(4096 1000)
+check_dma(4096 1000 --drv isml_drv)
 check_dma(65536 1000 --drv none --size-bytes 65536)
 check_dma(134217728 30000 --target TPU0 --direction h2d
     --size-bytes 0x08000000 --pattern incremental --timeout-ms 30000)
@@ -33,6 +34,7 @@ endfunction()
 check_invalid("module prefix" dma_data_transfer)
 check_invalid("argument=size" pcie_dma_data_transfer --size 4096)
 check_invalid("invalid drv=other" pcie_dma_data_transfer --drv other)
+check_invalid("invalid drv=isml_diag" pcie_dma_data_transfer --drv isml_diag)
 
 execute_process(COMMAND "${CLI}" pcie_dma_h2d_example --drv none
     WORKING_DIRECTORY "${WORK_DIR}" RESULT_VARIABLE example_result

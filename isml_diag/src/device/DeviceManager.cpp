@@ -6,9 +6,8 @@
 #include <unordered_map>
 #include <utility>
 
-DeviceManager::DeviceManager(HalType hal_type, const std::string& policy_dir)
-    : hal_(hal_type),
-      testcase_policies_(load_testcase_policies(
+DeviceManager::DeviceManager(const std::string& policy_dir)
+    : testcase_policies_(load_testcase_policies(
           (std::filesystem::path(policy_dir) / "testcases").string())),
       policy_(load_product_policy({
           (std::filesystem::path(policy_dir) / "product" / "atlas_ubb.yaml").string(),
@@ -157,11 +156,6 @@ DeviceTree DeviceManager::discover()
     }
 
     return device_tree_;
-}
-
-HalType DeviceManager::get_hal_type() const
-{
-    return hal_.type();
 }
 
 TestTarget* DeviceManager::get_target(const std::string& target_name)

@@ -45,6 +45,7 @@ static_assert(HOST_DMA_MAX_SIZE_BYTES == ISML_DIAG_HOST_DMA_MAX_SIZE_BYTES,
 namespace {
 
 constexpr std::array<uint32_t, 3> PROBE_BAR_INDICES = {0, 2, 4};
+constexpr const char* ISML_DRIVER_DEVICE_PREFIX = "isml_drv";
 constexpr uint64_t HUGEPAGE_2MB_SIZE = 2ull * 1024ull * 1024ull;
 constexpr const char* HUGEPAGE_2MB_FREE_PATH =
     "/sys/kernel/mm/hugepages/hugepages-2048kB/free_hugepages";
@@ -120,22 +121,6 @@ BarMapping make_bar_mapping(uint32_t bar_index)
     bar.expected_size = expected_bar_size(bar_index);
     bar.layout = bar_layout(bar_index);
     return bar;
-}
-
-uint64_t fake_bar_device_base_for_bdf(const std::string& bdf, uint32_t bar_index)
-{
-    // Dry-run BAR device-visible base. Real backends should discover this from:
-    //   pHal: /sys/bus/pci/devices/<bdf>/resourceN start address or VFIO region info.
-    //   iHal: vendor HAL device BAR metadata, for example dev->bars[N].baseAddr.
-    // This is the address a device DMA descriptor should use, not the CPU
-    // virtual pointer returned by mmap/VFIO mmap.
-    uint64_t device_base = 0;
-    if (bdf == "0000:19:00.0" || bdf == "0000:65:00.0") {
-        device_base = 0x80000000;
-    } else if (bdf == "0000:ca:00.0") {
-        device_base = 0x90000000;
-    }
-    return device_base == 0 ? 0 : device_base + static_cast<uint64_t>(bar_index) * 0x100000;
 }
 
 std::string setpci_enable_command(const std::string& bdf)
@@ -281,7 +266,7 @@ bool read_resource_info(const std::string& bdf,
     return size_bytes != 0;
 }
 
-// Open the isml_diag character device bound to bdf. This function only finds
+// Open the isml_drv character device bound to bdf. This function only finds
 // and opens the matching device node; DMA allocation and mmap are performed by
 // HalContext::host_mem_alloc() after it returns the file descriptor.
 int open_device(const std::string& bdf)
@@ -301,7 +286,7 @@ int open_device(const std::string& bdf)
             break;
         }
         const auto name = entry.path().filename().string();
-        if (name.rfind("isml_diag", 0) != 0) {
+        if (name.rfind(ISML_DRIVER_DEVICE_PREFIX, 0) != 0) {
             continue;
         }
 
@@ -560,17 +545,6 @@ bool resolve_contiguous_physical(void* mapping,
 
 }
 
-std::string to_string(HalType type)
-{
-    switch (type) {
-    case HalType::pHal:
-        return "pHal";
-    case HalType::iHal:
-        return "iHal";
-    }
-    return "unknown";
-}
-
 DmaBuffer::DmaBuffer(HalContext* alloc_ctx,
                      void* cpu_base,
                      uint64_t size_bytes,
@@ -656,10 +630,7 @@ void DmaBuffer::release()
     alloc_ctx_->free_host_dma_buffer(*this);
 }
 
-HalContext::HalContext(HalType type)
-    : type_(type)
-{
-}
+HalContext::HalContext() = default;
 
 void HalContext::bind_device(const DeviceContext& ctx, Logger* logger)
 {
@@ -676,14 +647,14 @@ void HalContext::bind_device(const DeviceContext& ctx, Logger* logger)
     }
     active_device_.memory = active_memory_;
     active_device_.memory_regions = active_memory_regions_;
-    host_dma_mode_ = HostDmaMode::IsmlDiag;
+    host_dma_mode_ = HostDmaMode::IsmlDrv;
     device_bound_ = true;
 }
 
 TestStatus HalContext::configure_host_dma(const std::string& driver)
 {
-    if (driver == "isml_diag") {
-        host_dma_mode_ = HostDmaMode::IsmlDiag;
+    if (driver == "isml_drv") {
+        host_dma_mode_ = HostDmaMode::IsmlDrv;
         return PHAL_STATUS_OK;
     }
     if (driver == "none") {
@@ -692,7 +663,7 @@ TestStatus HalContext::configure_host_dma(const std::string& driver)
     }
     if (active_device_.logger != nullptr) {
         active_device_.logger->error(
-            "invalid drv=" + driver + "; expected isml_diag or none");
+            "invalid drv=" + driver + "; expected isml_drv or none");
     }
     return PHAL_STATUS_INVALID;
 }
@@ -727,6 +698,7 @@ HalContext::TestcaseScope HalContext::begin_testcase(std::string* error)
         }
         return {};
     }
+
     return TestcaseScope(this);
 }
 
@@ -807,11 +779,6 @@ TestStatus HalContext::secondary_bus_reset(bool reset)
         return fail(PHAL_STATUS_INVALID,
                     "secondary bus reset requires a bound PCI device");
     }
-    if (type_ != HalType::iHal) {
-        return fail(PHAL_STATUS_UNIMPLEMENTED,
-                    "secondary bus reset requires the Linux iHal backend");
-    }
-
     // Resolve the selected TPU endpoint to its immediate upstream bridge.
     std::filesystem::path config_path;
     std::string bridge_bdf;
@@ -906,137 +873,97 @@ TestStatus HalContext::secondary_bus_reset(bool reset)
 
 std::vector<DeviceContext> HalContext::scan_pci_devices() const
 {
-    if (type_ == HalType::iHal) {
-        std::vector<DeviceContext> devices;
-        const std::filesystem::path sysfs_devices("/sys/bus/pci/devices");
+    std::vector<DeviceContext> devices;
+    const std::filesystem::path sysfs_devices("/sys/bus/pci/devices");
 
-        std::error_code ec;
-        for (const auto& entry : std::filesystem::directory_iterator(sysfs_devices, ec)) {
-            if (ec) {
-                break;
-            }
-
-            uint16_t vendor_id = 0;
-            uint16_t device_id = 0;
-            if (!read_hex_u16(entry.path() / "vendor", vendor_id) ||
-                !read_hex_u16(entry.path() / "device", device_id)) {
-                continue;
-            }
-
-            DeviceContext ctx;
-            ctx.bdf = entry.path().filename().string();
-            ctx.vendor_id = vendor_id;
-            ctx.device_id = device_id;
-            devices.push_back(ctx);
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::directory_iterator(sysfs_devices, ec)) {
+        if (ec) {
+            break;
         }
-        return devices;
+
+        uint16_t vendor_id = 0;
+        uint16_t device_id = 0;
+        if (!read_hex_u16(entry.path() / "vendor", vendor_id) ||
+            !read_hex_u16(entry.path() / "device", device_id)) {
+            continue;
+        }
+
+        DeviceContext ctx;
+        ctx.bdf = entry.path().filename().string();
+        ctx.vendor_id = vendor_id;
+        ctx.device_id = device_id;
+        devices.push_back(ctx);
     }
-
-    // The pHal backend uses synthetic inventory for local dry-run testing until
-    // platform discovery is connected to the vendor API.
-    DeviceContext tpu0;
-    tpu0.bdf = "0000:19:00.0";
-    tpu0.vendor_id = 0x16c3;
-    tpu0.device_id = 0xabcd;
-
-    DeviceContext tpu1;
-    tpu1.bdf = "0000:ca:00.0";
-    tpu1.vendor_id = 0x16c3;
-    tpu1.device_id = 0xabcd;
-
-    DeviceContext unrelated_device;
-    unrelated_device.bdf = "0000:17:00.0";
-    unrelated_device.vendor_id = 0xffff;
-    unrelated_device.device_id = 0xffff;
-
-    return {tpu0, tpu1, unrelated_device};
+    return devices;
 }
 
 DeviceContext HalContext::mmap_bar_space(DeviceContext ctx)
 {
     ctx.bar_mappings.clear();
 
-    if (type_ == HalType::iHal) {
-        std::string command_error;
-        if (!ensure_pci_mmio_enabled(ctx.bdf, command_error)) {
-            for (auto bar_index : PROBE_BAR_INDICES) {
-                auto bar = make_bar_mapping(bar_index);
-                bar.error = command_error;
-                ctx.bar_mappings.push_back(std::move(bar));
-            }
-            return ctx;
-        }
-
+    std::string command_error;
+    if (!ensure_pci_mmio_enabled(ctx.bdf, command_error)) {
         for (auto bar_index : PROBE_BAR_INDICES) {
             auto bar = make_bar_mapping(bar_index);
-
-            uint64_t bar_start = 0;
-            uint64_t bar_size = 0;
-            if (!read_resource_info(ctx.bdf, bar_index, bar_start, bar_size)) {
-                bar.error = "resource" + std::to_string(bar_index) + " is not present";
-                ctx.bar_mappings.push_back(std::move(bar));
-                continue;
-            }
-
-            auto resource = "/sys/bus/pci/devices/" + ctx.bdf + "/resource" +
-                            std::to_string(bar_index);
-            int fd = open(resource.c_str(), O_RDWR | O_SYNC);
-            int prot = PROT_READ | PROT_WRITE;
-            if (fd < 0) {
-                fd = open(resource.c_str(), O_RDONLY | O_SYNC);
-                prot = PROT_READ;
-            }
-            if (fd < 0) {
-                bar.device_base = bar_start;
-                bar.resource_size = bar_size;
-                bar.error = "open resource" + std::to_string(bar_index) +
-                            " failed: " + std::strerror(errno);
-                ctx.bar_mappings.push_back(std::move(bar));
-                continue;
-            }
-
-            const uint64_t map_size = bar_size;
-            void* mapped = mmap(nullptr,
-                                static_cast<size_t>(map_size),
-                                prot,
-                                MAP_SHARED,
-                                fd,
-                                0);
-            auto mmap_errno = errno;
-            close(fd);
-
-            bar.device_base = bar_start;
-            bar.resource_size = bar_size;
-            bar.mapped_size = map_size;
-            if (mapped == MAP_FAILED) {
-                bar.error = "mmap resource" + std::to_string(bar_index) +
-                            " failed: " + std::strerror(mmap_errno);
-                ctx.bar_mappings.push_back(std::move(bar));
-                continue;
-            }
-
-            bar.mapped_base = mapped;
-            bar.mapped = true;
-            bar.writable = (prot & PROT_WRITE) != 0;
-            mapped_bar_mappings_.push_back({mapped, map_size});
-
+            bar.error = command_error;
             ctx.bar_mappings.push_back(std::move(bar));
         }
         return ctx;
     }
 
-    // Synthetic mappings keep local tests independent of physical hardware.
     for (auto bar_index : PROBE_BAR_INDICES) {
-        mapped_bar_storage_.push_back(
-            std::make_unique<std::vector<uint8_t>>(DRYRUN_BAR_WINDOW_SIZE, 0));
-
         auto bar = make_bar_mapping(bar_index);
-        bar.mapped_base = mapped_bar_storage_.back()->data();
-        bar.device_base = fake_bar_device_base_for_bdf(ctx.bdf, bar_index);
-        bar.resource_size = bar.expected_size;
-        bar.mapped_size = DRYRUN_BAR_WINDOW_SIZE;
+
+        uint64_t bar_start = 0;
+        uint64_t bar_size = 0;
+        if (!read_resource_info(ctx.bdf, bar_index, bar_start, bar_size)) {
+            bar.error = "resource" + std::to_string(bar_index) + " is not present";
+            ctx.bar_mappings.push_back(std::move(bar));
+            continue;
+        }
+
+        auto resource = "/sys/bus/pci/devices/" + ctx.bdf + "/resource" +
+                        std::to_string(bar_index);
+        int fd = open(resource.c_str(), O_RDWR | O_SYNC);
+        int prot = PROT_READ | PROT_WRITE;
+        if (fd < 0) {
+            fd = open(resource.c_str(), O_RDONLY | O_SYNC);
+            prot = PROT_READ;
+        }
+        if (fd < 0) {
+            bar.device_base = bar_start;
+            bar.resource_size = bar_size;
+            bar.error = "open resource" + std::to_string(bar_index) +
+                        " failed: " + std::strerror(errno);
+            ctx.bar_mappings.push_back(std::move(bar));
+            continue;
+        }
+
+        const uint64_t map_size = bar_size;
+        void* mapped = mmap(nullptr,
+                            static_cast<size_t>(map_size),
+                            prot,
+                            MAP_SHARED,
+                            fd,
+                            0);
+        auto mmap_errno = errno;
+        close(fd);
+
+        bar.device_base = bar_start;
+        bar.resource_size = bar_size;
+        bar.mapped_size = map_size;
+        if (mapped == MAP_FAILED) {
+            bar.error = "mmap resource" + std::to_string(bar_index) +
+                        " failed: " + std::strerror(mmap_errno);
+            ctx.bar_mappings.push_back(std::move(bar));
+            continue;
+        }
+
+        bar.mapped_base = mapped;
         bar.mapped = true;
-        bar.writable = true;
+        bar.writable = (prot & PROT_WRITE) != 0;
+        mapped_bar_mappings_.push_back({mapped, map_size});
 
         ctx.bar_mappings.push_back(std::move(bar));
     }
@@ -1051,223 +978,216 @@ DmaBuffer HalContext::host_mem_alloc(uint64_t size_bytes)
         return {};
     }
 
-    if (type_ == HalType::iHal) {
-        if (!device_bound_) return {};
+    if (!device_bound_) return {};
 
-        if (host_dma_mode_ == HostDmaMode::None) {
-            if (size_bytes > HOST_DMA_NO_DRIVER_MAX_SIZE_BYTES) {
-                if (active_device_.logger != nullptr) {
-                    active_device_.logger->error(
-                        "drv=none host DMA size exceeds 2 MiB: " +
-                        std::to_string(size_bytes));
-                }
-                return {};
-            }
-
-            std::string error;
-            if (!ensure_iommu_identity(active_device_.bdf,
-                                       active_device_.logger, error)) {
-                if (active_device_.logger != nullptr) {
-                    active_device_.logger->error(error);
-                }
-                return {};
-            }
-
-            const long page_size_value = sysconf(_SC_PAGESIZE);
-            if (page_size_value <= 0) {
-                if (active_device_.logger != nullptr) {
-                    active_device_.logger->error("read system page size failed");
-                }
-                return {};
-            }
-            const uint64_t page_size = static_cast<uint64_t>(page_size_value);
-            if (page_size > HUGEPAGE_2MB_SIZE ||
-                size_bytes > std::numeric_limits<uint64_t>::max() - (page_size - 1)) {
-                if (active_device_.logger != nullptr) {
-                    active_device_.logger->error("unsupported system page size for drv=none");
-                }
-                return {};
-            }
-
-            void* cpu_base = MAP_FAILED;
-            uint64_t mapped_size = 0;
-            int hugepage_errno = 0;
-            std::string hugepage_reservation_error;
-            bool used_hugepage = false;
-            if (size_bytes > page_size) {
-                mapped_size = HUGEPAGE_2MB_SIZE;
-                cpu_base = mmap(nullptr,
-                                static_cast<size_t>(mapped_size),
-                                PROT_READ | PROT_WRITE,
-                                MAP_PRIVATE | MAP_ANONYMOUS |
-                                    MAP_HUGETLB | MAP_HUGE_2MB,
-                                -1,
-                                0);
-                if (cpu_base == MAP_FAILED) {
-                    hugepage_errno = errno;
-                    if (hugepage_errno == ENOMEM &&
-                        ensure_free_2mb_hugepage(active_device_.logger,
-                                                 hugepage_reservation_error)) {
-                        cpu_base = mmap(nullptr,
-                                        static_cast<size_t>(mapped_size),
-                                        PROT_READ | PROT_WRITE,
-                                        MAP_PRIVATE | MAP_ANONYMOUS |
-                                            MAP_HUGETLB | MAP_HUGE_2MB,
-                                        -1,
-                                        0);
-                        if (cpu_base == MAP_FAILED) {
-                            hugepage_errno = errno;
-                        }
-                    }
-                    if (cpu_base == MAP_FAILED && active_device_.logger != nullptr) {
-                        std::string message =
-                            "2 MiB HugeTLB allocation failed; trying a " +
-                            std::to_string(size_bytes) +
-                            "-byte anonymous mapping: " +
-                            std::strerror(hugepage_errno);
-                        if (!hugepage_reservation_error.empty()) {
-                            message += "; automatic reservation failed: " +
-                                       hugepage_reservation_error;
-                        }
-                        active_device_.logger->debug(message);
-                    }
-                }
-                if (cpu_base != MAP_FAILED) {
-                    used_hugepage = true;
-                }
-            }
-
-            if (cpu_base == MAP_FAILED) {
-                mapped_size = (size_bytes + page_size - 1) & ~(page_size - 1);
-                cpu_base = mmap(nullptr,
-                                static_cast<size_t>(mapped_size),
-                                PROT_READ | PROT_WRITE,
-                                MAP_PRIVATE | MAP_ANONYMOUS,
-                                -1,
-                                0);
-            }
-            if (cpu_base == MAP_FAILED) {
-                const auto map_errno = errno;
-                if (active_device_.logger != nullptr) {
-                    std::string message = "allocate drv=none host memory failed: " +
-                                          std::string(std::strerror(map_errno));
-                    if (hugepage_errno != 0) {
-                        message += "; 2 MiB HugeTLB failed: ";
-                        message += std::strerror(hugepage_errno);
-                    }
-                    active_device_.logger->error(message);
-                }
-                return {};
-            }
-
-            auto* bytes = static_cast<volatile uint8_t*>(cpu_base);
-            for (uint64_t offset = 0; offset < mapped_size; offset += page_size) {
-                bytes[offset] = 0;
-            }
-            if (mlock(cpu_base, static_cast<size_t>(mapped_size)) != 0) {
-                const auto lock_errno = errno;
-                munmap(cpu_base, static_cast<size_t>(mapped_size));
-                if (active_device_.logger != nullptr) {
-                    active_device_.logger->error(
-                        "mlock drv=none host memory failed: " +
-                        std::string(std::strerror(lock_errno)));
-                }
-                return {};
-            }
-
-            uint64_t physical_address = 0;
-            if (!resolve_contiguous_physical(cpu_base, mapped_size, page_size,
-                                             physical_address, error) ||
-                physical_address % 32 != 0) {
-                munlock(cpu_base, static_cast<size_t>(mapped_size));
-                munmap(cpu_base, static_cast<size_t>(mapped_size));
-                if (active_device_.logger != nullptr) {
-                    if (error.empty()) error = "host DMA physical address is not 32-byte aligned";
-                    if (hugepage_errno != 0 && !used_hugepage) {
-                        error += "; 2 MiB HugeTLB allocation also failed: ";
-                        error += std::strerror(hugepage_errno);
-                        if (!hugepage_reservation_error.empty()) {
-                            error += "; automatic reservation failed: ";
-                            error += hugepage_reservation_error;
-                        }
-                    }
-                    active_device_.logger->error(error);
-                }
-                return {};
-            }
-
-            if (active_device_.logger != nullptr) {
-                std::ostringstream address;
-                address << std::hex << physical_address;
-                active_device_.logger->info(
-                    "drv=none host DMA buffer: requested_bytes=" +
-                    std::to_string(size_bytes) +
-                    " mapped_bytes=" + std::to_string(mapped_size) +
-                    " allocator=" + (used_hugepage ? "hugetlb-2m" : "anonymous") +
-                    " physical_address=0x" + address.str());
-            }
-            return DmaBuffer(this,
-                             cpu_base,
-                             size_bytes,
-                             physical_address,
-                             0,
-                             -1,
-                             mapped_size,
-                             true,
-                             "physical");
-        }
-
-        int fd = open_device(active_device_.bdf);
-        if (fd < 0) {
+    if (host_dma_mode_ == HostDmaMode::None) {
+        if (size_bytes > HOST_DMA_NO_DRIVER_MAX_SIZE_BYTES) {
             if (active_device_.logger != nullptr) {
                 active_device_.logger->error(
-                    "drv=isml_diag requires a matching /dev/isml_diag device for " +
-                    active_device_.bdf);
+                    "drv=none host DMA size exceeds 2 MiB: " +
+                    std::to_string(size_bytes));
             }
             return {};
         }
 
-        isml_diag_dma_alloc request = {};
-        request.size = size_bytes;
-        if (ioctl(fd, ISML_DIAG_IOCTL_DMA_ALLOC, &request) != 0) {
-            const auto ioctl_errno = errno;
-            close(fd);
+        std::string error;
+        if (!ensure_iommu_identity(active_device_.bdf,
+                                   active_device_.logger, error)) {
             if (active_device_.logger != nullptr) {
-                active_device_.logger->error(
-                    "isml_diag DMA allocation failed: " +
-                    std::string(std::strerror(ioctl_errno)));
+                active_device_.logger->error(error);
             }
             return {};
         }
 
-        void* cpu_base = mmap(nullptr,
-                              static_cast<size_t>(request.size),
-                              PROT_READ | PROT_WRITE,
-                              MAP_SHARED,
-                              fd,
-                              static_cast<off_t>(request.mmap_offset));
+        const long page_size_value = sysconf(_SC_PAGESIZE);
+        if (page_size_value <= 0) {
+            if (active_device_.logger != nullptr) {
+                active_device_.logger->error("read system page size failed");
+            }
+            return {};
+        }
+        const uint64_t page_size = static_cast<uint64_t>(page_size_value);
+        if (page_size > HUGEPAGE_2MB_SIZE ||
+            size_bytes > std::numeric_limits<uint64_t>::max() - (page_size - 1)) {
+            if (active_device_.logger != nullptr) {
+                active_device_.logger->error("unsupported system page size for drv=none");
+            }
+            return {};
+        }
+
+        void* cpu_base = MAP_FAILED;
+        uint64_t mapped_size = 0;
+        int hugepage_errno = 0;
+        std::string hugepage_reservation_error;
+        bool used_hugepage = false;
+        if (size_bytes > page_size) {
+            mapped_size = HUGEPAGE_2MB_SIZE;
+            cpu_base = mmap(nullptr,
+                            static_cast<size_t>(mapped_size),
+                            PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS |
+                                MAP_HUGETLB | MAP_HUGE_2MB,
+                            -1,
+                            0);
+            if (cpu_base == MAP_FAILED) {
+                hugepage_errno = errno;
+                if (hugepage_errno == ENOMEM &&
+                    ensure_free_2mb_hugepage(active_device_.logger,
+                                             hugepage_reservation_error)) {
+                    cpu_base = mmap(nullptr,
+                                    static_cast<size_t>(mapped_size),
+                                    PROT_READ | PROT_WRITE,
+                                    MAP_PRIVATE | MAP_ANONYMOUS |
+                                        MAP_HUGETLB | MAP_HUGE_2MB,
+                                    -1,
+                                    0);
+                    if (cpu_base == MAP_FAILED) {
+                        hugepage_errno = errno;
+                    }
+                }
+                if (cpu_base == MAP_FAILED && active_device_.logger != nullptr) {
+                    std::string message =
+                        "2 MiB HugeTLB allocation failed; trying a " +
+                        std::to_string(size_bytes) +
+                        "-byte anonymous mapping: " +
+                        std::strerror(hugepage_errno);
+                    if (!hugepage_reservation_error.empty()) {
+                        message += "; automatic reservation failed: " +
+                                   hugepage_reservation_error;
+                    }
+                    active_device_.logger->debug(message);
+                }
+            }
+            if (cpu_base != MAP_FAILED) {
+                used_hugepage = true;
+            }
+        }
+
         if (cpu_base == MAP_FAILED) {
-            isml_diag_dma_free release = {request.handle};
-            ioctl(fd, ISML_DIAG_IOCTL_DMA_FREE, &release);
-            close(fd);
+            mapped_size = (size_bytes + page_size - 1) & ~(page_size - 1);
+            cpu_base = mmap(nullptr,
+                            static_cast<size_t>(mapped_size),
+                            PROT_READ | PROT_WRITE,
+                            MAP_PRIVATE | MAP_ANONYMOUS,
+                            -1,
+                            0);
+        }
+        if (cpu_base == MAP_FAILED) {
+            const auto map_errno = errno;
+            if (active_device_.logger != nullptr) {
+                std::string message = "allocate drv=none host memory failed: " +
+                                      std::string(std::strerror(map_errno));
+                if (hugepage_errno != 0) {
+                    message += "; 2 MiB HugeTLB failed: ";
+                    message += std::strerror(hugepage_errno);
+                }
+                active_device_.logger->error(message);
+            }
             return {};
         }
 
+        auto* bytes = static_cast<volatile uint8_t*>(cpu_base);
+        for (uint64_t offset = 0; offset < mapped_size; offset += page_size) {
+            bytes[offset] = 0;
+        }
+        if (mlock(cpu_base, static_cast<size_t>(mapped_size)) != 0) {
+            const auto lock_errno = errno;
+            munmap(cpu_base, static_cast<size_t>(mapped_size));
+            if (active_device_.logger != nullptr) {
+                active_device_.logger->error(
+                    "mlock drv=none host memory failed: " +
+                    std::string(std::strerror(lock_errno)));
+            }
+            return {};
+        }
+
+        uint64_t physical_address = 0;
+        if (!resolve_contiguous_physical(cpu_base, mapped_size, page_size,
+                                         physical_address, error) ||
+            physical_address % 32 != 0) {
+            munlock(cpu_base, static_cast<size_t>(mapped_size));
+            munmap(cpu_base, static_cast<size_t>(mapped_size));
+            if (active_device_.logger != nullptr) {
+                if (error.empty()) error = "host DMA physical address is not 32-byte aligned";
+                if (hugepage_errno != 0 && !used_hugepage) {
+                    error += "; 2 MiB HugeTLB allocation also failed: ";
+                    error += std::strerror(hugepage_errno);
+                    if (!hugepage_reservation_error.empty()) {
+                        error += "; automatic reservation failed: ";
+                        error += hugepage_reservation_error;
+                    }
+                }
+                active_device_.logger->error(error);
+            }
+            return {};
+        }
+
+        if (active_device_.logger != nullptr) {
+            std::ostringstream address;
+            address << std::hex << physical_address;
+            active_device_.logger->info(
+                "drv=none host DMA buffer: requested_bytes=" +
+                std::to_string(size_bytes) +
+                " mapped_bytes=" + std::to_string(mapped_size) +
+                " allocator=" + (used_hugepage ? "hugetlb-2m" : "anonymous") +
+                " physical_address=0x" + address.str());
+        }
         return DmaBuffer(this,
                          cpu_base,
-                         request.size,
-                         request.device_addr,
-                         request.handle,
-                         fd,
-                         request.size,
-                         false,
-                         "dma_addr");
+                         size_bytes,
+                         physical_address,
+                         0,
+                         -1,
+                         mapped_size,
+                         true,
+                         "physical");
     }
 
-    // pHal host-DMA allocation must come from the ProtonHal VFIO driver so its
-    // device address is valid in that driver's IOMMU domain. That integration
-    // is intentionally unimplemented; do not fabricate a DMA-capable address.
-    return {};
+    int fd = open_device(active_device_.bdf);
+    if (fd < 0) {
+        if (active_device_.logger != nullptr) {
+            active_device_.logger->error(
+                "drv=isml_drv requires a matching /dev/isml_drv device for " +
+                active_device_.bdf);
+        }
+        return {};
+    }
+
+    isml_diag_dma_alloc request = {};
+    request.size = size_bytes;
+    if (ioctl(fd, ISML_DIAG_IOCTL_DMA_ALLOC, &request) != 0) {
+        const auto ioctl_errno = errno;
+        close(fd);
+        if (active_device_.logger != nullptr) {
+            active_device_.logger->error(
+                "isml_drv DMA allocation failed: " +
+                std::string(std::strerror(ioctl_errno)));
+        }
+        return {};
+    }
+
+    void* cpu_base = mmap(nullptr,
+                          static_cast<size_t>(request.size),
+                          PROT_READ | PROT_WRITE,
+                          MAP_SHARED,
+                          fd,
+                          static_cast<off_t>(request.mmap_offset));
+    if (cpu_base == MAP_FAILED) {
+        isml_diag_dma_free release = {request.handle};
+        ioctl(fd, ISML_DIAG_IOCTL_DMA_FREE, &release);
+        close(fd);
+        return {};
+    }
+
+    return DmaBuffer(this,
+                     cpu_base,
+                     request.size,
+                     request.device_addr,
+                     request.handle,
+                     fd,
+                     request.size,
+                     false,
+                     "dma_addr");
 }
 
 void HalContext::free_host_dma_buffer(DmaBuffer& buffer)
@@ -1300,15 +1220,12 @@ void HalContext::clear_mappings()
 {
     phal_context_ = {};
     aperture_phal_context_ = {};
-    if (type_ == HalType::iHal) {
-        for (const auto& mapping : mapped_bar_mappings_) {
-            if (mapping.first != nullptr && mapping.second != 0) {
-                munmap(mapping.first, static_cast<size_t>(mapping.second));
-            }
+    for (const auto& mapping : mapped_bar_mappings_) {
+        if (mapping.first != nullptr && mapping.second != 0) {
+            munmap(mapping.first, static_cast<size_t>(mapping.second));
         }
-        mapped_bar_mappings_.clear();
     }
-    mapped_bar_storage_.clear();
+    mapped_bar_mappings_.clear();
 }
 
 void HalContext::clear()
@@ -1317,6 +1234,6 @@ void HalContext::clear()
     active_device_ = {};
     active_memory_regions_ = {};
     active_memory_ = std::make_shared<DeviceMemoryState>();
-    host_dma_mode_ = HostDmaMode::IsmlDiag;
+    host_dma_mode_ = HostDmaMode::IsmlDrv;
     device_bound_ = false;
 }

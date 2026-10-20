@@ -22,23 +22,22 @@ static int run_test(DeviceManager& device_manager,
 static void print_usage(const char* program)
 {
     std::cout << "Usage:\n"
-              << "  " << program << " discover [--backend phal|ihal|dryrun] [--tree]\n"
+              << "  " << program << " discover\n"
               << "  " << program << " <module_test_name> [--target TPU0] [--<argument> <value>]...\n"
               << "  " << program << " <module_test_name> [--target TPU0] -all\n"
               << "\n"
-              << "Default target: TPU0; default backend: ihal\n"
+              << "Default target: TPU0\n"
               << "Global logging: --log-level error|info|debug|trace (default: info)\n"
               << "Policy directory: --policy-dir <path> (default: beside the executable)\n"
-              << "DMA: pcie_dma_data_transfer [--drv isml_diag|none]\n"
+              << "DMA: pcie_dma_data_transfer [--drv isml_drv|none]\n"
               << "     [--direction h2d|d2h|d2i2d|d2s2d]\n"
               << "     [--size-bytes <bytes>] [--pattern zero|incremental|random] [--timeout-ms <ms>]\n"
-              << "     Defaults: drv=isml_diag, h2d, 4096 bytes (4 KiB), random, 1000 ms.\n"
+              << "     Defaults: drv=isml_drv, h2d, 4096 bytes (4 KiB), random, 1000 ms.\n"
               << "     H2D: one DMA transfer, then one MMIO readback for verification.\n"
               << "     Use -all to run every parameter line from the testcase policy.\n"
               << "\n"
               << "Examples:\n"
-              << "  " << program << " discover --tree\n"
-              << "  " << program << " discover --backend phal --tree\n"
+              << "  " << program << " discover\n"
               << "  " << program << " pcie_bar_read32 --target TPU0 --bar-index 0 --offset 0x20f80\n"
               << "  " << program << " pcie_dma_data_transfer\n"
               << "  " << program << " pcie_dma_data_transfer --target TPU0 --drv none --direction h2d --size-bytes 0x10000 --pattern incremental --timeout-ms 30000\n"
@@ -106,16 +105,6 @@ static std::string get_option(int argc,
     return default_value;
 }
 
-static bool has_flag(int argc, char** argv, const std::string& name)
-{
-    for (int i = 2; i < argc; ++i) {
-        if (std::string(argv[i]) == name) {
-            return true;
-        }
-    }
-    return false;
-}
-
 static bool parse_test_args(int argc,
                             char** argv,
                             TestArgs& args,
@@ -128,8 +117,8 @@ static bool parse_test_args(int argc,
             run_all = true;
             continue;
         }
-        if (option == "--target" || option == "--backend" ||
-            option == "--log-level" || option == "--policy-dir") {
+        if (option == "--target" || option == "--log-level" ||
+            option == "--policy-dir") {
             if (i + 1 >= argc) {
                 error = option + " requires a value";
                 return false;
@@ -155,20 +144,6 @@ static bool parse_test_args(int argc,
         args[argument_name] = argv[++i];
     }
     return true;
-}
-
-static HalType parse_backend(const std::string& backend)
-{
-    if (backend.empty()) {
-        return HalType::iHal;
-    }
-    if (backend == "ihal" || backend == "iHal") {
-        return HalType::iHal;
-    }
-    if (backend == "dryrun" || backend == "phal" || backend == "pHal") {
-        return HalType::pHal;
-    }
-    return HalType::iHal;
 }
 
 static LogLevel parse_log_level(const std::string& level)
@@ -204,10 +179,15 @@ int main(int argc, char** argv)
         return argc < 2 ? 1 : 0;
     }
 
+    const std::string command = argv[1];
+    if (command == "discover" && argc != 2) {
+        std::cerr << "discover takes no arguments" << std::endl;
+        return 1;
+    }
+
     const auto policy_dir = get_option(
         argc, argv, "--policy-dir", default_policy_dir(argv[0]));
-    DeviceManager device_manager(
-        parse_backend(get_option(argc, argv, "--backend", "iHal")), policy_dir);
+    DeviceManager device_manager(policy_dir);
 
     device_manager.set_log_level(
         parse_log_level(get_option(argc, argv, "--log-level", "info")));
@@ -215,18 +195,11 @@ int main(int argc, char** argv)
     // Discovery scans PCI devices, applies VID/DID policy, maps BAR space,
     // creates TPU targets, and registers their child modules.
     DeviceTree tree = device_manager.discover();
-    // Pass --backend phal to discover through the pHal/dry-run backend.
-
-    const std::string command = argv[1];
-
     if (command == "discover") {
         print_discovery_summary(tree);
-
-        if (has_flag(argc, argv, "--tree")) {
-            std::cout << std::endl;
-            std::cout << "=== Device Tree ===" << std::endl;
-            device_manager.print_tree();
-        }
+        std::cout << std::endl;
+        std::cout << "=== Device Tree ===" << std::endl;
+        device_manager.print_tree();
         return 0;
     }
 

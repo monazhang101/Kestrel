@@ -1,5 +1,5 @@
-obj-m += isml_diag.o
-isml_diag-y := isml_diag_main.o
+obj-m += isml_drv.o
+isml_drv-y := isml_diag_main.o
 
 ccflags-y += -I$(src)
 

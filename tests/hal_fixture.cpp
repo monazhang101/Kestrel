@@ -1,17 +1,26 @@
 #include "diag/core/HalContext.h"
 
+#include <unordered_map>
+
 extern "C" {
 #include <atlas_csr_sw/src/h/TOP.h>
 }
 
+namespace {
+
+using TestBarStorage = std::vector<std::unique_ptr<std::vector<uint8_t>>>;
+std::unordered_map<HalContext*, TestBarStorage> test_bar_storage;
+
+}
+
 // Test-only replacement for the Linux mapping owner. Real ioctls and DMA are
 // deliberately unavailable. The actual PHAL bridge and IO code are compiled.
-HalContext::HalContext(HalType type) : type_(type) {}
+HalContext::HalContext() = default;
 void HalContext::clear_mappings()
 {
     phal_context_ = {};
     aperture_phal_context_ = {};
-    mapped_bar_storage_.clear();
+    test_bar_storage.erase(this);
 }
 void HalContext::clear()
 {
@@ -21,8 +30,6 @@ void HalContext::clear()
     active_memory_ = std::make_shared<DeviceMemoryState>();
     device_bound_ = false;
 }
-std::string to_string(HalType type) { return type == HalType::iHal ? "iHal" : "pHal"; }
-
 void HalContext::bind_device(const DeviceContext& ctx, Logger* logger)
 {
     phal_context_ = {};
@@ -35,14 +42,14 @@ void HalContext::bind_device(const DeviceContext& ctx, Logger* logger)
         : std::make_shared<DeviceMemoryState>();
     active_device_.memory = active_memory_;
     active_device_.memory_regions = active_memory_regions_;
-    host_dma_mode_ = HostDmaMode::IsmlDiag;
+    host_dma_mode_ = HostDmaMode::IsmlDrv;
     device_bound_ = true;
 }
 
 TestStatus HalContext::configure_host_dma(const std::string& driver)
 {
-    if (driver == "isml_diag") {
-        host_dma_mode_ = HostDmaMode::IsmlDiag;
+    if (driver == "isml_drv") {
+        host_dma_mode_ = HostDmaMode::IsmlDrv;
         return PHAL_STATUS_OK;
     }
     if (driver == "none") {
@@ -51,7 +58,7 @@ TestStatus HalContext::configure_host_dma(const std::string& driver)
     }
     if (active_device_.logger != nullptr) {
         active_device_.logger->error(
-            "invalid drv=" + driver + "; expected isml_diag or none");
+            "invalid drv=" + driver + "; expected isml_drv or none");
     }
     return PHAL_STATUS_INVALID;
 }
@@ -158,13 +165,16 @@ std::vector<DeviceContext> HalContext::scan_pci_devices() const
 DeviceContext HalContext::mmap_bar_space(DeviceContext ctx)
 {
     ctx.bar_mappings.clear();
+    auto& storage = test_bar_storage[this];
     for (uint32_t index : {0u, 2u, 4u}) {
-        mapped_bar_storage_.push_back(std::make_unique<std::vector<uint8_t>>(0x10000));
+        const auto mapped_size = static_cast<size_t>(0x10000);
+        storage.push_back(
+            std::make_unique<std::vector<uint8_t>>(mapped_size));
         BarMapping bar;
         bar.bar_index = index;
         bar.name = "test_bar" + std::to_string(index);
-        bar.mapped_base = mapped_bar_storage_.back()->data();
-        bar.mapped_size = 0x10000;
+        bar.mapped_base = storage.back()->data();
+        bar.mapped_size = mapped_size;
         bar.mapped = bar.writable = true;
         ctx.bar_mappings.push_back(bar);
     }

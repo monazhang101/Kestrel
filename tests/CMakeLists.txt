@@ -48,8 +48,13 @@ add_executable(io_test_cli ${REPO}/isml_diag/cli/main.cpp)
 target_link_libraries(io_test_cli PRIVATE io_test_code)
 add_dependencies(io_test_cli io_test_policies)
 add_test(NAME cli_help COMMAND io_test_cli --help)
-add_test(NAME cli_discover COMMAND io_test_cli discover --tree)
+add_test(NAME cli_discover COMMAND io_test_cli discover)
 set_tests_properties(cli_discover PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+add_test(NAME cli_reject_backend COMMAND io_test_cli discover --backend ihal)
+set_tests_properties(cli_reject_backend PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    WILL_FAIL TRUE)
 
 add_test(NAME cli_default_target COMMAND io_test_cli pcie_bar_read32 --bar-index 0 --offset 4)
 add_test(NAME cli_tpu_target COMMAND io_test_cli pcie_bar_read32 --target TPU0 --bar-index 0 --offset 4)

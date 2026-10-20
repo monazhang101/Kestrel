@@ -17,6 +17,7 @@
 /* Current Atlas bring-up PCI IDs; keep synchronized with the platform ID table. */
 #define ISML_VENDOR_ID 0x16c3
 #define ISML_DEVICE_ID 0xabcd
+#define ISML_DRIVER_NAME "isml_drv"
 
 struct isml_device {
 	struct pci_dev *pdev;
@@ -288,7 +289,8 @@ static int isml_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		goto disable_device;
 	}
 	isml->instance = instance;
-	snprintf(isml->name, sizeof(isml->name), "isml_diag%d", instance);
+	snprintf(isml->name, sizeof(isml->name), "%s%d",
+		 ISML_DRIVER_NAME, instance);
 	isml->miscdev.minor = MISC_DYNAMIC_MINOR;
 	isml->miscdev.name = isml->name;
 	isml->miscdev.fops = &isml_fops;
@@ -327,7 +329,7 @@ static const struct pci_device_id isml_pci_ids[] = {
 MODULE_DEVICE_TABLE(pci, isml_pci_ids);
 
 static struct pci_driver isml_pci_driver = {
-	.name = "isml_diag",
+	.name = ISML_DRIVER_NAME,
 	.id_table = isml_pci_ids,
 	.probe = isml_probe,
 	.remove = isml_remove,
@@ -335,5 +337,5 @@ static struct pci_driver isml_pci_driver = {
 module_pci_driver(isml_pci_driver);
 
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("ISML diagnostic DMA memory driver");
+MODULE_DESCRIPTION("ISML DMA memory driver");
 MODULE_AUTHOR("ISML");

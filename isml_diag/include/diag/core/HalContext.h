@@ -16,17 +16,10 @@
 inline constexpr uint64_t HOST_DMA_MAX_SIZE_BYTES = 128ull * 1024ull * 1024ull;
 inline constexpr uint64_t HOST_DMA_NO_DRIVER_MAX_SIZE_BYTES = 2ull * 1024ull * 1024ull;
 
-enum class HalType {
-    pHal,
-    iHal,
-};
-
 enum class HostDmaMode {
-    IsmlDiag,
+    IsmlDrv,
     None,
 };
-
-std::string to_string(HalType type);
 
 class HalContext;
 
@@ -77,10 +70,7 @@ public:
 
 class HalContext {
 private:
-    static constexpr uint64_t DRYRUN_BAR_WINDOW_SIZE = 0x10000;
-
-    HalType type_ = HalType::iHal;
-    HostDmaMode host_dma_mode_ = HostDmaMode::IsmlDiag;
+    HostDmaMode host_dma_mode_ = HostDmaMode::IsmlDrv;
     PhalBridge phal_bridge_;
     // These contexts exist only while one testcase is running. The aperture
     // context is separate because PCIe block entry changes env.base.
@@ -91,7 +81,6 @@ private:
     std::shared_ptr<DeviceMemoryState> active_memory_ =
         std::make_shared<DeviceMemoryState>();
     bool device_bound_ = false;
-    std::vector<std::unique_ptr<std::vector<uint8_t>>> mapped_bar_storage_;
     std::vector<std::pair<void*, uint64_t>> mapped_bar_mappings_;
 
     void clear_mappings();
@@ -113,9 +102,7 @@ public:
         explicit operator bool() const { return owner_ != nullptr; }
     };
 
-    explicit HalContext(HalType type = HalType::iHal);
-
-    HalType type() const { return type_; }
+    HalContext();
 
     std::vector<DeviceContext> scan_pci_devices() const;
     DeviceContext mmap_bar_space(DeviceContext ctx);

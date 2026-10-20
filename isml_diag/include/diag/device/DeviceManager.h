@@ -51,15 +51,14 @@ private:
                            const TestTarget& parent);
 
 public:
-    explicit DeviceManager(HalType hal_type = HalType::iHal,
-                           const std::string& policy_dir = "isml_diag/policies");
+    explicit DeviceManager(
+        const std::string& policy_dir = "isml_diag/policies");
 
     DeviceManager(const DeviceManager&) = delete;
     DeviceManager& operator=(const DeviceManager&) = delete;
 
     ~DeviceManager();
 
-    HalType get_hal_type() const;
     DeviceTree discover();
     TestTarget* get_target(const std::string& target_name);
     std::vector<std::string> get_target_names() const;

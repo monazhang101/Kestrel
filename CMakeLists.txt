@@ -4,7 +4,7 @@ project(IsmlDiag LANGUAGES C CXX)
 
 # The production runtime depends on Linux PCI sysfs, mmap/ioctl, and the
 # isml_diag kernel UAPI. Unsupported hosts should fail at configure time
-# instead of compiling an iHal backend that can only fail at runtime.
+# instead of compiling a HAL implementation that can only fail at runtime.
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(FATAL_ERROR "IsmlDiag supports Linux only")
 endif()
@@ -53,7 +53,7 @@ if(ISML_USE_MOCK_PHAL)
     )
     set(PHAL_PROJECT_IMPL_SOURCES)
     message(WARNING
-        "PHAL backend: external ProtonHal in smoke mode (${PHAL_ROOT})")
+        "PHAL implementation: external ProtonHal in smoke mode (${PHAL_ROOT})")
 elseif(NOT EXISTS "${PHAL_REAL_ROOT}/src/phal/init.c" OR
        NOT EXISTS "${PHAL_REAL_ROOT}/include/phal/components/pcie/pcie.h")
     message(FATAL_ERROR
@@ -108,7 +108,7 @@ else()
         ${PHAL_ROOT}/projects/atlas_m/xdma/xdma_impl.c
         ${PHAL_ROOT}/projects/atlas_m/syncflag/syncflag_impl.c
     )
-    message(STATUS "PHAL backend: real ProtonHal (${PHAL_ROOT})")
+    message(STATUS "PHAL implementation: real ProtonHal (${PHAL_ROOT})")
 endif()
 
 add_library(phal STATIC ${PHAL_CORE_SOURCES} ${PHAL_PROJECT_IMPL_SOURCES})

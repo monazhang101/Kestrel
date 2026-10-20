@@ -16,7 +16,7 @@ PCIeModule::PCIeModule(const std::string& name,
     _add_test("example", {},
               [this](TestInfo& ti) { return example(ti); });
     _add_test("dma_h2d_example",
-              {{"drv", "isml_diag", "string"}},
+              {{"drv", "isml_drv", "string"}},
               [this](TestInfo& ti) { return dma_h2d_example(ti); });
     // ----------------------- Example cases -----------------------
 
@@ -28,7 +28,7 @@ PCIeModule::PCIeModule(const std::string& name,
               [this](TestInfo& ti) { return sequential_aperture_mapping(ti); });
     // TestTarget supplies these defaults through ti.args when flags are omitted.
     _add_test("dma_data_transfer",
-              {{"drv", "isml_diag", "string"},
+              {{"drv", "isml_drv", "string"},
                {"direction", "h2d", "string"},
                {"size_bytes", "4096", "bytes"},
                {"pattern", "random", "string"},
