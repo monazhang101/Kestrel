@@ -1,5 +1,6 @@
 #pragma once
 
+#include "diag/core/IpcBridge.h"
 #include "diag/core/Platform.h"
 
 extern "C" {
@@ -20,6 +21,7 @@ PhalProject phal_project_from_tpu_type(TPUType tpu_type);
 
 struct IhalIO {
     const DeviceContext* device_ctx = nullptr;
+    IpcBridge ipc;
 };
 
 class PhalBridge {
@@ -61,5 +63,9 @@ public:
     ScopedContext create_context(const DeviceContext& ctx,
                                  PhalProject project,
                                  std::string* error = nullptr);
+
+    ScopedContext create_ipc_context(const DeviceContext& ctx,
+                                     PhalProject project,
+                                     std::string* error = nullptr);
 
 };

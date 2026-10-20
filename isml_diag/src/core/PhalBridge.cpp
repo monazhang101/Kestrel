@@ -86,6 +86,60 @@ hw_ops_t make_hal_drv_ops()
 
 const hw_ops_t hal_drv_ops = make_hal_drv_ops();
 
+// ---------------------------------------------------------------------
+// IPC ops: phal_read/phal_write forwarded to the firmware through
+// the host<->fw IPC slots (see IpcBridge). The env->priv pointer is
+// the IhalIO that owns the bound IpcBridge.
+// ---------------------------------------------------------------------
+static phal_status_t to_phal_status(IpcStatus status)
+{
+    switch (status) {
+    case IpcStatus::Ok: return PHAL_STATUS_OK;
+    case IpcStatus::ErrTimeout: return PHAL_STATUS_TIMEOUT;
+    case IpcStatus::ErrInvalid: return PHAL_STATUS_INVALID;
+    default: return PHAL_STATUS_ERROR;
+    }
+}
+
+static phal_status_t ipc_drv_write(env_t* env, uintptr_t addr, uint32_t data)
+{
+    if (env == nullptr || env->priv == nullptr) {
+        return PHAL_STATUS_INVALID;
+    }
+    const auto status = static_cast<IhalIO*>(env->priv)->ipc.write(
+        static_cast<uint32_t>(addr), data);
+    log_phal_io("ipc_write", env, addr, data, to_phal_status(status));
+    return to_phal_status(status);
+}
+
+static phal_status_t ipc_drv_read(env_t* env, uintptr_t addr, uint32_t* data)
+{
+    if (env == nullptr || env->priv == nullptr || data == nullptr) {
+        return PHAL_STATUS_INVALID;
+    }
+    uint32_t value = 0;
+    const auto status = static_cast<IhalIO*>(env->priv)->ipc.read(
+        static_cast<uint32_t>(addr), value);
+    if (status == IpcStatus::Ok) *data = value;
+    log_phal_io("ipc_read", env, addr,
+                status == IpcStatus::Ok ? value : 0,
+                to_phal_status(status));
+    return to_phal_status(status);
+}
+
+hw_ops_t make_ipc_drv_ops()
+{
+    // IPC shares the delay semantics with the direct MMIO path.
+    hw_ops_t ops{};
+    ops.write = ipc_drv_write;
+    ops.read = ipc_drv_read;
+    ops.delay_us = hal_drv_delay_us;
+    ops.delay_ns = hal_drv_delay_ns;
+    return ops;
+}
+
+const hw_ops_t ipc_drv_ops = make_ipc_drv_ops();
+
 const char* phal_project_macro(PhalProject project)
 {
     switch (project) {
@@ -236,6 +290,55 @@ PhalBridge::ScopedContext PhalBridge::create_context(const DeviceContext& ctx,
     state->initialized = true;
     // Keep the framework-owned chip root explicit even if a PHAL project
     // performs additional initialization internally.
+    state->ctx.env.base = CHIP_RCF_BASE;
+    return ScopedContext(std::move(state));
+}
+
+PhalBridge::ScopedContext PhalBridge::create_ipc_context(const DeviceContext& ctx,
+                                                          PhalProject project,
+                                                          std::string* error)
+{
+    if (project == PhalProject::Generic) {
+        project = phal_project_from_tpu_type(ctx.tpu_type);
+    }
+
+    auto state = std::make_unique<ScopedContext::State>();
+    state->device_ctx = ctx;
+    state->logger.set_level(ctx.logger ? ctx.logger->get_level() : LogLevel::Info);
+    state->device_ctx.logger = &state->logger;
+    state->ihalIO.device_ctx = &state->device_ctx;
+
+    // Map the IPC slots out of the same BAR0 window before the ops can
+    // touch them.
+    std::string ipc_error;
+    if (!state->ihalIO.ipc.bind(ctx, &ipc_error)) {
+        if (error != nullptr) {
+            *error = "IPC bind failed: " + ipc_error;
+        }
+        return {};
+    }
+
+    phal_config_t config{};
+    config.env_config.base = CHIP_RCF_BASE;
+    config.env_config.user_data = &state->ihalIO;
+#if !defined(HAL_FIRMWARE_MODE)
+    config.env_config.hw_ops = &ipc_drv_ops;
+#endif
+    config.project_config = to_phal_project(project);
+
+    auto status = phal_init(&state->ctx, &config);
+    if (status != PHAL_STATUS_OK) {
+        if (error != nullptr) {
+            *error = phal_error("phal_init", status);
+            *error += " project=";
+            *error += phal_project_macro(project);
+            *error += " bdf=";
+            *error += ctx.bdf;
+        }
+        return {};
+    }
+
+    state->initialized = true;
     state->ctx.env.base = CHIP_RCF_BASE;
     return ScopedContext(std::move(state));
 }

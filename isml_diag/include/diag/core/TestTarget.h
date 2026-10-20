@@ -37,6 +37,7 @@ struct TestArgumentDefinition {
 struct TestcaseDefinition {
     std::vector<TestArgumentDefinition> arguments;
     TestcaseFunc execute;
+    IpcContextRequirement ipc_context = IpcContextRequirement::None;
 };
 
 class TestTarget {
@@ -50,7 +51,9 @@ protected:
     // Modules declare testcase defaults, formats, and callbacks here.
     void _add_test(const std::string& test_name,
                    std::initializer_list<TestArgumentDefinition> arguments,
-                   TestcaseFunc func);
+                   TestcaseFunc func,
+                   IpcContextRequirement ipc_context =
+                       IpcContextRequirement::None);
 
 private:
     static bool parse_u64(const std::string& value, uint64_t& parsed);

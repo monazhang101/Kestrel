@@ -21,10 +21,13 @@ TestTarget::TestTarget(const std::string& name,
 
 void TestTarget::_add_test(const std::string& test_name,
                            std::initializer_list<TestArgumentDefinition> arguments,
-                           TestcaseFunc func)
+                           TestcaseFunc func,
+                           IpcContextRequirement ipc_context)
 {
     registered_tests_[target_type_ + "_" + test_name] = {
-        std::vector<TestArgumentDefinition>(arguments), std::move(func)};
+        std::vector<TestArgumentDefinition>(arguments),
+        std::move(func),
+        ipc_context};
 }
 
 bool TestTarget::parse_u64(const std::string& value, uint64_t& parsed)
@@ -124,12 +127,14 @@ TestStatus TestTarget::run_testcase(const std::string& test_name,
             if (status != PHAL_STATUS_OK) return status;
         }
         std::string phal_error;
-        auto testcase_scope = hal->begin_testcase(&phal_error);
+        auto testcase_scope =
+            hal->begin_testcase(&phal_error, test->second.ipc_context);
         if (!testcase_scope) {
             ti.logger->error("PHAL initialization failed: " + phal_error);
             return PHAL_STATUS_ERROR;
         }
         ti.phal_ctx = hal->phal_context();
+        ti.ipc_ctx = hal->ipc_context();
         return test->second.execute(ti);
     } catch (const std::invalid_argument& e) {
         ti.logger->error(std::string("invalid test argument: ") + e.what());

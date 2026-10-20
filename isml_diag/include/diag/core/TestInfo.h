@@ -12,6 +12,11 @@ using TestArgs = std::unordered_map<std::string, std::string>;
 
 class HalContext;
 
+enum class IpcContextRequirement {
+    None,
+    Required,
+};
+
 // Testcases and PHAL share one status type and bit layout.
 using TestStatus = phal_status_t;
 static_assert(PHAL_STATUS_OK == 0 && PHAL_STATUS_TIMEOUT == 1 &&
@@ -94,6 +99,9 @@ struct TestInfo {
     // Framework-owned PHAL context for the device bound to hal. Memory access
     // APIs use hal's private aperture context instead of this pointer.
     phal_ctx_t* phal_ctx = nullptr;
+    // Optional PHAL context whose read/write operations are forwarded through
+    // firmware IPC. It is non-null only when requested during registration.
+    phal_ctx_t* ipc_ctx = nullptr;
 };
 
 inline TestStatus make_unimplemented_status(const TestInfo& ti,

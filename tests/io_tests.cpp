@@ -47,14 +47,25 @@ void phal_is_chip_scoped()
 
 class ProbeTarget : public TestTarget {
 public:
-    ProbeTarget(const DeviceContext& ctx, bool* saw_context)
+    ProbeTarget(const DeviceContext& ctx,
+                bool* saw_default_contexts,
+                bool* saw_ipc_contexts)
         : TestTarget("probe", "probe", ctx)
     {
-        _add_test("probe", {}, [saw_context](TestInfo& ti) {
-            *saw_context = ti.phal_ctx != nullptr &&
-                           ti.phal_ctx->env.base == PhalBridge::CHIP_RCF_BASE;
-            return *saw_context ? PHAL_STATUS_OK : PHAL_STATUS_ERROR;
+        _add_test("probe", {}, [saw_default_contexts](TestInfo& ti) {
+            *saw_default_contexts =
+                ti.phal_ctx != nullptr && ti.ipc_ctx == nullptr &&
+                ti.phal_ctx->env.base == PhalBridge::CHIP_RCF_BASE;
+            return *saw_default_contexts ? PHAL_STATUS_OK : PHAL_STATUS_ERROR;
         });
+        _add_test("ipc_probe", {}, [saw_ipc_contexts](TestInfo& ti) {
+            *saw_ipc_contexts =
+                ti.phal_ctx != nullptr && ti.ipc_ctx != nullptr &&
+                ti.phal_ctx != ti.ipc_ctx &&
+                ti.phal_ctx->env.base == PhalBridge::CHIP_RCF_BASE &&
+                ti.ipc_ctx->env.base == PhalBridge::CHIP_RCF_BASE;
+            return *saw_ipc_contexts ? PHAL_STATUS_OK : PHAL_STATUS_ERROR;
+        }, IpcContextRequirement::Required);
     }
 };
 
@@ -62,10 +73,15 @@ void framework_injects_context()
 {
     HalContext hal;
     auto device = make_device(hal);
-    bool saw_context = false;
-    ProbeTarget target(device, &saw_context);
+    bool saw_default_contexts = false;
+    bool saw_ipc_contexts = false;
+    ProbeTarget target(device, &saw_default_contexts, &saw_ipc_contexts);
     CHECK(target.run_testcase("probe_probe", {}, nullptr, &hal) == PHAL_STATUS_OK);
-    CHECK(saw_context);
+    CHECK(saw_default_contexts);
+    CHECK(hal.phal_context() == nullptr && hal.ipc_context() == nullptr);
+    CHECK(target.run_testcase("probe_ipc_probe", {}, nullptr, &hal) == PHAL_STATUS_OK);
+    CHECK(saw_ipc_contexts);
+    CHECK(hal.phal_context() == nullptr && hal.ipc_context() == nullptr);
 }
 
 void allocations_are_independent_of_phal_root()

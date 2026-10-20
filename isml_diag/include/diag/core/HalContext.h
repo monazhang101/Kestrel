@@ -86,6 +86,7 @@ private:
     // context is separate because PCIe block entry changes env.base.
     PhalBridge::ScopedContext phal_context_;
     PhalBridge::ScopedContext aperture_phal_context_;
+    PhalBridge::ScopedContext ipc_context_;
     DeviceContext active_device_;
     MemoryRegionMap active_memory_regions_{};
     std::shared_ptr<DeviceMemoryState> active_memory_ =
@@ -120,9 +121,11 @@ public:
     std::vector<DeviceContext> scan_pci_devices() const;
     DeviceContext mmap_bar_space(DeviceContext ctx);
     void bind_device(const DeviceContext& ctx, Logger* logger = nullptr);
-    // Create the two PHAL contexts used during one testcase. The returned
-    // scope owns their lifetime and deinitializes them on testcase exit.
-    TestcaseScope begin_testcase(std::string* error = nullptr);
+    // Direct PHAL contexts are always created. The IPC-backed PHAL context is
+    // created only for testcases that request it during registration.
+    TestcaseScope begin_testcase(
+        std::string* error = nullptr,
+        IpcContextRequirement ipc_context = IpcContextRequirement::None);
     const DeviceContext& device_context() const;
     bool has_device() const { return device_bound_; }
     const MemoryRegionMap& memory_regions() const { return active_memory_regions_; }
@@ -134,6 +137,7 @@ public:
     // The ordinary testcase context is exposed only to framework-created
     // TestInfo instances. PCIe callers use with_pcie_context().
     phal_ctx_t* phal_context() const { return phal_context_.get(); }
+    phal_ctx_t* ipc_context() const { return ipc_context_.get(); }
 
     // Run a PCIe operation with the shared per-device context and lock. The
     // callback receives a context rooted in TOP_U_PCIE_0_OFFSET, so both

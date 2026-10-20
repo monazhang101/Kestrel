@@ -667,6 +667,7 @@ void HalContext::bind_device(const DeviceContext& ctx, Logger* logger)
     // releases contexts tied to the previous BAR mapping before replacing it.
     phal_context_ = {};
     aperture_phal_context_ = {};
+    ipc_context_ = {};
     active_device_ = ctx;
     active_device_.logger = logger != nullptr ? logger : ctx.logger;
     active_memory_regions_ = ctx.memory_regions;
@@ -697,14 +698,16 @@ TestStatus HalContext::configure_host_dma(const std::string& driver)
     return PHAL_STATUS_INVALID;
 }
 
-HalContext::TestcaseScope HalContext::begin_testcase(std::string* error)
+HalContext::TestcaseScope HalContext::begin_testcase(
+    std::string* error,
+    IpcContextRequirement ipc_context)
 {
     if (error != nullptr) error->clear();
     if (!device_bound_) {
         if (error != nullptr) *error = "HAL is not bound to a device";
         return {};
     }
-    if (phal_context_ || aperture_phal_context_) {
+    if (phal_context_ || aperture_phal_context_ || ipc_context_) {
         if (error != nullptr) *error = "a testcase PHAL context is already active";
         return {};
     }
@@ -727,6 +730,20 @@ HalContext::TestcaseScope HalContext::begin_testcase(std::string* error)
         }
         return {};
     }
+
+    if (ipc_context == IpcContextRequirement::Required) {
+        init_error.clear();
+        ipc_context_ =
+            phal_bridge_.create_ipc_context(active_device_, project, &init_error);
+        if (!ipc_context_) {
+            phal_context_ = {};
+            aperture_phal_context_ = {};
+            if (error != nullptr) {
+                *error = "IPC PHAL initialization failed: " + init_error;
+            }
+            return {};
+        }
+    }
     return TestcaseScope(this);
 }
 
@@ -735,6 +752,7 @@ HalContext::TestcaseScope::~TestcaseScope()
     if (owner_ != nullptr) {
         owner_->phal_context_ = {};
         owner_->aperture_phal_context_ = {};
+        owner_->ipc_context_ = {};
     }
 }
 
@@ -750,6 +768,7 @@ HalContext::TestcaseScope& HalContext::TestcaseScope::operator=(TestcaseScope&& 
         if (owner_ != nullptr) {
             owner_->phal_context_ = {};
             owner_->aperture_phal_context_ = {};
+            owner_->ipc_context_ = {};
         }
         owner_ = other.owner_;
         other.owner_ = nullptr;
@@ -1300,6 +1319,7 @@ void HalContext::clear_mappings()
 {
     phal_context_ = {};
     aperture_phal_context_ = {};
+    ipc_context_ = {};
     if (type_ == HalType::iHal) {
         for (const auto& mapping : mapped_bar_mappings_) {
             if (mapping.first != nullptr && mapping.second != 0) {
