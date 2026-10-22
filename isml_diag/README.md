@@ -182,13 +182,14 @@ sudo ./build-fpga/isml_diag discover
 ## PCIe DMA and aperture cases
 
 `pcie_dma_data_transfer` defaults to TPU0, H2D, 4096 bytes, random pattern, and
-a 1000 ms timeout. It supports H2D, D2H, D2I2D, and D2S2D; sizes must be nonzero
-multiples of 32 bytes. D2V2D remains unavailable.
+a 1000 ms timeout. It supports H2D, D2H, H2I, I2H, H2S, S2H, D2I2D, and
+D2S2D; sizes must be nonzero multiples of 32 bytes. D2V2D remains unavailable.
 
 H2D performs one DMA transfer followed by one DMEM MMIO readback and comparison.
-The testcase allocates its device offsets, and the HQC descriptor represents
-length in 32-byte units. If completion is uncertain, the direct path retains
-the affected device-memory and descriptor-SRAM allocations.
+H2I/H2S use an I2D/S2D readback transfer, while I2H/S2H use D2I/D2S to prepare
+the source. The testcase allocates its device offsets, and the HQC descriptor
+represents length in 32-byte units. If completion is uncertain, the direct path
+retains the affected device-memory and descriptor-SRAM allocations.
 
 `pcie_sequential_aperture_mapping` allocates 16 MiB and checks 15 distinct
 1 MiB ranges. It saves, writes, verifies, and restores both 1 KiB edges while
@@ -217,5 +218,5 @@ delay; the helper itself does not perform link retraining or reinitialization.
 
 - FW-reserved ranges and physical DMEM capacity before changing the allocator's
   configured usable regions.
-- D2I2D and D2S2D scratch coverage, currently limited conservatively to
-  `[0, 256)` and `[0, 128)` respectively.
+- IMEM and SMEM DMA scratch coverage, currently limited conservatively to
+  `[0, 256)` for both memory types.

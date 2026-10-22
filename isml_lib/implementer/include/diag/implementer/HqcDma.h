@@ -12,7 +12,16 @@
 #define SOC_HQC_SYNCFLAG_CSR_DONE_OFFSET(id) (0x400 + (id) * 4)
 #define ATL_HQC_SRAM_MCU_LOCAL_BASE 0x30000000u
 
-enum class DmaProfile { Default, H2D, D2H, D2I, I2D, D2S, S2D, D2V, V2D, IsiLb, IsiRrd };
+enum class DmaProfile {
+    Default,
+    H2D, D2H,
+    D2I, I2D,
+    D2S, S2D,
+    D2V, V2D,
+    H2I, I2H,
+    H2S, S2H,
+    IsiLb, IsiRrd,
+};
 enum class DmaType : uint8_t { LocalHost = 0, IsiLb = 1, Local = 2, IsiRrd = 3 };
 enum class DmaMemory : uint8_t { Host, Dmem, Imem, Smem, Vmem };
 

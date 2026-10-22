@@ -24,6 +24,10 @@ DmaProfile profile_for(DmaTransferType type)
     case DmaTransferType::S2D: return DmaProfile::S2D;
     case DmaTransferType::D2V: return DmaProfile::D2V;
     case DmaTransferType::V2D: return DmaProfile::V2D;
+    case DmaTransferType::H2I: return DmaProfile::H2I;
+    case DmaTransferType::I2H: return DmaProfile::I2H;
+    case DmaTransferType::H2S: return DmaProfile::H2S;
+    case DmaTransferType::S2H: return DmaProfile::S2H;
     }
     return DmaProfile::Default;
 }
@@ -41,10 +45,22 @@ void set_device_endpoint(DmaDescriptor& desc, bool source,
     case DmaTransferType::I2D:
         if (source) { memory = DmaMemory::Imem; core = 2; mem = 2; }
         break;
+    case DmaTransferType::H2I:
+        if (!source) { memory = DmaMemory::Imem; core = 2; mem = 2; }
+        break;
+    case DmaTransferType::I2H:
+        if (source) { memory = DmaMemory::Imem; core = 2; mem = 2; }
+        break;
     case DmaTransferType::D2S:
         if (!source) { memory = DmaMemory::Smem; core = 2; mem = 1; }
         break;
     case DmaTransferType::S2D:
+        if (source) { memory = DmaMemory::Smem; core = 2; mem = 1; }
+        break;
+    case DmaTransferType::H2S:
+        if (!source) { memory = DmaMemory::Smem; core = 2; mem = 1; }
+        break;
+    case DmaTransferType::S2H:
         if (source) { memory = DmaMemory::Smem; core = 2; mem = 1; }
         break;
     case DmaTransferType::D2V:
@@ -71,19 +87,24 @@ public:
                         "DMA size must be a nonzero multiple of 32 and timeout must be nonzero");
         }
 
-        const bool h2d = req.type == DmaTransferType::H2D;
-        const bool d2h = req.type == DmaTransferType::D2H;
-        if ((h2d || d2h) && (req.host_buffer == nullptr || !req.host_buffer->valid()))
+        const bool host_source = req.type == DmaTransferType::H2D ||
+                                 req.type == DmaTransferType::H2I ||
+                                 req.type == DmaTransferType::H2S;
+        const bool host_destination = req.type == DmaTransferType::D2H ||
+                                      req.type == DmaTransferType::I2H ||
+                                      req.type == DmaTransferType::S2H;
+        if ((host_source || host_destination) &&
+            (req.host_buffer == nullptr || !req.host_buffer->valid()))
             return fail(ti, PHAL_STATUS_INVALID, "host DMA requires a valid host DMA buffer");
 
         HqcDmaEngine engine(*ti.hal);
         DmaDescriptor desc(engine, profile_for(req.type));
         TestStatus status = PHAL_STATUS_OK;
-        if (h2d) {
+        if (host_source) {
             status = desc.set_src(*req.host_buffer, req.src_offset);
             if (status == PHAL_STATUS_OK)
                 set_device_endpoint(desc, false, req.type, req.dst_offset);
-        } else if (d2h) {
+        } else if (host_destination) {
             set_device_endpoint(desc, true, req.type, req.src_offset);
             status = desc.set_dst(*req.host_buffer, req.dst_offset);
         } else {

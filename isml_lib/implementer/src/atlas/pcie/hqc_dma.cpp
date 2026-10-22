@@ -148,8 +148,16 @@ void DmaDescriptor::init_defaults()
     case DmaProfile::S2D: sync_flag_ = 5; break;
     case DmaProfile::D2V: sync_flag_ = 6; break;
     case DmaProfile::V2D: sync_flag_ = 7; break;
-    case DmaProfile::IsiRrd: dma_type_ = DmaType::IsiRrd; sync_flag_ = 11; break;
-    case DmaProfile::IsiLb: dma_type_ = DmaType::IsiLb; sync_flag_ = 10; break;
+    case DmaProfile::H2I: sync_flag_ = 8; break;
+    case DmaProfile::I2H: sync_flag_ = 9; break;
+    case DmaProfile::IsiRrd:
+        dma_type_ = DmaType::IsiRrd;
+        sync_flag_ = 11; break;
+    case DmaProfile::IsiLb:
+        dma_type_ = DmaType::IsiLb;
+        sync_flag_ = 10; break;
+    case DmaProfile::H2S: sync_flag_ = 12; break;
+    case DmaProfile::S2H: sync_flag_ = 13; break;
     default: break;
     }
     set_field(29, 2, static_cast<uint32_t>(dma_type_));

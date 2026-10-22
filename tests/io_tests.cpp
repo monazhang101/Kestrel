@@ -175,7 +175,7 @@ void testcase_parameter_lists_are_loaded_in_order()
 {
     const auto catalog = load_testcase_policies("isml_diag/policies/testcases");
     const auto& runs = catalog.at("pcie").at("dma_data_transfer").runs;
-    CHECK(runs.size() == 4);
+    CHECK(runs.size() == 8);
     CHECK(runs[0].at("direction") == "h2d");
     CHECK(runs[0].at("size_bytes") == "4096");
     CHECK(runs[0].find("timeout_ms") == runs[0].end());
@@ -188,6 +188,14 @@ void testcase_parameter_lists_are_loaded_in_order()
     CHECK(runs[3].at("direction") == "d2i2d");
     CHECK(runs[3].at("size_bytes") == "256");
     CHECK(runs[3].find("timeout_ms") == runs[3].end());
+    CHECK(runs[4].at("direction") == "h2i");
+    CHECK(runs[4].at("size_bytes") == "256");
+    CHECK(runs[5].at("direction") == "i2h");
+    CHECK(runs[5].at("size_bytes") == "256");
+    CHECK(runs[6].at("direction") == "h2s");
+    CHECK(runs[6].at("size_bytes") == "256");
+    CHECK(runs[7].at("direction") == "s2h");
+    CHECK(runs[7].at("size_bytes") == "256");
 }
 
 void logging_uses_flow_and_regio_levels()

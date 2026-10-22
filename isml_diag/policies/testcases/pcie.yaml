@@ -3,3 +3,7 @@ dma_data_transfer:
   direction=d2h, size_bytes=0x100000, pattern=random, timeout=30000
   direction=d2s2d, size_bytes=128, pattern=incremental
   direction=d2i2d, size_bytes=256, pattern=random
+  direction=h2i, size_bytes=256, pattern=incremental
+  direction=i2h, size_bytes=256, pattern=random
+  direction=h2s, size_bytes=256, pattern=incremental
+  direction=s2h, size_bytes=256, pattern=random

@@ -7,12 +7,18 @@
 
 // Semantic paths, not FW wire values. The product implementation maps the ABI.
 enum class DmaTransferType {
-    H2D, D2H, D2I, I2D, D2S, S2D, D2V, V2D,
+    H2D, D2H,
+    D2I, I2D,
+    D2S, S2D,
+    D2V, V2D,
+    H2I, I2H,
+    H2S, S2H,
 };
 
 struct DmaTransferRequest {
     DmaTransferType type;
-    // Required only for H2D/D2H; owned by the caller throughout the transfer.
+    // Required when either endpoint is host memory; owned by the caller
+    // throughout the transfer.
     DmaBuffer* host_buffer = nullptr;
     // Byte offsets in the spaces selected by type. A host endpoint is relative
     // to host_buffer; the implementation translates it to a DMA address.

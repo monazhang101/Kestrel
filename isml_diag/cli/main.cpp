@@ -30,7 +30,7 @@ static void print_usage(const char* program)
               << "Global logging: --log-level error|info|flow|regio (default: info)\n"
               << "Policy directory: --policy-dir <path> (default: beside the executable)\n"
               << "DMA: pcie_dma_data_transfer [--drv isml_drv|none]\n"
-              << "     [--direction h2d|d2h|d2i2d|d2s2d]\n"
+              << "     [--direction h2d|d2h|h2i|i2h|h2s|s2h|d2i2d|d2s2d]\n"
               << "     [--size-bytes <bytes>] [--pattern zero|incremental|random] [--timeout-ms <ms>]\n"
               << "     Defaults: drv=isml_drv, h2d, 4096 bytes (4 KiB), random, 1000 ms.\n"
               << "     H2D: one DMA transfer, then one MMIO readback for verification.\n"
