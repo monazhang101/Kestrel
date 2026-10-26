@@ -1104,11 +1104,13 @@ DmaBuffer HalContext::host_mem_alloc(uint64_t size_bytes)
         uint64_t physical_address = 0;
         if (!resolve_contiguous_physical(cpu_base, mapped_size, page_size,
                                          physical_address, error) ||
-            physical_address % 32 != 0) {
+            physical_address % DEFAULT_MEMORY_ALIGNMENT != 0) {
             munlock(cpu_base, static_cast<size_t>(mapped_size));
             munmap(cpu_base, static_cast<size_t>(mapped_size));
             if (active_device_.logger != nullptr) {
-                if (error.empty()) error = "host DMA physical address is not 32-byte aligned";
+                if (error.empty()) {
+                    error = "host DMA physical address is not 512-byte aligned";
+                }
                 if (hugepage_errno != 0 && !used_hugepage) {
                     error += "; 2 MiB HugeTLB allocation also failed: ";
                     error += std::strerror(hugepage_errno);
@@ -1162,6 +1164,17 @@ DmaBuffer HalContext::host_mem_alloc(uint64_t size_bytes)
             active_device_.logger->error(
                 "isml_drv DMA allocation failed: " +
                 std::string(std::strerror(ioctl_errno)));
+        }
+        return {};
+    }
+
+    if (request.device_addr % DEFAULT_MEMORY_ALIGNMENT != 0) {
+        isml_diag_dma_free release = {request.handle};
+        ioctl(fd, ISML_DIAG_IOCTL_DMA_FREE, &release);
+        close(fd);
+        if (active_device_.logger != nullptr) {
+            active_device_.logger->error(
+                "isml_drv DMA allocation is not 512-byte aligned");
         }
         return {};
     }

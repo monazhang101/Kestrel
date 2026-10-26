@@ -15,8 +15,10 @@ private:
     TestStatus bar_read32(TestInfo& ti);
     TestStatus example(TestInfo& ti);
     TestStatus dma_h2d_example(TestInfo& ti);
+    TestStatus cp_h2sram_example(TestInfo& ti);
     TestStatus sequential_aperture_mapping(TestInfo& ti);
     TestStatus dma_data_transfer(TestInfo& ti);
+    TestStatus cp_queue_data_transfer(TestInfo& ti);
 
 public:
     PCIeModule(const std::string& name,

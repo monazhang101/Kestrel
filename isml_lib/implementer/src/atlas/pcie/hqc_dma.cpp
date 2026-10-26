@@ -5,6 +5,7 @@
 extern "C" {
 #include <atlas_csr_sw/src/h/TOP.h>
 #include <atlas_csr_sw/src/h/TOP_deps/PCIE/PCIE.h>
+#include <atlas_csr_sw/src/h/TOP_deps/PCIE/HQC/HQC.h>
 #include <atlas_csr_sw/src/h/TOP_deps/PCIE/HQC/PCIE_HQC_REG/PCIE_HQC_REG.h>
 #include <atlas_csr_sw/src/h/TOP_deps/DDP/DDP.h>
 #include <atlas_csr_sw/src/h/TOP_deps/DDP/DDP_NDM_REG/DDP_NDM_REG.h>

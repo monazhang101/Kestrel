@@ -18,6 +18,8 @@ PCIeModule::PCIeModule(const std::string& name,
     _add_test("dma_h2d_example",
               {{"drv", "isml_drv", "string"}},
               [this](TestInfo& ti) { return dma_h2d_example(ti); });
+    _add_test("cp_h2sram_example", {},
+              [this](TestInfo& ti) { return cp_h2sram_example(ti); });
     // ----------------------- Example cases -----------------------
 
     _add_test("bar_read32",
@@ -35,6 +37,14 @@ PCIeModule::PCIeModule(const std::string& name,
                {"intermediate_offset", "0", "offset"},
                {"timeout_ms", "1000", "ms"}},
               [this](TestInfo& ti) { return dma_data_transfer(ti); });
+    _add_test("cp_queue_data_transfer",
+              {{"direction", "h2sram", "string"},
+               {"queue", "mem3", "string"},
+               {"size_bytes", "512", "bytes"},
+               {"pattern", "random", "string"},
+               {"sram_bank", "0", "u32"},
+               {"timeout_ms", "1000", "ms"}},
+              [this](TestInfo& ti) { return cp_queue_data_transfer(ti); });
 }
 
 // Small PCIe diagnostic primitives live with the module registration. Complex

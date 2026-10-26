@@ -181,6 +181,21 @@ sudo ./build-fpga/isml_diag discover
 
 ## PCIe DMA and aperture cases
 
+`pcie_cp_queue_data_transfer` provides the parallel CP queue fetch path:
+`h2sram`, `sram2h`, `d2sram`, `sram2d`, with `sram` meaning HQC SRAM.
+It defaults to MEM3/IDX7 and accepts `--queue mem0..mem3|comp0..comp3` for
+explicit queue-path validation. All selected queues are currently serialized;
+true multi-queue parallel submission remains a TODO. The caller must ensure FW
+or admin tests do not use a non-default selected queue. It uses pointer polling
+and payload comparison. Testcase
+developers can call `HqcCpQueue::copy(src, dst, bytes, timeout_ms)` directly or
+use `PCIeImpl::cp_copy()`. See the [CP H2SRAM example](testcases/pcie/example.cpp)
+(`pcie_cp_h2sram_example`) for a complete allocation, payload and copy example.
+Tester logs have validated all four directions on the default MEM3 queue;
+the other seven selectable queue paths still require hardware validation.
+Automatic memory allocations now start on 512-byte boundaries; explicit device
+offsets are honored and transfer sizes retain their engine-specific constraints.
+
 `pcie_dma_data_transfer` defaults to TPU0, H2D, 4096 bytes, random pattern, and
 a 1000 ms timeout. It supports H2D, D2H, H2I, I2H, H2S, S2H, D2I2D, and
 D2S2D; sizes must be nonzero multiples of 32 bytes. D2V2D remains unavailable.

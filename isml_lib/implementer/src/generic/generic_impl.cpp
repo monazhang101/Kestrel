@@ -4,6 +4,11 @@
 
 namespace generic_impl {
 
+TestStatus GenericPCIeImpl::cp_copy(TestInfo& ti, const CpTransferRequest&)
+{
+    return make_unimplemented_status(ti, "CP copy is not implemented for " + ti.target_name);
+}
+
 TestStatus GenericPCIeImpl::dma_copy(TestInfo& ti,
                                          const DmaTransferRequest& req)
 {

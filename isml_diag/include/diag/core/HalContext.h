@@ -15,6 +15,7 @@
 // this against the authoritative Linux UAPI constant at compile time.
 inline constexpr uint64_t HOST_DMA_MAX_SIZE_BYTES = 128ull * 1024ull * 1024ull;
 inline constexpr uint64_t HOST_DMA_NO_DRIVER_MAX_SIZE_BYTES = 2ull * 1024ull * 1024ull;
+inline constexpr uint64_t DEFAULT_MEMORY_ALIGNMENT = 512;
 
 enum class HostDmaMode {
     IsmlDrv,
@@ -58,6 +59,12 @@ public:
     DmaBuffer& operator=(DmaBuffer&& other) noexcept;
 
     void release();
+
+    // DMA may still reference this allocation. Keep its mapping and kernel fd
+    // alive for the rest of this process; reset/quiesce before process exit.
+    // Deliberately no automatic reclamation without a hardware drain contract.
+    void keep_allocated() { alloc_ctx_ = nullptr; }
+    bool belongs_to(const HalContext& hal) const { return alloc_ctx_ == &hal; }
 
     bool valid() const { return alloc_ctx_ != nullptr && cpu_base_ != nullptr && size_ != 0; }
     void* cpu_base() { return cpu_base_; }
@@ -133,11 +140,13 @@ public:
     // Type-1 PCI bridge and verify the requested state by reading it back.
     TestStatus secondary_bus_reset(bool reset);
 
+    // Automatic placement aligns the start to 512 bytes. Explicit offsets are
+    // honored exactly (including zero); size is not rounded to 512 bytes.
     common::MemBuffer device_mem_alloc(
         MemoryRegion region,
         uint64_t size_bytes,
         std::optional<uint64_t> fixed_offset = std::nullopt,
-        uint64_t alignment_bytes = sizeof(uint32_t));
+        uint64_t alignment_bytes = DEFAULT_MEMORY_ALIGNMENT);
     DmaBuffer host_mem_alloc(uint64_t size_bytes);
     void free_host_dma_buffer(DmaBuffer& buffer);
     void clear();

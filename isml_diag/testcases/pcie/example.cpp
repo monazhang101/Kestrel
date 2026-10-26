@@ -1,6 +1,7 @@
 #include "diag/modules/PCIeModule.h"
 #include "diag/core/Common.h"
 #include "diag/core/PhalBridge.h"
+#include "diag/implementer/HqcCpQueue.h"
 #include "diag/implementer/HqcDma.h"
 
 extern "C" {
@@ -54,6 +55,35 @@ TestStatus PCIeModule::dma_h2d_example(TestInfo& ti)
 
     ti.logger->info("DMA H2D example: execute one 32-byte host-to-DMEM transfer");
     return descriptor.execute(TIMEOUT_MS);
+}
+
+TestStatus PCIeModule::cp_h2sram_example(TestInfo& ti)
+{
+    constexpr uint64_t SIZE_BYTES = 512;
+    constexpr uint64_t TIMEOUT_MS = 1000;
+
+    if (ti.hal == nullptr) {
+        ti.logger->error("CP example requires a bound HAL context");
+        return PHAL_STATUS_ERROR;
+    }
+
+    auto host = ti.hal->host_mem_alloc(SIZE_BYTES);
+    auto sram = ti.hal->device_mem_alloc(HQC_SRAM_2, SIZE_BYTES);
+    if (!host.valid() || !sram.valid()) {
+        ti.logger->error("CP example allocation failed");
+        return PHAL_STATUS_ERROR;
+    }
+
+    const auto payload = common::pattern::generate(SIZE_BYTES, "incremental");
+    if (payload.empty()) {
+        ti.logger->error("CP example pattern generation failed");
+        return PHAL_STATUS_ERROR;
+    }
+    std::memcpy(host.cpu_base(), payload.data(), payload.size());
+
+    HqcCpQueue queue(*ti.hal);
+    ti.logger->info("CP H2SRAM example: execute one 512-byte host-to-HQC-SRAM-bank-2 transfer");
+    return queue.copy(host, sram, SIZE_BYTES, TIMEOUT_MS);
 }
 
 TestStatus PCIeModule::example(TestInfo& ti)

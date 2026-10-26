@@ -146,6 +146,7 @@ add_library(isml_lib
     isml_lib/implementer/src/generic/generic_impl.cpp
     isml_lib/implementer/src/atlas/memory_regions.cpp
     isml_lib/implementer/src/atlas/pcie/hqc_dma.cpp
+    isml_lib/implementer/src/atlas/pcie/hqc_cp_queue.cpp
     isml_lib/implementer/src/atlas/pcie/pcie_impl.cpp
     isml_lib/implementer/src/atlas_m/pcie/pcie_impl.cpp
 )
@@ -183,6 +184,7 @@ add_library(isml_diag
     isml_diag/testcases/isi/example.cpp
     isml_diag/testcases/pcie/example.cpp
     isml_diag/testcases/pcie/dma_copy.cpp
+    isml_diag/testcases/pcie/cp_copy.cpp
     isml_diag/testcases/pcie/aperture_mapping.cpp
 )
 

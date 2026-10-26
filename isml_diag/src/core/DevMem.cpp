@@ -429,7 +429,8 @@ MemBuffer HalContext::device_mem_alloc(MemoryRegion region,
     uint64_t offset = 0;
     if (fixed_offset.has_value()) {
         offset = *fixed_offset;
-        if (offset % alignment || offset > capacity || size > capacity - offset) {
+        if (offset % sizeof(uint32_t) ||
+            offset > capacity || size > capacity - offset) {
             if (active_device_.logger) {
                 active_device_.logger->error("memory allocation: fixed offset is outside the region");
             }

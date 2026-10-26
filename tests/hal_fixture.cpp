@@ -1,6 +1,8 @@
 #include "diag/core/HalContext.h"
 
 #include <unordered_map>
+#include <algorithm>
+#include <new>
 
 extern "C" {
 #include <atlas_csr_sw/src/h/TOP.h>
@@ -181,9 +183,37 @@ DeviceContext HalContext::mmap_bar_space(DeviceContext ctx)
     return ctx;
 }
 
-DmaBuffer HalContext::host_mem_alloc(uint64_t) { return {}; }
+// Explicit opt-in for the CP register-protocol tests. Normal CLI fixtures
+// still reject host allocation. These addresses are NOT hardware DMA buffers.
+bool test_host_allocations_enabled = false;
+static std::vector<void*> test_host_storage;
+void release_test_host_storage()
+{
+    for (auto* ptr : test_host_storage)
+        ::operator delete(ptr, std::align_val_t(DEFAULT_MEMORY_ALIGNMENT));
+    test_host_storage.clear();
+}
+DmaBuffer::DmaBuffer(HalContext* owner, void* cpu, uint64_t size,
+                     uint64_t address, uint64_t handle, int fd,
+                     uint64_t mapped_size, bool memory_locked, std::string kind)
+    : alloc_ctx_(owner), cpu_base_(cpu), device_addr_(address), size_(size),
+      handle_(handle), backend_fd_(fd), mapped_size_(mapped_size),
+      memory_locked_(memory_locked), addr_kind_(std::move(kind)) {}
+DmaBuffer HalContext::host_mem_alloc(uint64_t bytes)
+{
+    if (!test_host_allocations_enabled || !bytes || bytes > HOST_DMA_MAX_SIZE_BYTES) return {};
+    auto* data = ::operator new(bytes, std::align_val_t(DEFAULT_MEMORY_ALIGNMENT));
+    test_host_storage.push_back(data);
+    return DmaBuffer(this, data, bytes, 0x120000000ull, 1, -1,
+                     0, false, "test-only");
+}
 void HalContext::free_host_dma_buffer(DmaBuffer& buffer)
 {
+    const auto it = std::find(test_host_storage.begin(), test_host_storage.end(), buffer.cpu_base_);
+    if (it != test_host_storage.end()) {
+        ::operator delete(*it, std::align_val_t(DEFAULT_MEMORY_ALIGNMENT));
+        test_host_storage.erase(it);
+    }
     buffer.alloc_ctx_ = nullptr;
     buffer.cpu_base_ = nullptr;
     buffer.device_addr_ = 0;

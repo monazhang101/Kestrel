@@ -1,4 +1,5 @@
 #include "diag/implementer/HqcDma.h"
+#include "diag/implementer/HqcCpQueue.h"
 #include "generic/generic_impl.h"
 
 #include <limits>
@@ -77,6 +78,14 @@ void set_device_endpoint(DmaDescriptor& desc, bool source,
 
 class AtlasPCIeImpl final : public generic_impl::GenericPCIeImpl {
 public:
+    TestStatus cp_copy(TestInfo& ti, const CpTransferRequest& req) override
+    {
+        if (ti.hal == nullptr)
+            return fail(ti, PHAL_STATUS_ERROR, "CP copy requires a bound HAL context");
+        HqcCpQueue queue(*ti.hal);
+        return queue.copy(req);
+    }
+
     TestStatus dma_copy(TestInfo& ti, const DmaTransferRequest& req) override
     {
         if (ti.hal == nullptr)

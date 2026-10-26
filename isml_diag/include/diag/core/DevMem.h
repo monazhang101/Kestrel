@@ -44,6 +44,7 @@ public:
     MemBuffer(MemBuffer&& other) noexcept;
     MemBuffer& operator=(MemBuffer&& other) noexcept;
     bool valid() const { return alloc_ctx_ != nullptr && ctx_ != nullptr; }
+    bool belongs_to(const HalContext& hal) const { return alloc_ctx_ == &hal; }
     MemoryRegion region() const { return region_; }
     uint64_t offset() const { return offset_; } // Byte offset within the region.
     // Region start in its hardware address space: DMEM device address or

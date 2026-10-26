@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -98,6 +99,11 @@ struct DeviceMemoryState {
     using Key = MemoryRegion;
     std::mutex allocation_mutex;
     std::mutex aperture_mutex;
+    // CP submissions are currently serialized because they share one mutable
+    // PHAL context. TODO: use independent contexts/short-lived IO locking for
+    // true multi-queue parallel submission. Indexes are COMP0..3, MEM0..3.
+    std::mutex cp_queue_mutex;
+    std::array<bool, 8> cp_queue_faulted{};
     std::map<Key, std::map<uint64_t, uint64_t>> allocations;
 };
 

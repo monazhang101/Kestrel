@@ -95,9 +95,9 @@ void allocations_are_independent_of_phal_root()
     auto first = hal.device_mem_alloc(DMEM, 64);
     auto second = hal.device_mem_alloc(DMEM, 64);
     CHECK(first.valid() && second.valid());
-    CHECK(first.offset() == 0 && second.offset() == 64);
+    CHECK(first.offset() == 0 && second.offset() == 512);
     CHECK(first.region_base() == 0x10000000 && first.address() == 0x10000000);
-    CHECK(second.address() == 0x10000040);
+    CHECK(second.address() == 0x10000200);
 
     auto pmu_sram = hal.device_mem_alloc(PMU_SRAM, 4);
     CHECK(pmu_sram.valid());
@@ -113,6 +113,17 @@ void allocations_are_independent_of_phal_root()
     auto fixed = hal.device_mem_alloc(DMEM, 4, 0x1000);
     CHECK(fixed.valid() && fixed.offset() == 0x1000);
     CHECK(!hal.device_mem_alloc(DMEM, 4, 0x1000).valid());
+    auto explicit_offset = hal.device_mem_alloc(DMEM, 4, 68);
+    CHECK(explicit_offset.valid() && explicit_offset.offset() == 68);
+    auto third = hal.device_mem_alloc(DMEM, 80);
+    CHECK(third.valid() && third.offset() == 1024 && third.size() == 80);
+    auto descriptor = hal.device_mem_alloc(HQC_SRAM_0, 80);
+    auto payload = hal.device_mem_alloc(HQC_SRAM_0, 128);
+    CHECK(descriptor.valid() && payload.valid() && payload.offset() == 512);
+    auto near_end = hal.device_mem_alloc(HQC_SRAM_1, 0x80000 - 4);
+    CHECK(near_end.valid());
+    CHECK(!hal.device_mem_alloc(HQC_SRAM_1, 4).valid());
+    CHECK(hal.device_mem_alloc(HQC_SRAM_1, 4, 0x80000 - 4).valid());
 }
 
 void device_memory_api_owns_aperture_context()

@@ -4,7 +4,28 @@
 #include <stdint.h>
 
 /* Compile-only stand-ins. Replace this file with the generated CSR header. */
-static const uintptr_t HQC_U_PCIE_HQC_REG_0_OFFSET = 0x10000u;
+#include <atlas_csr_sw/src/h/TOP_deps/PCIE/HQC/HQC.h>
+
+/* V5 remap registers. Values are offsets within the 256 MiB doorbell window,
+ * not absolute BAR0 addresses. */
+#define PCIE_HQC_REG_MEM_CP_QUEUE_0_OFFSET 0x0u
+#define PCIE_HQC_REG_MEM_CP_QUEUE_1_OFFSET 0x4u
+#define PCIE_HQC_REG_MEM_CP_QUEUE_2_OFFSET 0x8u
+#define PCIE_HQC_REG_MEM_CP_QUEUE_3_OFFSET 0xcu
+#define PCIE_HQC_REG_COMP_CP_QUEUE_0_OFFSET 0x10u
+#define PCIE_HQC_REG_COMP_CP_QUEUE_1_OFFSET 0x14u
+#define PCIE_HQC_REG_COMP_CP_QUEUE_2_OFFSET 0x18u
+#define PCIE_HQC_REG_COMP_CP_QUEUE_3_OFFSET 0x1cu
+#define PCIE_HQC_REG_HQC_Q128_CONFIG_OFFSET 0x2f0u
+#define PCIE_HQC_REG_MEM_QUEUE_FSM_ST_OFFSET 0x394u
+
+/* Canonical MEM0 queue image base (RCF read-only view). Macro spelling matches
+ * the tester generated header. The 12-word FW wire layout
+ * is defined by the CP backend, not by invented per-word CSR names. */
+#define PCIE_HQC_REG_MEM_O_QUEUE_0_REG_FETCH_DIRECTION_OFFSET 0xd8u
+#define PCIE_HQC_REG_MEM_O_QUEUE_0_REG_DB_CRD_DEFAULT 0x10u
+#define PCIE_HQC_REG_COMPUTE_O_QUEUE_0_REG_FETCH_DIRECTION_OFFSET 0x19cu
+#define PCIE_HQC_REG_COMPUTE_O_QUEUE_0_REG_DB_CRD_DEFAULT 0x10u
 
 #define PCIE_HQC_REG_CORE0_DESC_CTRL_IDLE_OFFSET 0x60u
 #define PCIE_HQC_REG_CORE0_DESC_CTRL_TRIG_OFFSET 0x64u

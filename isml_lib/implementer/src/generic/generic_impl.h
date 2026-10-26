@@ -7,6 +7,7 @@ namespace generic_impl {
 class GenericPCIeImpl : public PCIeImpl {
 public:
     TestStatus dma_copy(TestInfo& ti, const DmaTransferRequest& req) override;
+    TestStatus cp_copy(TestInfo& ti, const CpTransferRequest& req) override;
 };
 
 std::unique_ptr<PCIeImpl> make_pcie_impl();
