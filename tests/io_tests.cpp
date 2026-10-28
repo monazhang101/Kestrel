@@ -3,6 +3,8 @@
 #include "diag/core/PhalBridge.h"
 #include "diag/core/TestTarget.h"
 #include "diag/implementer/Implementer.h"
+#include "diag/implementer/AtlasResource.h"
+#include "diag/device/DeviceManager.h"
 
 #include <atlas_csr_sw/src/h/TOP.h>
 
@@ -209,6 +211,203 @@ void testcase_parameter_lists_are_loaded_in_order()
     CHECK(runs[7].at("size_bytes") == "256");
 }
 
+void atlas_resource_info_is_decoded()
+{
+    CHECK(ATLAS_BAR0_RCF_BASE == 0x20000000ull);
+    CHECK(ATLAS_PMU_INTERNAL_BASE == 0x18000000ull);
+    CHECK(ATLAS_PMU_BASE == 0x38000000ull);
+    CHECK(ATLAS_PMU_UNLOCK_BAR0_OFFSET == 0x38000000ull);
+    CHECK(ATLAS_PMU_UNLOCK_KEY == 0x5a5aa5a5u);
+    CHECK(ATLAS_PMU_REG_WINDOW == 0x800ull);
+    CHECK(ATLAS_FW_STATUS_BAR0_OFFSET == 0x3a10285cull);
+    CHECK(ATLAS_RESOURCE_INFO_BAR0_OFFSET == 0x3a10589cull);
+
+    const auto isi_aic = decode_atlas_presilicon_resource(0x00031042u);
+    CHECK(isi_aic.valid);
+    CHECK(isi_aic.profile_matched);
+    CHECK(isi_aic.platform == AtlasPlatform::Fpga);
+    CHECK(isi_aic.isi_mask == 0x33u);
+    CHECK(isi_aic.isi_indices() == std::vector<uint32_t>({0, 1, 4, 5}));
+    CHECK(!isi_aic.has_isi(3));
+    CHECK(isi_aic.has_isi(4));
+    CHECK(isi_aic.aic.profile == AtlasAicProfile::FpgaCut3);
+    CHECK(isi_aic.aic.tpe_count == 1);
+    CHECK(isi_aic.aic.lpe_count == 2);
+    CHECK(isi_aic.profile_name == "isi-aic-cut3");
+    CHECK(isi_aic.fake_dmem_size_bytes ==
+          8ull * 1024ull * 1024ull * 1024ull);
+    CHECK(isi_aic.jtag_mux == AtlasJtagMux::Pmu);
+
+    const auto fpga = decode_atlas_presilicon_resource(0x00000002u);
+    CHECK(fpga.valid);
+    CHECK(fpga.profile_matched);
+    CHECK(fpga.profile_name == "base");
+    CHECK(fpga.dmc_mask == 0x249u);
+    CHECK(fpga.fake_dmem_size_bytes ==
+          8ull * 1024ull * 1024ull * 1024ull);
+    CHECK(fpga.has_dmc(0, 0));
+    CHECK(fpga.has_dmc(3, 0));
+    CHECK(!fpga.has_dmc(0, 1));
+    CHECK(!fpga.has_cxl(0, 0));
+    CHECK(fpga.get_dmc_type(0, 0) == AtlasDmcType::FakeDmem);
+
+    const auto emu_base = decode_atlas_presilicon_resource(0x00000001u);
+    CHECK(emu_base.valid);
+    CHECK(emu_base.profile_name == "base1");
+    CHECK(emu_base.dmc_mask == 0xfffu);
+    CHECK(emu_base.fake_dmem_size_bytes ==
+          32ull * 1024ull * 1024ull * 1024ull);
+    CHECK(emu_base.cxl_mask == 0x000u);
+    CHECK(emu_base.has_dmc(0, 1));
+    CHECK(emu_base.has_dmc(3, 2));
+
+    const auto cxl1 = decode_atlas_presilicon_resource(0x00000111u);
+    CHECK(cxl1.valid);
+    CHECK(cxl1.profile_name == "cxl1");
+    CHECK(cxl1.dmc_mask == 0xfffu);
+    CHECK(cxl1.cxl_mask == 0x001u);
+    CHECK(cxl1.has_dmc(0, 1));
+    CHECK(!cxl1.has_cxl(0, 1));
+
+    const auto cxl2 = decode_atlas_presilicon_resource(0x00000211u);
+    CHECK(cxl2.valid);
+    CHECK(cxl2.dmc_mask == 0xfffu);
+    CHECK(cxl2.cxl_mask == 0x007u);
+    CHECK(cxl2.has_cxl(0, 1));
+    CHECK(!cxl2.has_cxl(1, 0));
+    CHECK(cxl2.get_dmc_type(0, 0) == AtlasDmcType::Cxl30);
+    CHECK(cxl2.get_dmc_type(0, 1) == AtlasDmcType::Cxl30);
+    CHECK(cxl2.get_dmc_type(0, 2) == AtlasDmcType::Cxl20);
+
+    const auto cxl3 = decode_atlas_presilicon_resource(0x00000311u);
+    CHECK(cxl3.valid);
+    CHECK(cxl3.dmc_mask == 0xfffu);
+    CHECK(cxl3.cxl_mask == 0x249u);
+    CHECK(cxl3.has_dmc(0, 1));
+    CHECK(!cxl3.has_cxl(0, 1));
+    CHECK(cxl3.get_dmc_type(0, 0) == AtlasDmcType::Cxl30);
+    CHECK(cxl3.get_dmc_type(1, 0) == AtlasDmcType::Cxl30);
+    CHECK(cxl3.get_dmc_type(2, 0) == AtlasDmcType::Cxl20);
+    CHECK(cxl3.get_dmc_type(3, 0) == AtlasDmcType::Cxl20);
+
+    const auto cxl4 = decode_atlas_presilicon_resource(0x00020151u);
+    CHECK(cxl4.valid);
+    CHECK(cxl4.profile_name == "cxl4");
+    CHECK(cxl4.dmc_mask == 0xfffu);
+    CHECK(cxl4.cxl_mask == 0x001u);
+    CHECK(cxl4.aic.profile == AtlasAicProfile::Cut2);
+
+    const auto emu_64g = decode_atlas_presilicon_resource(0x00400001u);
+    CHECK(emu_64g.valid);
+    CHECK(emu_64g.platform == AtlasPlatform::Emu);
+    CHECK(emu_64g.profile_name == "base2");
+    CHECK(emu_64g.fake_dmem_size_bytes ==
+          64ull * 1024ull * 1024ull * 1024ull);
+
+    for (const auto& profile : ATLAS_EMU_RESOURCE_PROFILES) {
+        const auto info = decode_atlas_presilicon_resource(profile.raw);
+        CHECK(info.valid);
+        CHECK(info.profile_matched);
+        CHECK(info.profile_name == profile.name);
+        CHECK(info.dmc_mask == profile.dmc_mask);
+    }
+    for (const auto& profile : ATLAS_FPGA_RESOURCE_PROFILES) {
+        const auto info = decode_atlas_presilicon_resource(profile.raw);
+        CHECK(info.valid);
+        CHECK(info.profile_matched);
+        CHECK(info.profile_name == profile.name);
+        CHECK(info.dmc_mask == profile.dmc_mask);
+    }
+
+    CHECK(!decode_atlas_presilicon_resource(0u).valid);
+    CHECK(!decode_atlas_presilicon_resource(0xffffffffu).valid);
+
+    const auto fallback_cxl =
+        decode_atlas_presilicon_resource(0x00100211u);
+    CHECK(fallback_cxl.valid);
+    CHECK(!fallback_cxl.profile_matched);
+    CHECK(fallback_cxl.profile_name == "unmatched");
+    CHECK(fallback_cxl.has_cxl_subsystem);
+    CHECK(fallback_cxl.cxl_mask == 0x007u);
+    CHECK(fallback_cxl.has_cxl(0, 2));
+    CHECK(fallback_cxl.dmc_mask == ATLAS_ALL_DMC_MASK);
+
+    const auto fallback_isi =
+        decode_atlas_presilicon_resource(0x00001021u);
+    CHECK(fallback_isi.valid);
+    CHECK(!fallback_isi.profile_matched);
+    CHECK(fallback_isi.isi_mask == 0x33u);
+    CHECK(fallback_isi.isi_indices() ==
+          std::vector<uint32_t>({0, 1, 4, 5}));
+
+    const auto fallback_aic =
+        decode_atlas_presilicon_resource(0x00010032u);
+    CHECK(fallback_aic.valid);
+    CHECK(!fallback_aic.profile_matched);
+    CHECK(fallback_aic.aic.profile == AtlasAicProfile::EmuCut1);
+    CHECK(fallback_aic.has_aic_blocks(ATLAS_AIC_TPE0));
+    CHECK(fallback_aic.dmc_mask == ATLAS_DMC0_MASK);
+
+    CHECK(!decode_atlas_presilicon_resource(0x00000411u).valid);
+    CHECK(!decode_atlas_presilicon_resource(0x00002021u).valid);
+    CHECK(!decode_atlas_presilicon_resource(0x00060032u).valid);
+    CHECK(!decode_atlas_presilicon_resource(0x00400002u).valid);
+}
+
+void bar_write32_round_trips()
+{
+    HalContext hal;
+    make_device(hal, "bar-write");
+
+    uint32_t value = 0;
+    CHECK(hal.write_bar32(0, 4, 0x1234abcdu));
+    CHECK(hal.read_bar32(0, 4, value));
+    CHECK(value == 0x1234abcdu);
+}
+
+void discovery_uses_resource_inventory()
+{
+    DeviceManager manager("isml_diag/policies");
+    const auto tree = manager.discover();
+
+    const auto find = [&tree](const std::string& name)
+        -> const DeviceDiscoveryInfo* {
+        for (const auto& device : tree.devices) {
+            if (device.name == name) return &device;
+        }
+        return nullptr;
+    };
+
+    const auto* root = find("TPU0");
+    CHECK(root != nullptr);
+    CHECK(root->properties.at("profile") == "isi-aic-cut3");
+    CHECK(root->properties.at("profile_matched") == "true");
+    CHECK(root->properties.at("fake_dmem_size_gib") == "8");
+    CHECK(root->properties.at("isi_mask") == "0x33");
+    CHECK(root->properties.at("dmc_mask") == "0x249");
+    CHECK(root->properties.at("cxl_mask") == "0x000");
+    CHECK(find("ISI_0_0") != nullptr);
+    CHECK(find("ISI_0_1") != nullptr);
+    CHECK(find("ISI_0_3") == nullptr);
+    CHECK(find("ISI_0_4") != nullptr);
+    CHECK(find("ISI_0_5") != nullptr);
+
+    const auto* dmc = find("DMC_0_0_0");
+    CHECK(dmc != nullptr);
+    CHECK(dmc->parent == "DDP_0_0");
+    CHECK(dmc->properties.at("type") == "fake-dmem");
+    CHECK(dmc->properties.at("size_gib") == "8");
+    CHECK(find("DMC_0_0_1") == nullptr);
+    CHECK(find("DMC_0_0_2") == nullptr);
+    CHECK(find("DMC_0_1_0") != nullptr);
+    CHECK(find("DMC_0_2_0") != nullptr);
+    CHECK(find("DMC_0_3_0") != nullptr);
+
+    const auto* aic = find("AIC_0");
+    CHECK(aic != nullptr);
+    CHECK(aic->properties.at("profile") == "fpga-cut3");
+}
+
 void logging_uses_flow_and_regio_levels()
 {
     Logger logger;
@@ -282,6 +481,9 @@ int main()
         dmem_supports_native_64_bit_access();
         csr_headers_are_available();
         testcase_parameter_lists_are_loaded_in_order();
+        atlas_resource_info_is_decoded();
+        bar_write32_round_trips();
+        discovery_uses_resource_inventory();
         logging_uses_flow_and_regio_levels();
         phal_regio_suppression_is_scoped();
         std::cout << "IO contracts passed (software only; no hardware validation)\n";

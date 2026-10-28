@@ -1,4 +1,5 @@
 #include "diag/core/HalContext.h"
+#include "diag/core/Common.h"
 
 #include <array>
 #include <cerrno>
@@ -732,6 +733,22 @@ HalContext::TestcaseScope& HalContext::TestcaseScope::operator=(TestcaseScope&& 
 const DeviceContext& HalContext::device_context() const
 {
     return active_device_;
+}
+
+bool HalContext::read_bar32(uint32_t bar_index,
+                            uint64_t offset,
+                            uint32_t& value) const
+{
+    return device_bound_ &&
+           common::bar::read32(active_device_, bar_index, offset, value);
+}
+
+bool HalContext::write_bar32(uint32_t bar_index,
+                             uint64_t offset,
+                             uint32_t value) const
+{
+    return device_bound_ &&
+           common::bar::write32(active_device_, bar_index, offset, value);
 }
 
 TestStatus HalContext::with_pcie_context(

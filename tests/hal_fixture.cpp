@@ -1,4 +1,6 @@
 #include "diag/core/HalContext.h"
+#include "diag/core/Common.h"
+#include "diag/implementer/AtlasResource.h"
 
 #include <unordered_map>
 #include <algorithm>
@@ -12,6 +14,7 @@ namespace {
 
 using TestBarStorage = std::vector<std::unique_ptr<std::vector<uint8_t>>>;
 std::unordered_map<HalContext*, TestBarStorage> test_bar_storage;
+std::unordered_map<const HalContext*, bool> test_pmu_unlocked;
 
 }
 
@@ -23,6 +26,7 @@ void HalContext::clear_mappings()
     phal_context_ = {};
     aperture_phal_context_ = {};
     test_bar_storage.erase(this);
+    test_pmu_unlocked.erase(this);
 }
 void HalContext::clear()
 {
@@ -46,6 +50,7 @@ void HalContext::bind_device(const DeviceContext& ctx, Logger* logger)
     active_device_.memory_regions = active_memory_regions_;
     host_dma_mode_ = HostDmaMode::IsmlDrv;
     device_bound_ = true;
+    test_pmu_unlocked[this] = false;
 }
 
 TestStatus HalContext::configure_host_dma(const std::string& driver)
@@ -123,6 +128,37 @@ HalContext::TestcaseScope& HalContext::TestcaseScope::operator=(TestcaseScope&& 
 const DeviceContext& HalContext::device_context() const
 {
     return active_device_;
+}
+
+bool HalContext::read_bar32(uint32_t bar_index,
+                            uint64_t offset,
+                            uint32_t& value) const
+{
+    if (!device_bound_ || bar_index != 0) return false;
+    if (offset == ATLAS_FW_STATUS_BAR0_OFFSET) {
+        if (!test_pmu_unlocked[this]) return false;
+        value = ATLAS_FW_STATUS_IP_INIT_DONE;
+        return true;
+    }
+    if (offset == ATLAS_RESOURCE_INFO_BAR0_OFFSET) {
+        // FPGA isi+aic-cut3: ISI 0/1/4/5, fake 32-GiB DMEM, PMU JTAG.
+        value = 0x00031042u;
+        return true;
+    }
+    return common::bar::read32(active_device_, bar_index, offset, value);
+}
+
+bool HalContext::write_bar32(uint32_t bar_index,
+                             uint64_t offset,
+                             uint32_t value) const
+{
+    if (!device_bound_) return false;
+    if (bar_index == 0 && offset == ATLAS_PMU_UNLOCK_BAR0_OFFSET) {
+        if (value != ATLAS_PMU_UNLOCK_KEY) return false;
+        test_pmu_unlocked[this] = true;
+        return true;
+    }
+    return common::bar::write32(active_device_, bar_index, offset, value);
 }
 
 TestStatus HalContext::with_pcie_context(

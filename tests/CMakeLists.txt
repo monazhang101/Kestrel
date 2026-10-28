@@ -57,9 +57,10 @@ add_test(NAME cli_flow_log_level COMMAND io_test_cli pcie_bar_read32 --bar-index
 add_test(NAME cli_regio_log_level COMMAND io_test_cli pcie_bar_read32 --bar-index 0 --offset 4 --log-level regio)
 add_test(NAME cli_legacy_debug_log_level COMMAND io_test_cli pcie_bar_read32 --bar-index 0 --offset 4 --log-level debug)
 add_test(NAME cli_legacy_trace_log_level COMMAND io_test_cli pcie_bar_read32 --bar-index 0 --offset 4 --log-level trace)
+add_test(NAME cli_bar_write32 COMMAND io_test_cli pcie_bar_write32 --bar-index 0 --offset 4 --value 0x1234abcd)
 add_test(NAME cli_discover COMMAND io_test_cli discover)
 set_tests_properties(
-    cli_discover cli_flow_log_level cli_regio_log_level
+    cli_discover cli_bar_write32 cli_flow_log_level cli_regio_log_level
     cli_legacy_debug_log_level cli_legacy_trace_log_level
     PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 

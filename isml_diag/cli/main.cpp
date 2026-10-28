@@ -90,6 +90,10 @@ static void print_discovery_summary(const DeviceTree& tree)
                   << " vid=0x" << std::hex << device.vendor_id
                   << " did=0x" << device.device_id
                   << std::dec << std::endl;
+        for (const auto& property : device.properties) {
+            std::cout << "  " << property.first << "=" << property.second
+                      << std::endl;
+        }
         print_bar_map_status(device.bars);
         if (!device.bars.empty()) {
             std::cout << std::endl;

@@ -26,6 +26,11 @@ PCIeModule::PCIeModule(const std::string& name,
               {{"bar_index", "0", "u32"},
                {"offset", "", "offset"}},
               [this](TestInfo& ti) { return bar_read32(ti); });
+    _add_test("bar_write32",
+              {{"bar_index", "0", "u32"},
+               {"offset", "", "offset"},
+               {"value", "", "u32"}},
+              [this](TestInfo& ti) { return bar_write32(ti); });
     _add_test("sequential_aperture_mapping", {},
               [this](TestInfo& ti) { return sequential_aperture_mapping(ti); });
     // TestTarget supplies these defaults through ti.args when flags are omitted.
@@ -74,6 +79,37 @@ TestStatus PCIeModule::bar_read32(TestInfo& ti)
     }
 
     ti.logger->info("BAR read completed: bar=" + std::to_string(bar_index) +
+                    " offset=" + common::format::hex(offset) +
+                    " value=" + common::format::hex(value, 8));
+    return PHAL_STATUS_OK;
+}
+
+TestStatus PCIeModule::bar_write32(TestInfo& ti)
+{
+    const auto bar_index = common::args::get_u64(ti.args, "bar_index");
+    const auto offset = common::args::get_u64(ti.args, "offset");
+    const auto value = common::args::get_u64(ti.args, "value");
+    if (bar_index > UINT32_MAX) {
+        ti.logger->error("BAR index is outside uint32 range");
+        return PHAL_STATUS_INVALID;
+    }
+    if (offset % sizeof(uint32_t) != 0) {
+        ti.logger->error("BAR offset must be 4-byte aligned: " + common::format::hex(offset));
+        return PHAL_STATUS_INVALID;
+    }
+
+    ti.logger->info("BAR write start: bar=" + std::to_string(bar_index) +
+                    " offset=" + common::format::hex(offset) +
+                    " value=" + common::format::hex(value, 8));
+    if (ti.hal == nullptr ||
+        !ti.hal->write_bar32(static_cast<uint32_t>(bar_index), offset,
+                             static_cast<uint32_t>(value))) {
+        ti.logger->error("BAR write failed: bar=" + std::to_string(bar_index) +
+                         " offset=" + common::format::hex(offset));
+        return PHAL_STATUS_ERROR;
+    }
+
+    ti.logger->info("BAR write completed: bar=" + std::to_string(bar_index) +
                     " offset=" + common::format::hex(offset) +
                     " value=" + common::format::hex(value, 8));
     return PHAL_STATUS_OK;

@@ -1,6 +1,7 @@
 #include "diag/modules/PCIeModule.h"
 #include "diag/core/Common.h"
 #include "diag/core/PhalBridge.h"
+#include "diag/device/TPUDevice.h"
 #include "diag/implementer/HqcCpQueue.h"
 #include "diag/implementer/HqcDma.h"
 
@@ -88,6 +89,42 @@ TestStatus PCIeModule::cp_h2sram_example(TestInfo& ti)
 
 TestStatus PCIeModule::example(TestInfo& ti)
 {
+    if (device_ == nullptr) {
+        ti.logger->error("PCIe example requires an owning TPU device");
+        return PHAL_STATUS_ERROR;
+    }
+
+    const auto& resource = device_->resource_info();
+    const auto isi_indices = device_->isi_indices();
+    std::string isi_list = "{";
+    for (size_t i = 0; i < isi_indices.size(); ++i) {
+        if (i != 0) isi_list += ",";
+        isi_list += std::to_string(isi_indices[i]);
+    }
+    isi_list += "}";
+
+    ti.logger->info("Atlas inventory API example");
+    ti.logger->info("  resource_raw=" + hex(resource.raw, 8) +
+                    " profile=" + resource.profile_name +
+                    " valid=" + (resource.valid ? "true" : "false") +
+                    " profile_matched=" +
+                    (resource.profile_matched ? "true" : "false"));
+    ti.logger->info("  isi_indices=" + isi_list +
+                    " has_isi(0)=" + (device_->has_isi(0) ? "true" : "false") +
+                    " has_isi(4)=" + (device_->has_isi(4) ? "true" : "false"));
+    ti.logger->info("  dmc_mask=" + hex(device_->dmc_mask(), 3) +
+                    " has_dmc(0,0)=" +
+                    (device_->has_dmc(0, 0) ? "true" : "false") +
+                    " has_dmc(0,1)=" +
+                    (device_->has_dmc(0, 1) ? "true" : "false"));
+    ti.logger->info("  cxl_mask=" + hex(device_->cxl_mask(), 3) +
+                    " has_cxl(0,0)=" +
+                    (device_->has_cxl(0, 0) ? "true" : "false"));
+    ti.logger->info("  dmc_type(0,0)=" +
+                    to_string(device_->dmc_type(0, 0)) +
+                    " fake_dmem_size_gib=" +
+                    std::to_string(resource.fake_dmem_size_bytes >> 30));
+
     auto* phal_ctx = ti.phal_ctx;
     if (phal_ctx == nullptr) {
         ti.logger->error("chip-level PHAL context is not initialized");

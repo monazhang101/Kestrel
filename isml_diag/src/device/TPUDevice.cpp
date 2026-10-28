@@ -58,11 +58,13 @@ void print_bar_map_status(const DeviceContext& ctx)
 TPUDevice::TPUDevice(const std::string& logical_name,
                      const DeviceContext& ctx,
                      const TPUDeviceConfig& config,
-                     std::shared_ptr<Implementer> implementer)
+                     std::shared_ptr<Implementer> implementer,
+                     AtlasResourceInfo resource_info)
     : TestTarget(logical_name, "tpu", ctx),
       tpu_index_(config.tpu_index),
       config_(config),
-      implementer_(std::move(implementer))
+      implementer_(std::move(implementer)),
+      resource_info_(std::move(resource_info))
 {
     // Create the policy-defined PCIe module, if this TPU type exposes one.
     if (!config_.pcie_modules.empty()) {

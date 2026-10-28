@@ -13,6 +13,7 @@ private:
 
     // Testcase implementations registered by PCIeModule's constructor.
     TestStatus bar_read32(TestInfo& ti);
+    TestStatus bar_write32(TestInfo& ti);
     TestStatus example(TestInfo& ti);
     TestStatus dma_h2d_example(TestInfo& ti);
     TestStatus cp_h2sram_example(TestInfo& ti);

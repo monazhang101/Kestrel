@@ -145,6 +145,7 @@ add_library(isml_lib
     isml_lib/implementer/src/implementer.cpp
     isml_lib/implementer/src/generic/generic_impl.cpp
     isml_lib/implementer/src/atlas/memory_regions.cpp
+    isml_lib/implementer/src/atlas/resource.cpp
     isml_lib/implementer/src/atlas/pcie/hqc_dma.cpp
     isml_lib/implementer/src/atlas/pcie/hqc_cp_queue.cpp
     isml_lib/implementer/src/atlas/pcie/pcie_impl.cpp
@@ -159,8 +160,10 @@ target_include_directories(isml_lib
         ${ISML_IMPLEMENTER_DIR}/src
 )
 
+# AtlasResource.h is a public header that includes generated CSR headers, so
+# the CSR include paths must propagate to isml_lib's dependents.
 if(NOT ISML_USING_MOCK_PHAL)
-    target_include_directories(isml_lib PRIVATE ${PHAL_CSR_INCLUDE_DIRS})
+    target_include_directories(isml_lib PUBLIC ${PHAL_CSR_INCLUDE_DIRS})
 endif()
 
 target_link_libraries(isml_lib PUBLIC phal)

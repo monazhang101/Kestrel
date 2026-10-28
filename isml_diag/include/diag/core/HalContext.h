@@ -121,6 +121,11 @@ public:
     bool has_device() const { return device_bound_; }
     const MemoryRegionMap& memory_regions() const { return active_memory_regions_; }
 
+    // Platform discovery uses this narrow BAR accessor before testcase PHAL
+    // contexts exist. Register meanings and offsets remain platform-owned.
+    bool read_bar32(uint32_t bar_index, uint64_t offset, uint32_t& value) const;
+    bool write_bar32(uint32_t bar_index, uint64_t offset, uint32_t value) const;
+
     // Select the host-memory provider for a testcase. Driver and IOMMU checks
     // are performed lazily if that testcase actually requests host memory.
     TestStatus configure_host_dma(const std::string& driver);
