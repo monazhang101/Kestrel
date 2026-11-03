@@ -4,6 +4,7 @@
 #include "diag/core/PhalBridge.h"
 #include "diag/core/DevMem.h"
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -83,6 +84,7 @@ private:
     // context is separate because PCIe block entry changes env.base.
     PhalBridge::ScopedContext phal_context_;
     PhalBridge::ScopedContext aperture_phal_context_;
+    std::array<PhalBridge::ScopedContext, IPC_FW_COUNT> ipc_contexts_;
     DeviceContext active_device_;
     MemoryRegionMap active_memory_regions_{};
     std::shared_ptr<DeviceMemoryState> active_memory_ =
@@ -114,9 +116,11 @@ public:
     std::vector<DeviceContext> scan_pci_devices() const;
     DeviceContext mmap_bar_space(DeviceContext ctx);
     void bind_device(const DeviceContext& ctx, Logger* logger = nullptr);
-    // Create the two PHAL contexts used during one testcase. The returned
-    // scope owns their lifetime and deinitializes them on testcase exit.
-    TestcaseScope begin_testcase(std::string* error = nullptr);
+    // Direct PHAL contexts are always created. Optional transport-backed
+    // contexts are created from the testcase's registered resource list.
+    TestcaseScope begin_testcase(
+        std::string* error = nullptr,
+        const CtxResources& ctx_resources = {});
     const DeviceContext& device_context() const;
     bool has_device() const { return device_bound_; }
     const MemoryRegionMap& memory_regions() const { return active_memory_regions_; }
@@ -133,6 +137,12 @@ public:
     // The ordinary testcase context is exposed only to framework-created
     // TestInfo instances. PCIe callers use with_pcie_context().
     phal_ctx_t* phal_context() const { return phal_context_.get(); }
+    phal_ctx_t* ipc_context(IpcFwId fw) const
+    {
+        const auto id = static_cast<uint32_t>(fw);
+        if (id < IPC_FW_ID_FIRST || id > IPC_FW_ID_LAST) return nullptr;
+        return ipc_contexts_[id - IPC_FW_ID_FIRST].get();
+    }
 
     // Run a PCIe operation with the shared per-device context and lock. The
     // callback receives a context rooted in TOP_U_PCIE_0_OFFSET, so both

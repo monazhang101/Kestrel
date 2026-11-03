@@ -89,6 +89,105 @@ hw_ops_t make_hal_drv_ops()
 
 const hw_ops_t hal_drv_ops = make_hal_drv_ops();
 
+// ---------------------------------------------------------------------------
+// IPC ops: phal_read/phal_write forwarded to the firmware through
+// the host<->fw IPC slots (see IpcBridge). The env->priv pointer is
+// the IhalIO that owns the bound IpcBridge.
+// ---------------------------------------------------------------------------
+static phal_status_t to_phal_status(IpcStatus status);
+static std::string ipc_status_text(IpcFwId fw, phal_status_t status);
+
+static void log_ipc_io(const char* operation, const IhalIO* io,
+                       uintptr_t fw_addr, uint32_t value,
+                       phal_status_t status)
+{
+    if (io == nullptr || io->device_ctx == nullptr) return;
+    auto* logger = io->device_ctx->logger;
+    if (logger == nullptr) return;
+    if (status == PHAL_STATUS_OK &&
+        (logger->get_level() < LogLevel::RegIo ||
+         io->regio_suppression_depth.load(std::memory_order_relaxed) != 0)) return;
+    using common::format::hex;
+    const auto& ipc = io->ipc;
+    const auto message = std::string(operation) + " bdf=" +
+        io->device_ctx->bdf +
+        " env_base=" + hex(ipc.region_bar0_base()) +
+        " offset=" + hex(ipc.slot_region_offset()) +
+        " bar0_offset=" + hex(ipc.slot_bar0_offset()) +
+        " fw_addr=" + hex(static_cast<uint64_t>(fw_addr), 8) +
+        " value=" + hex(value, 8) +
+        " status=" + std::to_string(static_cast<int>(status)) +
+        " (" + ipc_status_text(io->fw, status) + ")";
+    if (status == PHAL_STATUS_OK) logger->regio(message);
+    else logger->error(message);
+}
+
+static phal_status_t to_phal_status(IpcStatus status)
+{
+    switch (status) {
+    case IpcStatus::Ok: return PHAL_STATUS_OK;
+    case IpcStatus::ErrTimeout: return PHAL_STATUS_TIMEOUT;
+    case IpcStatus::ErrInvalid: return PHAL_STATUS_INVALID;
+    default: return PHAL_STATUS_ERROR;
+    }
+}
+
+static std::string ipc_status_text(IpcFwId fw, phal_status_t status)
+{
+    IpcStatus ipc_status;
+    switch (status) {
+    case PHAL_STATUS_TIMEOUT:
+        ipc_status = IpcStatus::ErrTimeout;
+        break;
+    case PHAL_STATUS_INVALID:
+        ipc_status = IpcStatus::ErrInvalid;
+        break;
+    default:
+        ipc_status = IpcStatus::Ok;
+        break;
+    }
+    std::string text;
+    to_ipc_status_text(ipc_status, fw, text);
+    return text;
+}
+
+static phal_status_t ipc_drv_write(env_t* env, uintptr_t addr, uint32_t data)
+{
+    if (env == nullptr || env->priv == nullptr) {
+        return PHAL_STATUS_INVALID;
+    }
+    auto* io = static_cast<IhalIO*>(env->priv);
+    const auto status = io->ipc.write(static_cast<uint32_t>(addr), data);
+    log_ipc_io("ipc_write", io, addr, data, to_phal_status(status));
+    return to_phal_status(status);
+}
+
+static phal_status_t ipc_drv_read(env_t* env, uintptr_t addr, uint32_t* data)
+{
+    if (env == nullptr || env->priv == nullptr || data == nullptr) {
+        return PHAL_STATUS_INVALID;
+    }
+    auto* io = static_cast<IhalIO*>(env->priv);
+    uint32_t value = 0;
+    const auto status = io->ipc.read(static_cast<uint32_t>(addr), value);
+    if (status == IpcStatus::Ok) *data = value;
+    log_ipc_io("ipc_read", io, addr, value, to_phal_status(status));
+    return to_phal_status(status);
+}
+
+hw_ops_t make_ipc_drv_ops()
+{
+    // IPC shares the delay semantics with the direct MMIO path.
+    hw_ops_t ops{};
+    ops.write = ipc_drv_write;
+    ops.read = ipc_drv_read;
+    ops.delay_us = hal_drv_delay_us;
+    ops.delay_ns = hal_drv_delay_ns;
+    return ops;
+}
+
+const hw_ops_t ipc_drv_ops = make_ipc_drv_ops();
+
 const char* phal_project_macro(PhalProject project)
 {
     switch (project) {
@@ -253,6 +352,57 @@ PhalBridge::ScopedContext PhalBridge::create_context(const DeviceContext& ctx,
     state->initialized = true;
     // Keep the framework-owned chip root explicit even if a PHAL project
     // performs additional initialization internally.
+    state->ctx.env.base = CHIP_RCF_BASE;
+    return ScopedContext(std::move(state));
+}
+
+PhalBridge::ScopedContext PhalBridge::create_ipc_context(const DeviceContext& ctx,
+                                                          PhalProject project,
+                                                          IpcFwId fw,
+                                                          std::string* error)
+{
+    if (project == PhalProject::Generic) {
+        project = phal_project_from_tpu_type(ctx.tpu_type);
+    }
+
+    auto state = std::make_unique<ScopedContext::State>();
+    state->device_ctx = ctx;
+    state->logger.set_level(ctx.logger ? ctx.logger->get_level() : LogLevel::Info);
+    state->device_ctx.logger = &state->logger;
+    state->ihalIO.device_ctx = &state->device_ctx;
+    state->ihalIO.fw = fw;
+
+    // Map the firmware's IPC slots out of the same BAR0 window.
+    std::string ipc_error;
+    if (!state->ihalIO.ipc.bind(ctx, fw, &ipc_error)) {
+        if (error != nullptr) {
+            *error = "IPC bind failed (fw=" + std::string(to_string(fw)) +
+                     "): " + ipc_error;
+        }
+        return {};
+    }
+
+    phal_config_t config{};
+    config.env_config.base = CHIP_RCF_BASE;
+    config.env_config.user_data = &state->ihalIO;
+#if !defined(HAL_FIRMWARE_MODE)
+    config.env_config.hw_ops = &ipc_drv_ops;
+#endif
+    config.project_config = to_phal_project(project);
+
+    auto status = phal_init(&state->ctx, &config);
+    if (status != PHAL_STATUS_OK) {
+        if (error != nullptr) {
+            *error = phal_error("phal_init", status);
+            *error += " project=";
+            *error += phal_project_macro(project);
+            *error += " bdf=";
+            *error += ctx.bdf;
+        }
+        return {};
+    }
+
+    state->initialized = true;
     state->ctx.env.base = CHIP_RCF_BASE;
     return ScopedContext(std::move(state));
 }

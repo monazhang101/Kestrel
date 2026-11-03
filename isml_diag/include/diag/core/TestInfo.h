@@ -1,8 +1,13 @@
 #pragma once
 
+#include "diag/core/IpcBridge.h"
+
+#include <initializer_list>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 extern "C" {
 #include <phal/phal.h>
@@ -11,6 +16,44 @@ extern "C" {
 using TestArgs = std::unordered_map<std::string, std::string>;
 
 class HalContext;
+
+enum class CtxResourceType {
+    Ipc,
+};
+
+struct CtxResource {
+    CtxResourceType ctx_type;
+    std::optional<IpcFwId> ipc_fw;
+
+    static CtxResource ipc(IpcFwId fw)
+    {
+        return {CtxResourceType::Ipc, fw};
+    }
+};
+
+// Optional contexts declared by a testcase at registration. Direct PHAL
+// contexts remain implicit because every testcase receives them.
+class CtxResources {
+private:
+    std::vector<CtxResource> resources_;
+
+public:
+    CtxResources() = default;
+    CtxResources(std::initializer_list<CtxResource> resources)
+        : resources_(resources)
+    {
+    }
+
+    bool requires_ipc(IpcFwId fw) const
+    {
+        for (const auto& resource : resources_) {
+            if (resource.ctx_type == CtxResourceType::Ipc &&
+                resource.ipc_fw.has_value() &&
+                *resource.ipc_fw == fw) return true;
+        }
+        return false;
+    }
+};
 
 // Testcases and PHAL share one status type and bit layout.
 using TestStatus = phal_status_t;
@@ -99,6 +142,8 @@ struct TestInfo {
     // Framework-owned PHAL context for the device bound to hal. Memory access
     // APIs use hal's private aperture context instead of this pointer.
     phal_ctx_t* phal_ctx = nullptr;
+    // Optional PHAL contexts are retrieved explicitly from hal, for example
+    // ti.hal->ipc_context(fw).
 };
 
 inline TestStatus make_unimplemented_status(const TestInfo& ti,

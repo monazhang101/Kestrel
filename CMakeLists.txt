@@ -173,6 +173,7 @@ add_library(isml_diag
     isml_diag/src/core/DevMem.cpp
     isml_diag/src/core/PolicyParser.cpp
     isml_diag/src/core/PhalBridge.cpp
+    isml_diag/src/core/IpcBridge.cpp
     isml_diag/src/core/HalContext.cpp
     isml_diag/src/device/DeviceManager.cpp
     isml_diag/src/device/TPUDevice.cpp
