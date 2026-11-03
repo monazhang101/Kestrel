@@ -281,8 +281,17 @@ DeviceTree DeviceManager::discover()
         // discovery will additionally bind VID/DID/BDF to a stable TPU index.
         const PolicyEntry* policy_entry = nullptr;
         for (const auto& entry : policy_) {
-            if (entry.match_vendor_id == pci_device.vendor_id &&
-                entry.match_device_id == pci_device.device_id) {
+            const bool exact_match =
+                entry.match_vendor_id == pci_device.vendor_id &&
+                entry.match_device_id == pci_device.device_id;
+            // The current FPGA bitstream enumerates with this temporary ID,
+            // while the Atlas product policy retains the production ID.
+            const bool fpga_bringup_alias =
+                entry.match_vendor_id == 0x16c3 &&
+                entry.match_device_id == 0xabcd &&
+                pci_device.vendor_id == 0x213e &&
+                pci_device.device_id == 0x0000;
+            if (exact_match || fpga_bringup_alias) {
                 policy_entry = &entry;
                 break;
             }

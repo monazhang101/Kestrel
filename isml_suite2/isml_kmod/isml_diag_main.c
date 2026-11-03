@@ -17,6 +17,8 @@
 /* Current Atlas bring-up PCI IDs; keep synchronized with the platform ID table. */
 #define ISML_VENDOR_ID 0x16c3
 #define ISML_DEVICE_ID 0xabcd
+#define ISML_FPGA_VENDOR_ID 0x213e
+#define ISML_FPGA_DEVICE_ID 0x0000
 #define ISML_DRIVER_NAME "isml_drv"
 
 struct isml_device {
@@ -324,6 +326,7 @@ static void isml_remove(struct pci_dev *pdev)
 
 static const struct pci_device_id isml_pci_ids[] = {
 	{ PCI_DEVICE(ISML_VENDOR_ID, ISML_DEVICE_ID) },
+	{ PCI_DEVICE(ISML_FPGA_VENDOR_ID, ISML_FPGA_DEVICE_ID) },
 	{ }
 };
 MODULE_DEVICE_TABLE(pci, isml_pci_ids);

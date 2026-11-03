@@ -7,11 +7,12 @@ endif()
 # Portable software tests only. Production still builds exclusively on Linux.
 # Compile the production testcase/dispatch code with a test-only mapping owner;
 # no sysfs access, DMA allocation, or hardware behavior is simulated here.
-set(REPO ${CMAKE_CURRENT_LIST_DIR}/..)
+get_filename_component(REPO "${CMAKE_CURRENT_LIST_DIR}/../isml_suite2" ABSOLUTE)
+include(${REPO}/Uart.cmake)
 set(TEST_POLICY_SOURCE_DIR ${REPO}/isml_diag/policies)
-set(TEST_POLICY_BINARY_DIR ${CMAKE_BINARY_DIR}/policies)
+set(TEST_POLICY_BINARY_DIR ${CMAKE_CURRENT_BINARY_DIR}/policies)
 file(REMOVE_RECURSE "${TEST_POLICY_BINARY_DIR}")
-file(COPY "${TEST_POLICY_SOURCE_DIR}" DESTINATION "${CMAKE_BINARY_DIR}")
+file(COPY "${TEST_POLICY_SOURCE_DIR}" DESTINATION "${CMAKE_CURRENT_BINARY_DIR}")
 add_custom_target(io_test_policies ALL
     COMMAND ${CMAKE_COMMAND} -E remove_directory "${TEST_POLICY_BINARY_DIR}"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -21,6 +22,10 @@ file(GLOB_RECURSE IO_TEST_SOURCES CONFIGURE_DEPENDS
     ${REPO}/isml_diag/testcases/*.cpp
     ${REPO}/isml_lib/implementer/src/*.cpp)
 list(REMOVE_ITEM IO_TEST_SOURCES ${REPO}/isml_diag/src/core/HalContext.cpp)
+list(REMOVE_ITEM IO_TEST_SOURCES
+    ${REPO}/isml_diag/src/core/UartBridge.cpp
+    ${REPO}/isml_diag/src/uart/UartProtocol.cpp
+    ${REPO}/isml_diag/src/uart/UartConsole.cpp)
 add_library(io_test_code STATIC ${IO_TEST_SOURCES}
     hal_fixture.cpp
     ${REPO}/isml_ipc/external/ProtonHal/src/phal/init.c
@@ -39,7 +44,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(io_test_code PRIVATE -Wall -Wextra)
 endif()
 find_package(Threads REQUIRED)
-target_link_libraries(io_test_code PUBLIC Threads::Threads)
+target_link_libraries(io_test_code PUBLIC Threads::Threads isml_uart)
 add_executable(io_tests io_tests.cpp)
 target_link_libraries(io_tests PRIVATE io_test_code)
 add_test(NAME io_contract COMMAND io_tests)

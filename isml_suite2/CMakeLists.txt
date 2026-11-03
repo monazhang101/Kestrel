@@ -232,5 +232,6 @@ endif()
 
 if(ISML_BUILD_TESTS)
     enable_testing()
-    add_subdirectory(tests)
+    add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../tests
+                     ${CMAKE_CURRENT_BINARY_DIR}/software-tests)
 endif()

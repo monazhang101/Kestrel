@@ -5,27 +5,27 @@ Commands below run from the repository root.
 ## Build
 
 Linux builds require the complete ProtonHal/CSR tree under
-`isml_ipc/external/`.
+`isml_suite2/isml_ipc/external/`.
 
 ```bash
-cmake -S . -B build-fpga
+cmake -S isml_suite2 -B build-fpga
 cmake --build build-fpga -j
 ```
 
 For host DMA through `isml_drv`, build/load the driver on the tester:
 
 ```bash
-make -C isml_kmod
-sudo insmod isml_kmod/build/isml_drv.ko
+make -C isml_suite2/isml_kmod
+sudo insmod isml_suite2/isml_kmod/build/isml_drv.ko
 ```
 
 ## Write a testcase
 
-1. Declare the method in `isml_diag/include/diag/modules/<Module>.h`.
+1. Declare the method in `isml_suite2/isml_diag/include/diag/modules/<Module>.h`.
 2. Register its name, arguments and callback in
-   `isml_diag/testcases/<module>/<Module>.cpp` using `_add_test()`.
+   `isml_suite2/isml_diag/testcases/<module>/<Module>.cpp` using `_add_test()`.
 3. Put examples in that module's `example.cpp`; add other source files to
-   the root `CMakeLists.txt` when needed.
+   `isml_suite2/CMakeLists.txt` when needed.
 
 Registration defines defaults and argument formats. The module prefix is added
 implicitly: `uart_read32_example` in PMU becomes `pmu_uart_read32_example`.
@@ -71,7 +71,7 @@ return phal_write(ctx, address, expected);
 `--size-bytes` becomes `ti.args["size_bytes"]`.
 
 For ordered parameter runs, add entries under the local testcase name in
-`isml_diag/policies/testcases/<module>.yaml`, then run
+`isml_suite2/isml_diag/policies/testcases/<module>.yaml`, then run
 `isml_diag <module_test_name> -all`. CMake copies policies beside the binaries.
 
 ## Run PMU UART examples (FPGA only)
