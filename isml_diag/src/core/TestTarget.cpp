@@ -121,6 +121,14 @@ TestStatus TestTarget::run_testcase(const std::string& test_name,
             ti.logger->error("HAL is not bound to testcase device: " + ctx_.bdf);
             return PHAL_STATUS_ERROR;
         }
+        if (test->second.ctx_resources.requires_uart()) {
+            const auto* owner = device_ ? device_ : dynamic_cast<TPUDevice*>(this);
+            if (!owner || !owner->resource_info().valid ||
+                owner->resource_info().platform != AtlasPlatform::Fpga) {
+                ti.logger->error("UART contexts are supported only on an identified FPGA target");
+                return PHAL_STATUS_UNIMPLEMENTED;
+            }
+        }
         const auto driver = ti.args.find("drv");
         if (driver != ti.args.end()) {
             const auto status = hal->configure_host_dma(driver->second);

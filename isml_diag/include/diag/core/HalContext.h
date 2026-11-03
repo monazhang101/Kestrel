@@ -85,6 +85,7 @@ private:
     PhalBridge::ScopedContext phal_context_;
     PhalBridge::ScopedContext aperture_phal_context_;
     std::array<PhalBridge::ScopedContext, IPC_FW_COUNT> ipc_contexts_;
+    PhalBridge::ScopedContext uart_context_;
     DeviceContext active_device_;
     MemoryRegionMap active_memory_regions_{};
     std::shared_ptr<DeviceMemoryState> active_memory_ =
@@ -143,6 +144,7 @@ public:
         if (id < IPC_FW_ID_FIRST || id > IPC_FW_ID_LAST) return nullptr;
         return ipc_contexts_[id - IPC_FW_ID_FIRST].get();
     }
+    phal_ctx_t* uart_context() const { return uart_context_.get(); }
 
     // Run a PCIe operation with the shared per-device context and lock. The
     // callback receives a context rooted in TOP_U_PCIE_0_OFFSET, so both

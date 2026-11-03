@@ -5,6 +5,8 @@
 class PMUModule : public TestTarget {
 private:
     TestStatus example(TestInfo& ti);
+    TestStatus uart_read32_example(TestInfo& ti);
+    TestStatus uart_write32_example(TestInfo& ti);
 
 public:
     PMUModule(const std::string& name, const DeviceContext& ctx,

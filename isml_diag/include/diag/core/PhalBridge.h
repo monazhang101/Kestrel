@@ -1,6 +1,7 @@
 #pragma once
 
 #include "diag/core/IpcBridge.h"
+#include "diag/core/UartBridge.h"
 #include "diag/core/Platform.h"
 
 extern "C" {
@@ -24,6 +25,7 @@ struct IhalIO {
     const DeviceContext* device_ctx = nullptr;
     std::atomic_uint32_t regio_suppression_depth{0};
     IpcBridge ipc;
+    UartBridge uart;
     IpcFwId fw = IpcFwId::Hqc;
 };
 
@@ -85,5 +87,11 @@ public:
                                      PhalProject project,
                                      IpcFwId fw,
                                      std::string* error = nullptr);
+
+    // UART callbacks use a local UartBridge client; isml_uart_console owns
+    // serial IO and the firmware CMD/RSP/LOG protocol. Root is PMU-local 0.
+    ScopedContext create_uart_context(const DeviceContext& ctx,
+                                      PhalProject project,
+                                      std::string* error = nullptr);
 
 };

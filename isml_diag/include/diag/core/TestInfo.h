@@ -19,6 +19,7 @@ class HalContext;
 
 enum class CtxResourceType {
     Ipc,
+    Uart,
 };
 
 struct CtxResource {
@@ -28,6 +29,11 @@ struct CtxResource {
     static CtxResource ipc(IpcFwId fw)
     {
         return {CtxResourceType::Ipc, fw};
+    }
+
+    static CtxResource uart()
+    {
+        return {CtxResourceType::Uart, std::nullopt};
     }
 };
 
@@ -50,6 +56,14 @@ public:
             if (resource.ctx_type == CtxResourceType::Ipc &&
                 resource.ipc_fw.has_value() &&
                 *resource.ipc_fw == fw) return true;
+        }
+        return false;
+    }
+
+    bool requires_uart() const
+    {
+        for (const auto& resource : resources_) {
+            if (resource.ctx_type == CtxResourceType::Uart) return true;
         }
         return false;
     }
@@ -143,7 +157,7 @@ struct TestInfo {
     // APIs use hal's private aperture context instead of this pointer.
     phal_ctx_t* phal_ctx = nullptr;
     // Optional PHAL contexts are retrieved explicitly from hal, for example
-    // ti.hal->ipc_context(fw).
+    // ti.hal->ipc_context(fw) or ti.hal->uart_context().
 };
 
 inline TestStatus make_unimplemented_status(const TestInfo& ti,

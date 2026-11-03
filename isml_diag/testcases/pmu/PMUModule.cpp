@@ -6,5 +6,10 @@ PMUModule::PMUModule(const std::string& name, const DeviceContext& ctx,
 {
     ctx_.module_index = config.index;
     _add_test("example", {},
-              [this](TestInfo& ti) { return example(ti); });
+              [this](TestInfo& ti) { return example(ti); },
+              {CtxResource::uart()});
+    _add_test("uart_read32_example", {{"addr", "", "u64"}},
+              [this](TestInfo& ti) { return uart_read32_example(ti); }, {CtxResource::uart()});
+    _add_test("uart_write32_example", {{"addr", "", "u64"}, {"value", "", "u32"}},
+              [this](TestInfo& ti) { return uart_write32_example(ti); }, {CtxResource::uart()});
 }
