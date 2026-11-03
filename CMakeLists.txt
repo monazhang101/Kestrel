@@ -21,6 +21,7 @@ option(ISML_BUILD_TESTS "Build software IO contract tests (no hardware access)" 
 set(ISML_DIAG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/isml_diag)
 set(ISML_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/isml_lib)
 set(ISML_IMPLEMENTER_DIR ${ISML_LIB_DIR}/implementer)
+include(${CMAKE_CURRENT_SOURCE_DIR}/Uart.cmake)
 set(ISML_POLICY_SOURCE_DIR ${ISML_DIAG_DIR}/policies)
 set(ISML_POLICY_BINARY_DIR ${CMAKE_BINARY_DIR}/policies)
 
@@ -173,6 +174,7 @@ add_library(isml_diag
     isml_diag/src/core/DevMem.cpp
     isml_diag/src/core/PolicyParser.cpp
     isml_diag/src/core/PhalBridge.cpp
+    isml_diag/src/core/IpcBridge.cpp
     isml_diag/src/core/HalContext.cpp
     isml_diag/src/device/DeviceManager.cpp
     isml_diag/src/device/TPUDevice.cpp
@@ -202,7 +204,7 @@ if(NOT ISML_USING_MOCK_PHAL)
     target_include_directories(isml_diag PRIVATE ${PHAL_CSR_INCLUDE_DIRS})
 endif()
 
-target_link_libraries(isml_diag PUBLIC isml_lib phal)
+target_link_libraries(isml_diag PUBLIC isml_lib phal isml_uart)
 
 # GCC 8 and earlier ship std::filesystem in a separate compatibility library.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
@@ -217,6 +219,9 @@ if(ISML_BUILD_CLI)
     add_executable(isml_diag_cli isml_diag/cli/main.cpp)
     target_link_libraries(isml_diag_cli PRIVATE isml_diag)
     set_target_properties(isml_diag_cli PROPERTIES OUTPUT_NAME isml_diag)
+    add_executable(isml_uart_console isml_diag/cli/uart_console_main.cpp)
+    target_include_directories(isml_uart_console PRIVATE ${ISML_DIAG_DIR}/src)
+    target_link_libraries(isml_uart_console PRIVATE isml_uart)
 endif()
 
 if(ISML_BUILD_PYTHON_BINDINGS)

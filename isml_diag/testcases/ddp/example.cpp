@@ -1,5 +1,4 @@
 #include "diag/modules/DDPModule.h"
-#include "diag/core/Common.h"
 #include "diag/core/HalContext.h"
 
 TestStatus DDPModule::example(TestInfo& ti)
@@ -19,6 +18,9 @@ TestStatus DDPModule::example(TestInfo& ti)
         status |= mem_write(dmem, 0x0, data);
         if (actual != 0x12345678) status |= PHAL_STATUS_ERROR;
     }
+
+    // Optional explicit reconfiguration; ordinary D-MEM IO above did not need it.
+    status |= aperture_set(*ti.hal, 4, 0, 0x10000000, 0x8000000000);
 
     // Native 64-bit aperture payload access is DMEM-only. Non-DMEM regions
     // are rejected by mem_read64()/mem_write64().
@@ -43,5 +45,6 @@ TestStatus DDPModule::example(TestInfo& ti)
             PHAL_STATUS_INVALID) {
         status |= PHAL_STATUS_ERROR;
     }
+
     return status;
 }

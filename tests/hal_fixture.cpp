@@ -1,5 +1,6 @@
 #include "diag/core/HalContext.h"
 #include "diag/core/Common.h"
+#include "diag/core/DevMem.h"
 #include "diag/implementer/AtlasResource.h"
 
 #include <unordered_map>
@@ -25,6 +26,8 @@ void HalContext::clear_mappings()
 {
     phal_context_ = {};
     aperture_phal_context_ = {};
+    for (auto& ctx : ipc_contexts_) ctx = {};
+    uart_context_ = {};
     test_bar_storage.erase(this);
     test_pmu_unlocked.erase(this);
 }
@@ -40,6 +43,8 @@ void HalContext::bind_device(const DeviceContext& ctx, Logger* logger)
 {
     phal_context_ = {};
     aperture_phal_context_ = {};
+    for (auto& ctx : ipc_contexts_) ctx = {};
+    uart_context_ = {};
     active_device_ = ctx;
     active_device_.logger = logger != nullptr ? logger : ctx.logger;
     active_memory_regions_ = ctx.memory_regions;
@@ -70,15 +75,23 @@ TestStatus HalContext::configure_host_dma(const std::string& driver)
     return PHAL_STATUS_INVALID;
 }
 
-HalContext::TestcaseScope HalContext::begin_testcase(std::string* error)
+HalContext::TestcaseScope HalContext::begin_testcase(
+    std::string* error, const CtxResources& ctx_resources)
 {
     if (error != nullptr) error->clear();
     if (!device_bound_) {
         if (error != nullptr) *error = "HAL is not bound to a device";
         return {};
     }
-    if (phal_context_ || aperture_phal_context_) {
-        if (error != nullptr) *error = "a testcase PHAL context is already active";
+    const auto any_ipc_context_active = [this]() {
+        for (const auto& ctx : ipc_contexts_) {
+            if (ctx) return true;
+        }
+        return false;
+    };
+    if (phal_context_ || aperture_phal_context_ || any_ipc_context_active() ||
+        uart_context_) {
+        if (error != nullptr) *error = "a testcase context is already active";
         return {};
     }
     std::string init_error;
@@ -95,6 +108,54 @@ HalContext::TestcaseScope HalContext::begin_testcase(std::string* error)
         if (error != nullptr) *error = "aperture PHAL initialization failed: " + init_error;
         return {};
     }
+    for (uint32_t id = IPC_FW_ID_FIRST; id <= IPC_FW_ID_LAST; id++) {
+        const auto fw = static_cast<IpcFwId>(id);
+        if (!ctx_resources.requires_ipc(fw) ||
+            !ipc_region_config(fw).provisioned) continue;
+        init_error.clear();
+        ipc_contexts_[id - IPC_FW_ID_FIRST] =
+            phal_bridge_.create_ipc_context(active_device_, project, fw,
+                                            &init_error);
+        if (!ipc_contexts_[id - IPC_FW_ID_FIRST]) {
+            phal_context_ = {};
+            aperture_phal_context_ = {};
+            for (auto& ctx : ipc_contexts_) ctx = {};
+            if (error != nullptr) {
+                *error = "IPC PHAL initialization failed (fw=" +
+                         std::string(to_string(fw)) + "): " + init_error;
+            }
+            return {};
+        }
+    }
+    if (ctx_resources.requires_uart()) {
+        init_error.clear();
+        uart_context_ =
+            phal_bridge_.create_uart_context(active_device_, project,
+                                             &init_error);
+        if (!uart_context_) {
+            phal_context_ = {};
+            aperture_phal_context_ = {};
+            for (auto& ctx : ipc_contexts_) ctx = {};
+            if (error != nullptr) {
+                *error = "UART PHAL initialization failed: " + init_error;
+            }
+            return {};
+        }
+    }
+    const auto* dmem = find_df_region(active_memory_regions_.df, DMEM);
+    if (dmem != nullptr && dmem->supported &&
+        aperture_set(*this, dmem->bar_index, dmem->aperture_index,
+                     dmem->base, dmem->aperture_size,
+                     dmem->identity) != PHAL_STATUS_OK) {
+        phal_context_ = {};
+        aperture_phal_context_ = {};
+        for (auto& ctx : ipc_contexts_) ctx = {};
+        uart_context_ = {};
+        if (error != nullptr) {
+            *error = "default DMEM aperture initialization failed";
+        }
+        return {};
+    }
     return TestcaseScope(this);
 }
 
@@ -103,6 +164,8 @@ HalContext::TestcaseScope::~TestcaseScope()
     if (owner_ != nullptr) {
         owner_->phal_context_ = {};
         owner_->aperture_phal_context_ = {};
+        for (auto& ctx : owner_->ipc_contexts_) ctx = {};
+        owner_->uart_context_ = {};
     }
 }
 
@@ -118,6 +181,8 @@ HalContext::TestcaseScope& HalContext::TestcaseScope::operator=(TestcaseScope&& 
         if (owner_ != nullptr) {
             owner_->phal_context_ = {};
             owner_->aperture_phal_context_ = {};
+            for (auto& ctx : owner_->ipc_contexts_) ctx = {};
+            owner_->uart_context_ = {};
         }
         owner_ = other.owner_;
         other.owner_ = nullptr;

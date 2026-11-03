@@ -5,8 +5,13 @@
 #include "diag/implementer/Implementer.h"
 #include "diag/implementer/AtlasResource.h"
 #include "diag/device/DeviceManager.h"
+#include "diag/device/TPUDevice.h"
 
 #include <atlas_csr_sw/src/h/TOP.h>
+
+extern "C" {
+#include <phal/components/pcie/pcie.h>
+}
 
 #include <functional>
 #include <iostream>
@@ -25,6 +30,7 @@ DeviceContext make_device(HalContext& hal, const char* bdf = "test",
     ctx.tpu_type = TPUType::Atlas;
     ctx.memory_regions = Implementer(TPUType::Atlas).memory_regions();
     auto mapped = hal.mmap_bar_space(std::move(ctx));
+    mapped.target_name = "uart-unavailable-test";
     hal.bind_device(mapped, logger);
     return mapped;
 }
@@ -77,6 +83,18 @@ public:
     }
 };
 
+class UartProbeTarget : public TestTarget {
+public:
+    UartProbeTarget(const DeviceContext& ctx, bool* invoked)
+        : TestTarget("uart-probe", "uart_probe", ctx)
+    {
+        _add_test("probe", {}, [invoked](TestInfo&) {
+            *invoked = true;
+            return PHAL_STATUS_OK;
+        }, {CtxResource::uart()});
+    }
+};
+
 void framework_injects_context()
 {
     HalContext hal;
@@ -85,6 +103,70 @@ void framework_injects_context()
     ProbeTarget target(device, &saw_context);
     CHECK(target.run_testcase("probe_probe", {}, nullptr, &hal) == PHAL_STATUS_OK);
     CHECK(saw_context);
+}
+
+void context_resources_are_typed_and_composable()
+{
+    const auto ipc = CtxResource::ipc(IpcFwId::Hqc);
+    CHECK(ipc.ctx_type == CtxResourceType::Ipc);
+    CHECK(ipc.ipc_fw.has_value() && *ipc.ipc_fw == IpcFwId::Hqc);
+    const auto uart = CtxResource::uart();
+    CHECK(uart.ctx_type == CtxResourceType::Uart);
+    CHECK(!uart.ipc_fw.has_value());
+
+    const CtxResources none;
+    CHECK(!none.requires_ipc(IpcFwId::Hqc));
+    CHECK(!none.requires_uart());
+
+    const CtxResources resources{
+        CtxResource::ipc(IpcFwId::Hqc),
+        CtxResource::ipc(IpcFwId::Ddp2),
+        CtxResource::uart(),
+    };
+    CHECK(resources.requires_ipc(IpcFwId::Hqc));
+    CHECK(resources.requires_ipc(IpcFwId::Ddp2));
+    CHECK(!resources.requires_ipc(IpcFwId::Pmu));
+    CHECK(!resources.requires_ipc(IpcFwId::Ddp0));
+    CHECK(resources.requires_uart());
+}
+
+void framework_propagates_context_resources()
+{
+    HalContext hal;
+    auto device = make_device(hal, "uart-probe");
+    bool invoked = false;
+    UartProbeTarget target(device, &invoked);
+    AtlasResourceInfo resource;
+    resource.valid = true; resource.platform = AtlasPlatform::Fpga;
+    TPUDeviceConfig config; config.name = "uart-unavailable-test";
+    TPUDevice parent(config.name, device, config, nullptr, resource);
+    target.set_device(&parent);
+    const auto output = capture_stdout([&] {
+        CHECK(target.run_testcase("uart_probe_probe", {}, nullptr, &hal) ==
+              PHAL_STATUS_ERROR);
+    });
+    CHECK(!invoked);
+    CHECK(output.find("UART PHAL initialization failed") != std::string::npos);
+    CHECK(hal.phal_context() == nullptr);
+}
+
+void unavailable_uart_context_rolls_back()
+{
+    HalContext hal;
+    auto device = make_device(hal, "uart-context");
+    std::string error;
+    auto uart_scope = hal.begin_testcase(
+        &error, {CtxResource::uart()});
+    CHECK(!uart_scope);
+    CHECK(error.find("UART PHAL initialization failed") != std::string::npos);
+    CHECK(!error.empty());
+    CHECK(hal.phal_context() == nullptr);
+    CHECK(hal.uart_context() == nullptr);
+
+    auto direct_scope = hal.begin_testcase(&error);
+    CHECK(direct_scope);
+    CHECK(error.empty());
+    CHECK(hal.phal_context() != nullptr);
 }
 
 void allocations_are_independent_of_phal_root()
@@ -128,28 +210,50 @@ void allocations_are_independent_of_phal_root()
     CHECK(hal.device_mem_alloc(HQC_SRAM_1, 4, 0x80000 - 4).valid());
 }
 
-void device_memory_api_owns_aperture_context()
+void testcase_setup_restores_default_dmem_aperture()
 {
     HalContext hal;
     auto device = make_device(hal, "device-memory");
+    auto buffer = hal.device_mem_alloc(DMEM, 4, 0x1000);
+    CHECK(buffer.valid());
+
+    const auto expect_aperture = [&](uint64_t target_addr, uint64_t size) {
+        CHECK(hal.with_pcie_context([&](phal_ctx_t* pcie) {
+            phal_pcie_aperture_t aperture{};
+            if (phal_pcie_aperture_get(pcie, 4, 0, &aperture) !=
+                PHAL_STATUS_OK) return PHAL_STATUS_ERROR;
+            return aperture.identity == 0 &&
+                           aperture.target_addr == target_addr &&
+                           aperture.size == size
+                       ? PHAL_STATUS_OK
+                       : PHAL_STATUS_ERROR;
+        }) == PHAL_STATUS_OK);
+    };
+
+    constexpr uint32_t expected = 0x12345678;
+    uint32_t actual = 0;
+    CHECK(hal.phal_context() == nullptr);
+    CHECK(mem_write(buffer, 0, expected) == PHAL_STATUS_OK);
+    CHECK(mem_read(buffer, 0, &actual) == PHAL_STATUS_OK);
+    CHECK(actual == expected);
+
     {
         auto testcase_scope = hal.begin_testcase();
         CHECK(testcase_scope);
-        auto buffer = hal.device_mem_alloc(DMEM, 4, 0x1000);
-        CHECK(buffer.valid());
-
-        constexpr uint32_t expected = 0x12345678;
-        uint32_t actual = 0;
-        CHECK(mem_write(buffer, 0, expected) == PHAL_STATUS_OK);
-        CHECK(mem_read(buffer, 0, &actual) == PHAL_STATUS_OK);
-        CHECK(actual == expected);
-        CHECK(hal.phal_context() != nullptr);
-        CHECK(hal.phal_context()->env.base == PhalBridge::CHIP_RCF_BASE);
+        expect_aperture(0x10000000, 0x8000000000);
+        CHECK(aperture_set(hal, 4, 0, 0x20000000, 0x10000000) ==
+              PHAL_STATUS_OK);
+        expect_aperture(0x20000000, 0x10000000);
     }
     CHECK(hal.phal_context() == nullptr);
-    auto next_scope = hal.begin_testcase();
-    CHECK(next_scope);
-    CHECK(hal.phal_context()->env.base == PhalBridge::CHIP_RCF_BASE);
+    {
+        auto testcase_scope = hal.begin_testcase();
+        CHECK(testcase_scope);
+        expect_aperture(0x10000000, 0x8000000000);
+    }
+    actual = 0;
+    CHECK(mem_read(buffer, 0, &actual) == PHAL_STATUS_OK);
+    CHECK(actual == expected);
 }
 
 void dmem_supports_native_64_bit_access()
@@ -476,8 +580,11 @@ int main()
     try {
         phal_is_chip_scoped();
         framework_injects_context();
+        context_resources_are_typed_and_composable();
+        framework_propagates_context_resources();
+        unavailable_uart_context_rolls_back();
         allocations_are_independent_of_phal_root();
-        device_memory_api_owns_aperture_context();
+        testcase_setup_restores_default_dmem_aperture();
         dmem_supports_native_64_bit_access();
         csr_headers_are_available();
         testcase_parameter_lists_are_loaded_in_order();

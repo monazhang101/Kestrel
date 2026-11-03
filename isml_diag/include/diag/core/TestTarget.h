@@ -37,6 +37,7 @@ struct TestArgumentDefinition {
 struct TestcaseDefinition {
     std::vector<TestArgumentDefinition> arguments;
     TestcaseFunc execute;
+    CtxResources ctx_resources;
 };
 
 class TestTarget {
@@ -48,9 +49,11 @@ protected:
     std::unordered_map<std::string, TestcaseDefinition> registered_tests_;
 
     // Modules declare testcase defaults, formats, and callbacks here.
+    // ctx_resources declares optional IPC/UART contexts for the testcase.
     void _add_test(const std::string& test_name,
                    std::initializer_list<TestArgumentDefinition> arguments,
-                   TestcaseFunc func);
+                   TestcaseFunc func,
+                   CtxResources ctx_resources = {});
 
 private:
     static bool parse_u64(const std::string& value, uint64_t& parsed);

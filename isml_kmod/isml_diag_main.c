@@ -324,6 +324,7 @@ static void isml_remove(struct pci_dev *pdev)
 
 static const struct pci_device_id isml_pci_ids[] = {
 	{ PCI_DEVICE(ISML_VENDOR_ID, ISML_DEVICE_ID) },
+	{ PCI_DEVICE(0x213e, 0x0000) },
 	{ }
 };
 MODULE_DEVICE_TABLE(pci, isml_pci_ids);

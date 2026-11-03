@@ -180,6 +180,8 @@ void DeviceManager::add_atlas_inventory_tree(const TPUDevice& tpu)
 TestStatus DeviceManager::wait_system_ready(uint32_t timeout_ms,
                                             uint32_t poll_interval_ms)
 {
+    constexpr auto PROGRESS_INTERVAL = std::chrono::seconds(5);
+
     if (!hal_.write_bar32(0, ATLAS_PMU_UNLOCK_BAR0_OFFSET,
                           ATLAS_PMU_UNLOCK_KEY)) {
         logger_.error(
@@ -188,8 +190,11 @@ TestStatus DeviceManager::wait_system_ready(uint32_t timeout_ms,
         return PHAL_STATUS_ERROR;
     }
 
-    const auto deadline = std::chrono::steady_clock::now() +
+    const auto start = std::chrono::steady_clock::now();
+    const auto deadline = start +
                           std::chrono::milliseconds(timeout_ms);
+    auto next_progress = start + PROGRESS_INTERVAL;
+    bool waiting_logged = false;
     uint32_t value = 0;
     do {
         if (!hal_.read_bar32(0, ATLAS_FW_STATUS_BAR0_OFFSET, value)) {
@@ -198,10 +203,36 @@ TestStatus DeviceManager::wait_system_ready(uint32_t timeout_ms,
                 common::format::hex(ATLAS_FW_STATUS_BAR0_OFFSET));
             return PHAL_STATUS_ERROR;
         }
+        const auto now = std::chrono::steady_clock::now();
         if (value == ATLAS_FW_STATUS_IP_INIT_DONE) {
+            if (waiting_logged) {
+                const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - start).count();
+                logger_.info(
+                    "Atlas system ready: value=" + common::format::hex(value, 8) +
+                    " elapsed_ms=" + std::to_string(elapsed_ms));
+            }
             return PHAL_STATUS_OK;
         }
-        if (std::chrono::steady_clock::now() >= deadline) break;
+        if (!waiting_logged) {
+            logger_.info(
+                "Waiting for Atlas system ready: offset=" +
+                common::format::hex(ATLAS_FW_STATUS_BAR0_OFFSET) +
+                " expected=" + common::format::hex(ATLAS_FW_STATUS_IP_INIT_DONE, 8) +
+                " current=" + common::format::hex(value, 8) +
+                " timeout_ms=" + std::to_string(timeout_ms) +
+                " poll_interval_ms=" + std::to_string(poll_interval_ms));
+            waiting_logged = true;
+        } else if (now >= next_progress) {
+            const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                now - start).count();
+            logger_.flow(
+                "Still waiting for Atlas system ready: current=" +
+                common::format::hex(value, 8) +
+                " elapsed_ms=" + std::to_string(elapsed_ms));
+            next_progress = now + PROGRESS_INTERVAL;
+        }
+        if (now >= deadline) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(poll_interval_ms));
     } while (true);
 
@@ -250,8 +281,12 @@ DeviceTree DeviceManager::discover()
         // discovery will additionally bind VID/DID/BDF to a stable TPU index.
         const PolicyEntry* policy_entry = nullptr;
         for (const auto& entry : policy_) {
-            if (entry.match_vendor_id == pci_device.vendor_id &&
-                entry.match_device_id == pci_device.device_id) {
+            if ((entry.match_vendor_id == pci_device.vendor_id &&
+                 entry.match_device_id == pci_device.device_id) ||
+                (entry.match_vendor_id == 0x16c3 &&
+                 entry.match_device_id == 0xabcd &&
+                 pci_device.vendor_id == 0x213e &&
+                 pci_device.device_id == 0x0000)) {
                 policy_entry = &entry;
                 break;
             }

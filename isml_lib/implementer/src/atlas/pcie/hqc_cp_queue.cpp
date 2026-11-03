@@ -23,6 +23,8 @@ constexpr uint32_t COMP_WINDOW_BEGIN = 0x02000000;
 constexpr uint32_t MEM_WINDOW_BEGIN = 0x08000000;
 constexpr uint32_t DOORBELL_SIZE = 0x10000000;
 constexpr uint32_t QUEUE_STRIDE = 0x1000;
+// TODO: model all four contiguous banks as one 2 MiB CP range after validating
+// 512 KiB, cross-bank, 2 MiB, and over-limit transfers on hardware.
 constexpr uint64_t SRAM_BANK_SIZE = 0x80000;
 
 // FW CP queue wire layout, shared by the read-only canonical image and the

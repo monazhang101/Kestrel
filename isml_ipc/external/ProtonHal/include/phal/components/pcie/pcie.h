@@ -8,8 +8,8 @@ extern "C" {
 #endif
 
 typedef struct phal_pcie_aperture {
-    uint8_t identity;
     uint64_t target_addr;
+    uint8_t identity;
     uint64_t size;
 } phal_pcie_aperture_t;
 

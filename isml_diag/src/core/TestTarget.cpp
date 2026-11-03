@@ -21,10 +21,13 @@ TestTarget::TestTarget(const std::string& name,
 
 void TestTarget::_add_test(const std::string& test_name,
                            std::initializer_list<TestArgumentDefinition> arguments,
-                           TestcaseFunc func)
+                           TestcaseFunc func,
+                           CtxResources ctx_resources)
 {
     registered_tests_[target_type_ + "_" + test_name] = {
-        std::vector<TestArgumentDefinition>(arguments), std::move(func)};
+        std::vector<TestArgumentDefinition>(arguments),
+        std::move(func),
+        std::move(ctx_resources)};
 }
 
 bool TestTarget::parse_u64(const std::string& value, uint64_t& parsed)
@@ -118,15 +121,24 @@ TestStatus TestTarget::run_testcase(const std::string& test_name,
             ti.logger->error("HAL is not bound to testcase device: " + ctx_.bdf);
             return PHAL_STATUS_ERROR;
         }
+        if (test->second.ctx_resources.requires_uart()) {
+            const auto* owner = device_ ? device_ : dynamic_cast<TPUDevice*>(this);
+            if (!owner || !owner->resource_info().valid ||
+                owner->resource_info().platform != AtlasPlatform::Fpga) {
+                ti.logger->error("UART contexts are supported only on an identified FPGA target");
+                return PHAL_STATUS_UNIMPLEMENTED;
+            }
+        }
         const auto driver = ti.args.find("drv");
         if (driver != ti.args.end()) {
             const auto status = hal->configure_host_dma(driver->second);
             if (status != PHAL_STATUS_OK) return status;
         }
-        std::string phal_error;
-        auto testcase_scope = hal->begin_testcase(&phal_error);
+        std::string context_error;
+        auto testcase_scope =
+            hal->begin_testcase(&context_error, test->second.ctx_resources);
         if (!testcase_scope) {
-            ti.logger->error("PHAL initialization failed: " + phal_error);
+            ti.logger->error("context initialization failed: " + context_error);
             return PHAL_STATUS_ERROR;
         }
         ti.phal_ctx = hal->phal_context();

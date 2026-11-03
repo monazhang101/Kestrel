@@ -15,6 +15,16 @@ struct DeviceContext;
 class HalContext;
 
 namespace common {
+// Configure one PCIe aperture and verify it by readback. Device-memory IO does
+// not call this helper implicitly; the framework configures the default DMEM
+// aperture during testcase setup and testcase owners may replace it explicitly.
+TestStatus aperture_set(HalContext& hal,
+                        uint32_t bar_index,
+                        uint8_t aperture_index,
+                        uint64_t target_addr,
+                        uint64_t size,
+                        uint8_t identity = 0);
+
 // Owns an allocated interval. Keep it within the device/HAL lifetime and wait
 // for DMA completion before release. Separate allocations never overlap.
 class MemBuffer {
@@ -70,6 +80,7 @@ TestStatus mem_write(MemBuffer& buffer, uint64_t offset, const std::vector<uint8
 
 }
 
+using common::aperture_set;
 using common::mem_read;
 using common::mem_read64;
 using common::mem_write;
