@@ -834,7 +834,7 @@ TestStatus HalContext::with_pcie_context(
         return PHAL_STATUS_ERROR;
     }
 
-    std::lock_guard<std::mutex> lock(active_memory_->aperture_mutex);
+    std::lock_guard<std::mutex> lock(active_memory_->pcie_context_mutex);
     auto* phal = aperture_phal_context_.get();
     phal_block_ctx_enter(phal, TOP_U_PCIE_0_OFFSET);
     TestStatus status = PHAL_STATUS_ERROR;

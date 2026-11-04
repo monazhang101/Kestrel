@@ -189,6 +189,7 @@ add_library(isml_diag
     isml_diag/testcases/isi/example.cpp
     isml_diag/testcases/pcie/example.cpp
     isml_diag/testcases/pcie/dma_copy.cpp
+    isml_diag/testcases/pcie/dma_concurrent.cpp
     isml_diag/testcases/pcie/cp_copy.cpp
     isml_diag/testcases/pcie/aperture_mapping.cpp
 )

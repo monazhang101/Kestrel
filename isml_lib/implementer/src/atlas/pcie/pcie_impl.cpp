@@ -90,10 +90,15 @@ public:
     {
         if (ti.hal == nullptr)
             return fail(ti, PHAL_STATUS_ERROR, "DMA requires a bound HAL context");
-        if (req.size_bytes == 0 || req.size_bytes % 32 != 0 ||
+        const bool imem = req.type == DmaTransferType::D2I ||
+                          req.type == DmaTransferType::I2D ||
+                          req.type == DmaTransferType::H2I ||
+                          req.type == DmaTransferType::I2H;
+        const uint64_t length_alignment = imem ? 256 : 32;
+        if (req.size_bytes == 0 || req.size_bytes % length_alignment != 0 ||
             req.size_bytes > std::numeric_limits<uint32_t>::max() || req.timeout_ms == 0) {
             return fail(ti, PHAL_STATUS_INVALID,
-                        "DMA size must be a nonzero multiple of 32 and timeout must be nonzero");
+                        "DMA size must satisfy the endpoint alignment (IMEM 256B, otherwise 32B) and timeout must be nonzero");
         }
 
         const bool host_source = req.type == DmaTransferType::H2D ||

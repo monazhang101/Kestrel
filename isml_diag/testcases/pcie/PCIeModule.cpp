@@ -42,6 +42,13 @@ PCIeModule::PCIeModule(const std::string& name,
                {"intermediate_offset", "0", "offset"},
                {"timeout_ms", "1000", "ms"}},
               [this](TestInfo& ti) { return dma_data_transfer(ti); });
+    _add_test("dma_concurrent_transfer",
+              {{"drv", "isml_drv", "string"},
+               {"job_count", "8", "u32"},
+               {"size_bytes", "4096", "bytes"},
+               {"pattern", "incremental", "string"},
+               {"timeout_ms", "30000", "ms"}},
+              [this](TestInfo& ti) { return dma_concurrent_transfer(ti); });
     _add_test("cp_queue_data_transfer",
               {{"direction", "h2sram", "string"},
                {"queue", "mem3", "string"},
