@@ -7,6 +7,10 @@ dma_data_transfer:
   direction=i2h, size_bytes=256, pattern=random
   direction=h2s, size_bytes=256, pattern=incremental
   direction=s2h, size_bytes=256, pattern=random
+dma_concurrent_transfer:
+  job_count=8, size_bytes=4096, pattern=incremental, timeout_ms=30000
+  job_count=256, size_bytes=32, pattern=incremental, timeout_ms=30000
+  job_count=257, size_bytes=32, pattern=incremental, timeout_ms=30000
 cp_queue_data_transfer:
   direction=h2sram, size_bytes=512, sram_bank=0, pattern=incremental
   direction=sram2h, size_bytes=512, sram_bank=1, pattern=random
