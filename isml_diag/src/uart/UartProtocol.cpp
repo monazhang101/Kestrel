@@ -1,5 +1,4 @@
 #include "UartProtocol.h"
-#include "UartWire.h"
 
 extern "C" {
 #include "cobs.h"
@@ -11,6 +10,19 @@ extern "C" {
 #include <utility>
 
 namespace uart {
+namespace {
+void put_le(uint8_t* dst, uint64_t value, size_t count)
+{
+    for (size_t i = 0; i < count; ++i) dst[i] = uint8_t(value >> (8 * i));
+}
+
+uint64_t get_le(const uint8_t* src, size_t count)
+{
+    uint64_t value = 0;
+    for (size_t i = 0; i < count; ++i) value |= uint64_t(src[i]) << (8 * i);
+    return value;
+}
+}
 
 std::vector<uint8_t> encode_command(uint64_t session, uint32_t request,
                                     bool write, uint64_t address, uint32_t value)
