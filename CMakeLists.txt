@@ -13,10 +13,18 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(ISML_BUILD_DIAG "Build the PCIe diagnostic library and tool" ON)
+option(ISML_BUILD_UART "Build the standalone UART tool" ON)
 option(ISML_BUILD_CLI "Build the ISML diagnostic CLI" ON)
 option(ISML_BUILD_PYTHON_BINDINGS "Build pybind11 Python bindings" OFF)
 option(ISML_USE_MOCK_PHAL "Use the bundled compile/smoke PHAL mock" OFF)
 option(ISML_BUILD_TESTS "Build software IO contract tests (no hardware access)" OFF)
+
+if(ISML_BUILD_UART AND NOT ISML_BUILD_DIAG)
+    message(FATAL_ERROR
+        "ISML_BUILD_UART uses the shared module/testcase runtime and requires "
+        "ISML_BUILD_DIAG=ON")
+endif()
 
 set(ISML_DIAG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/isml_diag)
 set(ISML_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/isml_lib)
@@ -142,6 +150,26 @@ set_target_properties(phal PROPERTIES
 
 add_library(ProtonHal::phal ALIAS phal)
 
+add_library(isml_test_core STATIC
+    isml_diag/src/core/TestTarget.cpp
+    isml_diag/src/core/PolicyParser.cpp
+    isml_diag/src/core/PhalContext.cpp)
+target_include_directories(isml_test_core PUBLIC ${ISML_DIAG_DIR}/include)
+target_link_libraries(isml_test_core PUBLIC phal)
+
+add_library(isml_uart_runtime STATIC isml_diag/src/core/UartPhalBridge.cpp)
+target_link_libraries(isml_uart_runtime PUBLIC isml_test_core isml_uart_transport)
+set_target_properties(isml_test_core isml_uart_runtime PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# GCC 8 and earlier ship std::filesystem in a separate compatibility library.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
+   CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
+    target_link_libraries(isml_test_core PUBLIC stdc++fs)
+    target_link_libraries(isml_uart_transport PUBLIC stdc++fs)
+endif()
+
+
+if(ISML_BUILD_DIAG)
 add_library(isml_lib
     isml_lib/implementer/src/implementer.cpp
     isml_lib/implementer/src/generic/generic_impl.cpp
@@ -170,9 +198,8 @@ endif()
 target_link_libraries(isml_lib PUBLIC phal)
 
 add_library(isml_diag
-    isml_diag/src/core/TestTarget.cpp
+    isml_diag/src/core/TestTargetPcie.cpp
     isml_diag/src/core/DevMem.cpp
-    isml_diag/src/core/PolicyParser.cpp
     isml_diag/src/core/PhalBridge.cpp
     isml_diag/src/core/IpcBridge.cpp
     isml_diag/src/core/HalContext.cpp
@@ -182,9 +209,9 @@ add_library(isml_diag
     isml_diag/testcases/isi/ISIModule.cpp
     isml_diag/testcases/pcie/PCIeModule.cpp
     isml_diag/testcases/pmu/PMUModule.cpp
+    isml_diag/testcases/pmu/example.cpp
     isml_diag/testcases/soc/SocModule.cpp
     isml_diag/testcases/soc/example.cpp
-    isml_diag/testcases/pmu/example.cpp
     isml_diag/testcases/ddp/example.cpp
     isml_diag/testcases/isi/example.cpp
     isml_diag/testcases/pcie/example.cpp
@@ -204,13 +231,8 @@ if(NOT ISML_USING_MOCK_PHAL)
     target_include_directories(isml_diag PRIVATE ${PHAL_CSR_INCLUDE_DIRS})
 endif()
 
-target_link_libraries(isml_diag PUBLIC isml_lib phal isml_uart)
+target_link_libraries(isml_diag PUBLIC isml_lib isml_test_core isml_uart_runtime)
 
-# GCC 8 and earlier ship std::filesystem in a separate compatibility library.
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
-   CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
-    target_link_libraries(isml_diag PUBLIC stdc++fs)
-endif()
 
 set_target_properties(isml_diag PROPERTIES OUTPUT_NAME isml_diag)
 add_dependencies(isml_diag isml_diag_policies)
@@ -219,9 +241,18 @@ if(ISML_BUILD_CLI)
     add_executable(isml_diag_cli isml_diag/cli/main.cpp)
     target_link_libraries(isml_diag_cli PRIVATE isml_diag)
     set_target_properties(isml_diag_cli PROPERTIES OUTPUT_NAME isml_diag)
-    add_executable(isml_uart_console isml_diag/cli/uart_console_main.cpp)
-    target_include_directories(isml_uart_console PRIVATE ${ISML_DIAG_DIR}/src)
-    target_link_libraries(isml_uart_console PRIVATE isml_uart)
+endif()
+
+if(ISML_BUILD_UART AND ISML_BUILD_CLI)
+    # Both executables use the same module constructors and testcase catalog.
+    # Only the entrypoint selects the active PCIe or UART backend.
+    add_executable(isml_uart isml_diag/cli/uart_main.cpp)
+    target_include_directories(isml_uart PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/isml_ipc/external)
+    if(NOT ISML_USING_MOCK_PHAL)
+        target_include_directories(isml_uart PRIVATE ${PHAL_CSR_INCLUDE_DIRS})
+    endif()
+    target_link_libraries(isml_uart PRIVATE isml_diag)
+    add_dependencies(isml_uart isml_diag_policies)
 endif()
 
 if(ISML_BUILD_PYTHON_BINDINGS)
@@ -229,6 +260,8 @@ if(ISML_BUILD_PYTHON_BINDINGS)
     pybind11_add_module(tpu_hal isml_diag/bindings/PyBinding.cpp)
     target_link_libraries(tpu_hal PRIVATE isml_diag)
 endif()
+
+endif() # ISML_BUILD_DIAG
 
 if(ISML_BUILD_TESTS)
     enable_testing()

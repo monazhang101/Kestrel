@@ -19,7 +19,6 @@ class HalContext;
 
 enum class CtxResourceType {
     Ipc,
-    Uart,
 };
 
 struct CtxResource {
@@ -31,14 +30,10 @@ struct CtxResource {
         return {CtxResourceType::Ipc, fw};
     }
 
-    static CtxResource uart()
-    {
-        return {CtxResourceType::Uart, std::nullopt};
-    }
 };
 
-// Optional contexts declared by a testcase at registration. Direct PHAL
-// contexts remain implicit because every testcase receives them.
+// Optional contexts declared by a testcase at registration. The default
+// register context is supplied by the executable and needs no declaration.
 class CtxResources {
 private:
     std::vector<CtxResource> resources_;
@@ -60,13 +55,6 @@ public:
         return false;
     }
 
-    bool requires_uart() const
-    {
-        for (const auto& resource : resources_) {
-            if (resource.ctx_type == CtxResourceType::Uart) return true;
-        }
-        return false;
-    }
 };
 
 // Testcases and PHAL share one status type and bit layout.
@@ -147,17 +135,19 @@ public:
     void trace(const std::string& message) const { regio(message); }
 };
 
+enum class RegisterTransport { Pcie, Uart };
+
 struct TestInfo {
     std::string target_name;
     std::string test_name;
     TestArgs args;
     Logger* logger = nullptr;
     HalContext* hal = nullptr;
-    // Framework-owned PHAL context for the device bound to hal. Memory access
-    // APIs use hal's private aperture context instead of this pointer.
+    // Framework-owned default register context. PCIe provides BAR/RCF ops;
+    // isml_uart provides UART ops.
     phal_ctx_t* phal_ctx = nullptr;
-    // Optional PHAL contexts are retrieved explicitly from hal, for example
-    // ti.hal->ipc_context(fw) or ti.hal->uart_context().
+    RegisterTransport transport = RegisterTransport::Pcie;
+    // PCIe-only resource APIs and optional FW IPC contexts are accessed via hal.
 };
 
 inline TestStatus make_unimplemented_status(const TestInfo& ti,

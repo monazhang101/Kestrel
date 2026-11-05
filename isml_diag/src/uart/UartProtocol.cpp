@@ -1,5 +1,5 @@
 #include "UartProtocol.h"
-#include "UartRpc.h"
+#include "UartWire.h"
 
 extern "C" {
 #include "cobs.h"
@@ -99,25 +99,12 @@ void StreamDecoder::flush_partial_text()
 
 void RetryConfig::validate() const
 {
-    // The active transaction may belong to a disconnected client while all
-    // MAX_CLIENTS live clients queue behind it. Include reactor tick margins.
-    constexpr uint64_t LIMIT = (uint64_t(std::numeric_limits<uint32_t>::max()) - 4000) / (MAX_CLIENTS + 1);
-    if (response_timeout_ms == 0 || response_timeout_ms > LIMIT || retry_interval_ms > LIMIT)
-        throw std::invalid_argument("invalid UART response timeout or retry interval");
-    const uint64_t transaction = (uint64_t(retry_count) + 1) *
-        (uint64_t(response_timeout_ms) + 1020) + uint64_t(retry_count) * (uint64_t(retry_interval_ms) + 20);
-    if (transaction > LIMIT)
-        throw std::invalid_argument("UART retry/timeout configuration exceeds the supported wait budget");
-}
-uint32_t RetryConfig::transaction_budget_ms() const
-{
-    validate();
-    return uint32_t((uint64_t(retry_count) + 1) * (uint64_t(response_timeout_ms) + 1020) +
-                    uint64_t(retry_count) * (uint64_t(retry_interval_ms) + 20));
-}
-uint32_t RetryConfig::client_budget_ms() const
-{
-    return uint32_t(uint64_t(transaction_budget_ms()) * (MAX_CLIENTS + 1) + 4000);
+    constexpr uint64_t LIMIT = std::numeric_limits<uint32_t>::max();
+    const uint64_t initial = uint64_t(response_timeout_ms) + 1000;
+    const uint64_t retry = initial + retry_interval_ms;
+    if (response_timeout_ms == 0 || initial > LIMIT ||
+        uint64_t(retry_count) > (LIMIT - initial) / retry)
+        throw std::invalid_argument("invalid UART retry/timeout configuration");
 }
 Transaction::Transaction(uint64_t session, RetryConfig config, uint32_t last_request)
     : session_(session), config_(config), request_(last_request)

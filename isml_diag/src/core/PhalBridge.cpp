@@ -1,4 +1,4 @@
-#include "diag/core/PhalBridge.h"
+#include "PhalContextState.h"
 
 #include "diag/core/Common.h"
 
@@ -223,52 +223,6 @@ hw_ops_t make_ipc_drv_ops()
 
 const hw_ops_t ipc_drv_ops = make_ipc_drv_ops();
 
-phal_status_t uart_status(const IhalIO& io, UartResult result)
-{
-    switch (result) {
-    case UartResult::Ok: return PHAL_STATUS_OK;
-    case UartResult::Timeout: return PHAL_STATUS_TIMEOUT;
-    case UartResult::Invalid: return PHAL_STATUS_INVALID;
-    case UartResult::Firmware:
-        // Wire INVALID=1, TIMEOUT=2, UNKNOWN=4, BUSY=8. These are NOT
-        // phal_status_t values: in particular wire BUSY is not PHAL INVALID.
-        switch (io.uart.firmware_status()) {
-        case 1: return PHAL_STATUS_INVALID;
-        case 2: return PHAL_STATUS_TIMEOUT;
-        default: return PHAL_STATUS_ERROR;
-        }
-    default: return PHAL_STATUS_ERROR;
-    }
-}
-phal_status_t uart_io(env_t* env, uintptr_t addr, uint32_t* value, bool writing)
-{
-    if (!env || !env->priv || !value || addr > std::numeric_limits<uintptr_t>::max() - env->base)
-        return PHAL_STATUS_INVALID;
-    auto* io = static_cast<IhalIO*>(env->priv);
-    const auto address = uint64_t(env->base) + addr;
-    const auto result = writing ? io->uart.write(address, *value) : io->uart.read(address, *value);
-    if (result != UartResult::Ok && io->device_ctx && io->device_ctx->logger)
-        io->device_ctx->logger->error("UART " + std::string(writing ? "write" : "read") +
-            " addr=" + common::format::hex(address) + ": " + io->uart.error());
-    return uart_status(*io, result);
-}
-phal_status_t uart_drv_read(env_t* env, uintptr_t addr, uint32_t* value)
-{
-    return uart_io(env, addr, value, false);
-}
-phal_status_t uart_drv_write(env_t* env, uintptr_t addr, uint32_t value)
-{
-    return uart_io(env, addr, &value, true);
-}
-hw_ops_t make_uart_drv_ops()
-{
-    hw_ops_t ops{};
-    ops.read = uart_drv_read; ops.write = uart_drv_write;
-    ops.delay_us = hal_drv_delay_us; ops.delay_ns = hal_drv_delay_ns;
-    return ops;
-}
-const hw_ops_t uart_drv_ops = make_uart_drv_ops();
-
 const char* phal_project_macro(PhalProject project)
 {
     switch (project) {
@@ -304,33 +258,6 @@ std::string phal_error(const char* api, phal_status_t status)
 
 }
 
-PhalProject phal_project_from_tpu_type(TPUType tpu_type)
-{
-    switch (tpu_type) {
-    case TPUType::Atlas:
-        return PhalProject::Atlas;
-    case TPUType::AtlasM:
-        return PhalProject::AtlasM;
-    case TPUType::Unknown:
-        return PhalProject::Generic;
-    }
-    return PhalProject::Generic;
-}
-
-ScopedPhalRegIoSuppression::ScopedPhalRegIoSuppression(phal_ctx_t* ctx)
-{
-    if (ctx == nullptr || ctx->env.priv == nullptr) return;
-    io_ = static_cast<IhalIO*>(ctx->env.priv);
-    io_->regio_suppression_depth.fetch_add(1, std::memory_order_relaxed);
-}
-
-ScopedPhalRegIoSuppression::~ScopedPhalRegIoSuppression()
-{
-    if (io_ != nullptr) {
-        io_->regio_suppression_depth.fetch_sub(1, std::memory_order_relaxed);
-    }
-}
-
 phal_status_t ihal_write32(void* handler, uintptr_t addr, uint32_t data)
 {
     auto* ihalIO = static_cast<IhalIO*>(handler);
@@ -359,40 +286,6 @@ phal_status_t ihal_read32(void* handler, uintptr_t addr, uint32_t* data)
                                *data)
                ? PHAL_STATUS_OK
                : PHAL_STATUS_INVALID;
-}
-
-class PhalBridge::ScopedContext::State {
-public:
-    Logger logger;
-    DeviceContext device_ctx;
-    IhalIO ihalIO;
-    phal_ctx_t ctx{};
-    bool initialized = false;
-
-    ~State()
-    {
-        if (initialized) {
-            phal_deinit(&ctx);
-        }
-    }
-};
-
-PhalBridge::ScopedContext::ScopedContext(std::unique_ptr<State> state)
-    : state_(std::move(state))
-{
-}
-
-PhalBridge::ScopedContext::ScopedContext() = default;
-
-PhalBridge::ScopedContext::~ScopedContext() = default;
-
-PhalBridge::ScopedContext::ScopedContext(ScopedContext&&) noexcept = default;
-
-PhalBridge::ScopedContext& PhalBridge::ScopedContext::operator=(ScopedContext&&) noexcept = default;
-
-phal_ctx_t* PhalBridge::ScopedContext::get() const
-{
-    return state_ == nullptr ? nullptr : &state_->ctx;
 }
 
 PhalBridge::ScopedContext PhalBridge::create_context(const DeviceContext& ctx,
@@ -486,35 +379,5 @@ PhalBridge::ScopedContext PhalBridge::create_ipc_context(const DeviceContext& ct
 
     state->initialized = true;
     state->ctx.env.base = CHIP_RCF_BASE;
-    return ScopedContext(std::move(state));
-}
-
-PhalBridge::ScopedContext PhalBridge::create_uart_context(
-    const DeviceContext& ctx, PhalProject project, std::string* error)
-{
-    if (error) error->clear();
-    if (project == PhalProject::Generic) project = phal_project_from_tpu_type(ctx.tpu_type);
-    auto state = std::make_unique<ScopedContext::State>();
-    state->device_ctx = ctx;
-    state->logger.set_level(ctx.logger ? ctx.logger->get_level() : LogLevel::Info);
-    state->device_ctx.logger = &state->logger;
-    state->ihalIO.device_ctx = &state->device_ctx;
-    if (!state->ihalIO.uart.bind(ctx.target_name, error)) return {};
-
-    phal_config_t config{};
-    // PMU-local address space, independent of host BAR/RCF translation.
-    config.env_config.base = 0;
-    config.env_config.user_data = &state->ihalIO;
-#if !defined(HAL_FIRMWARE_MODE)
-    config.env_config.hw_ops = &uart_drv_ops;
-#endif
-    config.project_config = to_phal_project(project);
-    const auto status = phal_init(&state->ctx, &config);
-    if (status != PHAL_STATUS_OK) {
-        if (error) *error = phal_error("UART phal_init", status);
-        return {};
-    }
-    state->initialized = true;
-    state->ctx.env.base = 0;
     return ScopedContext(std::move(state));
 }

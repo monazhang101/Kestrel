@@ -25,7 +25,7 @@ struct IhalIO {
     const DeviceContext* device_ctx = nullptr;
     std::atomic_uint32_t regio_suppression_depth{0};
     IpcBridge ipc;
-    UartBridge uart;
+    std::shared_ptr<UartBridge> uart;
     IpcFwId fw = IpcFwId::Hqc;
 };
 
@@ -88,10 +88,11 @@ public:
                                      IpcFwId fw,
                                      std::string* error = nullptr);
 
-    // UART callbacks use a local UartBridge client; isml_uart_console owns
-    // serial IO and the firmware CMD/RSP/LOG protocol. Root is PMU-local 0.
+    // The run owns serial IO; testcase contexts borrow that shared session.
+    // Root is PMU-local 0; no host address translation is applied.
     ScopedContext create_uart_context(const DeviceContext& ctx,
                                       PhalProject project,
-                                      std::string* error = nullptr);
+                                      std::string* error = nullptr,
+                                      std::shared_ptr<UartBridge> uart = {});
 
 };

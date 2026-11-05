@@ -3,16 +3,29 @@
 #include "diag/core/Format.h"
 #include "diag/core/HalContext.h"
 
+#include <atlas_csr_sw/src/h/TOP.h>
 #include <limits>
+#include <stdexcept>
 
 using common::format::hex;
 
 namespace {
-// Absolute PMU-local addresses forwarded unchanged by the UART PHAL context.
-constexpr uintptr_t PMU_SYSTEM_READY_ADDR = 0x0210205cu;
-constexpr uint32_t PMU_SYSTEM_READY_VALUE = 0x5b5b5b5bu;
+// PMU-local absolute byte addresses. PCIe accesses the PMU through its RCF
+// window (PMU core + 0x800 DB window); PCIe ctx supplies the chip RCF base.
+// Address adaptation belongs to this testcase, not to the UART framework.
+constexpr uintptr_t PMU_READY_ADDR = 0x0210205cu;
+constexpr uint32_t PMU_READY_VALUE = 0x5b5b5b5bu;
 constexpr uintptr_t PMU_DIAG_REG0_ADDR = 0x02105060u;
-constexpr uint32_t PMU_DIAG_REG0_TEST_VALUE = 0x12345678u;
+constexpr uintptr_t PMU_RCF_WINDOW = 0x800u;
+
+uintptr_t register_address(const TestInfo& ti, uint64_t pmu_address)
+{
+    const uint64_t offset = ti.transport == RegisterTransport::Uart ? 0 :
+        uint64_t(TOP_U_PMU_CORE_0_OFFSET) + PMU_RCF_WINDOW;
+    if (pmu_address > std::numeric_limits<uintptr_t>::max() - offset)
+        throw std::invalid_argument("PMU address is outside the host address range");
+    return uintptr_t(pmu_address + offset);
+}
 }
 
 TestStatus PMUModule::example(TestInfo& ti)
@@ -35,62 +48,50 @@ TestStatus PMUModule::example(TestInfo& ti)
         status |= mem_write(dmem, 0x0, data);
         if (actual != 0x12345678) status |= PHAL_STATUS_ERROR;
     }
-    if (status != PHAL_STATUS_OK) return status;
+    return status;
+}
 
-    auto* uart_ctx = ti.hal->uart_context();
-    if (uart_ctx == nullptr) {
-        ti.logger->error("PMU example UART context is not initialized");
-        return PHAL_STATUS_ERROR;
-    }
-
+TestStatus PMUModule::uart_example(TestInfo& ti)
+{
     uint32_t ready = 0;
-    status = phal_read(uart_ctx, PMU_SYSTEM_READY_ADDR, &ready);
+    auto status = phal_read(ti.phal_ctx, register_address(ti, PMU_READY_ADDR), &ready);
     if (status != PHAL_STATUS_OK) return status;
-    ti.logger->info("PMU UART system ready: addr=" + hex(PMU_SYSTEM_READY_ADDR) +
-                    " value=" + hex(ready, 8));
-    if (ready != PMU_SYSTEM_READY_VALUE) {
-        ti.logger->error("PMU UART system ready mismatch: expected=" +
-                         hex(PMU_SYSTEM_READY_VALUE, 8) +
-                         " actual=" + hex(ready, 8));
+    ti.logger->info("PMU ready=" + hex(ready, 8));
+    if (ready != PMU_READY_VALUE) {
+        ti.logger->error("PMU ready mismatch: expected=" + hex(PMU_READY_VALUE, 8));
         return PHAL_STATUS_ERROR;
     }
-
-    status = phal_write(uart_ctx, PMU_DIAG_REG0_ADDR,
-                        PMU_DIAG_REG0_TEST_VALUE);
+    constexpr uint32_t EXPECTED = 0x12345678;
+    const auto addr = register_address(ti, PMU_DIAG_REG0_ADDR);
+    status = phal_write(ti.phal_ctx, addr, EXPECTED);
     if (status != PHAL_STATUS_OK) return status;
-
     uint32_t actual = 0;
-    status = phal_read(uart_ctx, PMU_DIAG_REG0_ADDR, &actual);
+    status = phal_read(ti.phal_ctx, addr, &actual);
     if (status != PHAL_STATUS_OK) return status;
-    ti.logger->info("PMU UART REG0 read-back: addr=" + hex(PMU_DIAG_REG0_ADDR) +
-                    " value=" + hex(actual, 8));
-    if (actual != PMU_DIAG_REG0_TEST_VALUE) {
-        ti.logger->error("PMU UART REG0 mismatch: expected=" +
-                         hex(PMU_DIAG_REG0_TEST_VALUE, 8) +
-                         " actual=" + hex(actual, 8));
-        return PHAL_STATUS_ERROR;
-    }
-    return PHAL_STATUS_OK;
+    ti.logger->info("PMU REG0 read-back=" + hex(actual, 8) + " expected=" + hex(EXPECTED, 8));
+    return actual == EXPECTED ? PHAL_STATUS_OK : PHAL_STATUS_ERROR;
 }
 
 TestStatus PMUModule::uart_read32_example(TestInfo& ti)
 {
+    // Despite its UART-focused name, this case uses the executable-selected
+    // backend; the case owns conversion from the PMU-local input address.
     const auto address = common::args::get_u64(ti.args, "addr");
-    if (address > std::numeric_limits<uintptr_t>::max()) return PHAL_STATUS_INVALID;
+    if (address % 4) return PHAL_STATUS_INVALID;
     uint32_t value = 0;
-    const auto status = phal_read(ti.hal->uart_context(), uintptr_t(address), &value);
+    const auto status = phal_read(ti.phal_ctx, register_address(ti, address), &value);
     if (status == PHAL_STATUS_OK)
-        ti.logger->info("UART read addr=" + hex(address) + " value=" + hex(value, 8));
+        ti.logger->info("PMU read addr=" + hex(address) + " value=" + hex(value, 8));
     return status;
 }
 
 TestStatus PMUModule::uart_write32_example(TestInfo& ti)
 {
     const auto address = common::args::get_u64(ti.args, "addr");
+    if (address % 4) return PHAL_STATUS_INVALID;
     const auto value = uint32_t(common::args::get_u64(ti.args, "value"));
-    if (address > std::numeric_limits<uintptr_t>::max()) return PHAL_STATUS_INVALID;
-    const auto status = phal_write(ti.hal->uart_context(), uintptr_t(address), value);
+    const auto status = phal_write(ti.phal_ctx, register_address(ti, address), value);
     if (status == PHAL_STATUS_OK)
-        ti.logger->info("UART write addr=" + hex(address) + " value=" + hex(value, 8));
+        ti.logger->info("PMU write addr=" + hex(address) + " value=" + hex(value, 8));
     return status;
 }

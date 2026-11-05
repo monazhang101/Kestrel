@@ -51,24 +51,14 @@ private:
     TextHandler text_;
 };
 
-struct RetryConfig {
-    uint32_t retry_count = 3;
-    uint32_t retry_interval_ms = 100;
-    uint32_t response_timeout_ms = 5000;
-    // Include bounded serial writes and local RPC delivery/queueing.
-    uint32_t transaction_budget_ms() const;
-    uint32_t client_budget_ms() const;
-    void validate() const;
-};
-
 struct TransactionResult {
     UartResult result = UartResult::Ok;
     uint32_t firmware_status = 0;
     uint32_t value = 0;
 };
 
-// One logical transaction per port. The console owns this across client/ctx
-// lifetimes. Time is injected as monotonic milliseconds for deterministic tests.
+// One logical transaction per port. The transport owns this across testcase
+// context lifetimes. Time is injected as monotonic milliseconds for deterministic tests.
 class Transaction {
 public:
     explicit Transaction(uint64_t session, RetryConfig config = {}, uint32_t last_request = 0);

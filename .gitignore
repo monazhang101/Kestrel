@@ -6,3 +6,6 @@
 # Local source archives
 /*.tar
 /*.zip
+
+# PMU UART session logs
+/logs/

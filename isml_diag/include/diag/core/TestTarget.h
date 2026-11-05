@@ -46,10 +46,11 @@ protected:
     TargetType target_type_;
     DeviceContext ctx_;
     TPUDevice* device_ = nullptr;
+    std::string owner_name_;
     std::unordered_map<std::string, TestcaseDefinition> registered_tests_;
 
     // Modules declare testcase defaults, formats, and callbacks here.
-    // ctx_resources declares optional IPC/UART contexts for the testcase.
+    // ctx_resources declares optional FW IPC contexts for the testcase.
     void _add_test(const std::string& test_name,
                    std::initializer_list<TestArgumentDefinition> arguments,
                    TestcaseFunc func,
@@ -67,13 +68,19 @@ public:
                const DeviceContext& ctx);
     virtual ~TestTarget() = default;
 
-    virtual TestStatus run_testcase(const std::string& test_name,
-                                    const TestArgs& args = {},
-                                    Logger* logger = nullptr,
-                                    HalContext* hal = nullptr);
+    TestStatus run_testcase(const std::string& test_name,
+                            const TestArgs& args = {},
+                            Logger* logger = nullptr,
+                            HalContext* hal = nullptr);
 
     const std::string& get_name() const { return name_; }
-    void set_device(TPUDevice* device) { device_ = device; }
+    void set_device(TPUDevice* device);
+
+    // Shared argument validation/dispatch. The entrypoint supplies only the
+    // context lifetime and invokes the already registered callback.
+    using Executor = std::function<TestStatus(TestInfo&, const TestcaseDefinition&)>;
+    TestStatus run_testcase_with(const std::string& test_name, const TestArgs& args,
+                                 Logger* logger, const Executor& execute);
     const TargetType& get_target_type() const { return target_type_; }
     DeviceContext& get_context() { return ctx_; }
     const DeviceContext& get_context() const { return ctx_; }

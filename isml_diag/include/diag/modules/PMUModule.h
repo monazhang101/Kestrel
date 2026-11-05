@@ -5,6 +5,7 @@
 class PMUModule : public TestTarget {
 private:
     TestStatus example(TestInfo& ti);
+    TestStatus uart_example(TestInfo& ti);
     TestStatus uart_read32_example(TestInfo& ti);
     TestStatus uart_write32_example(TestInfo& ti);
 

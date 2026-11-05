@@ -1,6 +1,4 @@
 #include "diag/core/TestTarget.h"
-#include "diag/core/HalContext.h"
-#include "diag/device/TPUDevice.h"
 
 extern "C" {
 #include <phal/phal.h>
@@ -68,18 +66,16 @@ bool TestTarget::validate_format(const TestArgumentDefinition& definition,
     return false;
 }
 
-TestStatus TestTarget::run_testcase(const std::string& test_name,
-                                    const TestArgs& args,
-                                    Logger* logger,
-                                    HalContext* hal)
+TestStatus TestTarget::run_testcase_with(const std::string& test_name,
+                                         const TestArgs& args, Logger* logger,
+                                         const Executor& execute)
 {
     std::lock_guard<std::mutex> lock(*ctx_.testcase_mutex);
     Logger default_logger;
     TestInfo ti;
-    ti.target_name = device_ ? device_->get_name() : name_;
+    ti.target_name = owner_name_.empty() ? name_ : owner_name_;
     ti.test_name = test_name;
     ti.logger = logger == nullptr ? &default_logger : logger;
-    ti.hal = hal;
 
     const auto test = registered_tests_.find(test_name);
     if (test == registered_tests_.end()) {
@@ -113,36 +109,7 @@ TestStatus TestTarget::run_testcase(const std::string& test_name,
     ti.args = std::move(resolved_args);
 
     try {
-        if (hal == nullptr) {
-            ti.logger->error("testcase requires a HAL context; run through DeviceManager");
-            return PHAL_STATUS_ERROR;
-        }
-        if (!hal->has_device() || hal->device_context().bdf != ctx_.bdf) {
-            ti.logger->error("HAL is not bound to testcase device: " + ctx_.bdf);
-            return PHAL_STATUS_ERROR;
-        }
-        if (test->second.ctx_resources.requires_uart()) {
-            const auto* owner = device_ ? device_ : dynamic_cast<TPUDevice*>(this);
-            if (!owner || !owner->resource_info().valid ||
-                owner->resource_info().platform != AtlasPlatform::Fpga) {
-                ti.logger->error("UART contexts are supported only on an identified FPGA target");
-                return PHAL_STATUS_UNIMPLEMENTED;
-            }
-        }
-        const auto driver = ti.args.find("drv");
-        if (driver != ti.args.end()) {
-            const auto status = hal->configure_host_dma(driver->second);
-            if (status != PHAL_STATUS_OK) return status;
-        }
-        std::string context_error;
-        auto testcase_scope =
-            hal->begin_testcase(&context_error, test->second.ctx_resources);
-        if (!testcase_scope) {
-            ti.logger->error("context initialization failed: " + context_error);
-            return PHAL_STATUS_ERROR;
-        }
-        ti.phal_ctx = hal->phal_context();
-        return test->second.execute(ti);
+        return execute(ti, test->second);
     } catch (const std::invalid_argument& e) {
         ti.logger->error(std::string("invalid test argument: ") + e.what());
         return PHAL_STATUS_INVALID;

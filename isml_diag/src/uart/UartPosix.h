@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <fcntl.h>
 #include <poll.h>
-#include <sys/socket.h>
 #include <unistd.h>
 
 namespace uart {
@@ -37,19 +36,6 @@ inline bool wait_fd(int fd, short events, uint64_t deadline)
     }
     errno = ETIMEDOUT;
     return false;
-}
-inline bool socket_transfer(int fd, uint8_t* bytes, size_t size, bool sending, uint64_t deadline)
-{
-    size_t done = 0;
-    while (done < size) {
-        if (!wait_fd(fd, sending ? POLLOUT : POLLIN, deadline)) return false;
-        const auto n = sending ? ::send(fd, bytes + done, size - done, MSG_NOSIGNAL)
-                               : ::recv(fd, bytes + done, size - done, 0);
-        if (n < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) continue;
-        if (n <= 0) return false;
-        done += size_t(n);
-    }
-    return true;
 }
 } // namespace uart
 #endif
