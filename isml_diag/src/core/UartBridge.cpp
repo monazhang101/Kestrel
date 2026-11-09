@@ -213,6 +213,7 @@ public:
     SerialPort serial;
     const uint64_t session = new_session();
     LogFile logs;
+    const std::function<void(const std::string&)> on_log;
     uart::Transaction transaction;
     uart::StreamDecoder decoder;
     std::mutex callers;
@@ -224,16 +225,22 @@ public:
 
     explicit Impl(const uart::Config& config)
         : port(config.port.empty() ? uart::find_cp210x_port() : config.port),
-          serial(port), logs(config.capture_log, session), transaction(session, config.retry),
+          serial(port), logs(config.capture_log, session), on_log(config.on_log),
+          transaction(session, config.retry),
           decoder(session, [this](const uart::Frame& frame) {
-              if (frame.type == UART_IPC_TYPE_LOG) logs.append(frame.text);
+              if (frame.type == UART_IPC_TYPE_LOG) append_log(frame.text);
               else transaction.receive(frame);
-          }, [this](const std::string& text) { logs.append(text); })
+          }, [this](const std::string& text) { append_log(text); })
     {
         serial.configure(config.baud);
         worker = std::thread([this] { run(); });
     }
     ~Impl() { close(); }
+    void append_log(const std::string& text)
+    {
+        logs.append(text);
+        if (on_log) on_log(text);
+    }
     void close()
     {
         {

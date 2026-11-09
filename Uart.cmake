@@ -19,7 +19,8 @@ set_target_properties(isml_uart_protocol PROPERTIES
 
 add_library(isml_uart_transport STATIC
     ${UART_DIAG_DIR}/src/core/UartBridge.cpp
-    ${UART_DIAG_DIR}/src/uart/UartProtocol.cpp)
+    ${UART_DIAG_DIR}/src/uart/UartProtocol.cpp
+    ${UART_DIAG_DIR}/src/uart/UartRepl.cpp)
 target_compile_features(isml_uart_transport PUBLIC cxx_std_17)
 target_include_directories(isml_uart_transport PUBLIC ${UART_DIAG_DIR}/include PRIVATE ${UART_DIAG_DIR}/src)
 find_package(Threads REQUIRED)

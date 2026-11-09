@@ -1,8 +1,9 @@
 #include "diag/core/PhalBridge.h"
+#include "diag/core/UartRepl.h"
 #include "diag/device/TPUDevice.h"
-#include "diag/implementer/Implementer.h"
 
 #include <algorithm>
+#include <atomic>
 #include <filesystem>
 #include <iostream>
 #include <limits>
@@ -38,60 +39,35 @@ void usage()
 {
     std::cout << "Usage: isml_uart <module_test_name> [--<argument> <value>]...\n"
               << "       isml_uart <module_test_name> -all\n"
+              << "       isml_uart console [UART options]\n"
               << "       isml_uart list\n"
               << "  --target TPU0                one automatically selected CP210x UART\n"
-              << "  --uart-log                   save PMU text to logs/pmu_uart_<session>.log\n"
+              << "  --uart-console               enter RD/WR console after the testcase\n"
+              << "  --uart-log                   save testcase/session PMU text to a log file\n"
               << "  --retry-count 3              retries after the initial send\n"
               << "  --retry-interval-ms 100      interval after an unanswered attempt\n"
               << "  --response-timeout-ms 5000   response wait per attempt\n"
               << "  --log-level error|info|flow|regio (default: info)\n"
               << "  --policy-dir <path>          parameter runs for -all\n"
               << "Examples:\n"
+              << "  isml_uart console\n"
               << "  isml_uart pmu_uart_example --uart-log\n"
+              << "  isml_uart pmu_uart_example --uart-console --uart-log\n"
               << "  isml_uart pmu_uart_read32_example --addr 0x02105060\n"
               << "  isml_uart pmu_uart_write32_example --addr 0x02105060 --value 0x12345678\n";
 }
 
-TPUDeviceConfig uart_target_config()
+bool open_uart(UartBridge& bridge, const uart::Config& config, Logger& logger)
 {
-    TPUDeviceConfig config;
-    config.name = "TPU0";
-    config.tpu_index = 0;
-    config.pcie_modules.push_back({0});
-    config.pmu_modules.push_back({0});
-    for (uint32_t index = 0; index < 4; ++index) {
-        config.ddp_modules.push_back({index});
+    if (!bridge.port().empty()) return true;
+    std::string error;
+    if (!bridge.open(config, &error)) {
+        logger.error(error);
+        return false;
     }
-    for (uint32_t index = 0; index < 8; ++index) {
-        config.isi_modules.push_back({index});
-    }
-    return config;
-}
-
-std::unique_ptr<TPUDevice> create_uart_target(DeviceContext& device)
-{
-    auto implementer = std::make_shared<Implementer>(TPUType::Atlas);
-    device.memory_regions = implementer->memory_regions();
-    return std::make_unique<TPUDevice>(
-        "TPU0", device, uart_target_config(), implementer);
-}
-
-void collect_test_names(const TestTarget& target,
-                        std::vector<std::string>& names)
-{
-    const auto own = target.get_registered_test_names();
-    names.insert(names.end(), own.begin(), own.end());
-    for (const auto* child : target.child_targets()) {
-        if (child != nullptr) collect_test_names(*child, names);
-    }
-}
-
-TestTarget* find_uart_target(TPUDevice& device, const std::string& test_name)
-{
-    const auto separator = test_name.find('_');
-    if (separator == std::string::npos) return nullptr;
-    const auto module_type = test_name.substr(0, separator);
-    return device.module(module_type, 0);
+    logger.info("PMU UART port=" + bridge.port());
+    if (!bridge.log_path().empty()) logger.info("PMU log=" + bridge.log_path());
+    return true;
 }
 }
 
@@ -107,10 +83,12 @@ int main(int argc, char** argv)
         Logger logger;
         TestArgs args;
         bool all = false;
+        bool uart_console = false;
         auto policy_dir = default_policies(argv[0]);
         for (int i = 2; i < argc; ++i) {
             const std::string flag = argv[i];
             if (flag == "--uart-log") { config.capture_log = true; continue; }
+            if (flag == "--uart-console") { uart_console = true; continue; }
             if (flag == "-all") { all = true; continue; }
             if (flag.rfind("--", 0) != 0 || flag.size() == 2)
                 throw std::invalid_argument("invalid option " + flag);
@@ -123,7 +101,11 @@ int main(int argc, char** argv)
             else if (flag == "--retry-interval-ms") config.retry.retry_interval_ms = number(value);
             else if (flag == "--response-timeout-ms") config.retry.response_timeout_ms = number(value);
             else if (flag == "--log-level") logger.set_level(log_level(value));
-            else if (flag == "--policy-dir") policy_dir = value;
+            else if (flag == "--policy-dir") {
+                if (command == "console")
+                    throw std::invalid_argument("console mode accepts only UART options");
+                policy_dir = value;
+            }
             else {
                 auto name = flag.substr(2);
                 std::replace(name.begin(), name.end(), '-', '_');
@@ -132,6 +114,49 @@ int main(int argc, char** argv)
         }
         config.retry.validate();
         if (all && !args.empty()) throw std::invalid_argument("-all cannot be combined with testcase arguments");
+        const bool console_only = command == "console";
+        if (console_only) {
+            if (uart_console)
+                throw std::invalid_argument("console mode cannot be combined with --uart-console");
+            if (all || !args.empty())
+                throw std::invalid_argument("console mode accepts only UART options");
+        }
+        std::atomic_bool console_active{console_only};
+        std::atomic_bool prompt_visible{false};
+        if (console_only || uart_console) {
+            config.on_log = [&](const std::string& text) {
+                if (!console_active.load(std::memory_order_relaxed)) return;
+                const auto redraw_prompt =
+                    prompt_visible.load(std::memory_order_relaxed);
+                std::string display;
+                if (redraw_prompt) display += "\r\033[2K";
+                display += text;
+                if (text.empty() || text.back() != '\n') display += '\n';
+                if (redraw_prompt) display += "uart> ";
+                std::cout << display << std::flush;
+            };
+        }
+
+        auto uart = std::make_shared<UartBridge>();
+        const auto enter_console = [&](bool wait_for_first_command) {
+            console_active.store(!wait_for_first_command, std::memory_order_relaxed);
+            uart::run_repl(*uart, std::cin, std::cout, [&](bool waiting) {
+                prompt_visible.store(waiting, std::memory_order_relaxed);
+            }, [&] {
+                console_active.store(true, std::memory_order_relaxed);
+            });
+            prompt_visible.store(false, std::memory_order_relaxed);
+            console_active.store(false, std::memory_order_relaxed);
+        };
+        if (console_only) {
+            if (!open_uart(*uart, config, logger)) return int(PHAL_STATUS_ERROR);
+            enter_console(false);
+            uart->close();
+            const auto diagnostics = uart->diagnostics();
+            if (!diagnostics.empty()) logger.error(diagnostics);
+            return 0;
+        }
+
         // Construct the same module/testcase catalog as the PCIe executable,
         // but with a synthetic device context. No PCI scan, VID/DID, BAR,
         // system-ready wait, or resource inventory access is performed here.
@@ -139,11 +164,17 @@ int main(int argc, char** argv)
         device.tpu_type = TPUType::Atlas;
         device.target_name = "TPU0";
         device.logger = &logger;
-        auto tpu = create_uart_target(device);
-        auto names = std::vector<std::string>{};
-        collect_test_names(*tpu, names);
+        TPUDeviceConfig target_config;
+        target_config.name = "TPU0";
+        target_config.pcie_modules.push_back({0});
+        target_config.pmu_modules.push_back({0});
+        for (uint32_t index = 0; index < 4; ++index)
+            target_config.ddp_modules.push_back({index});
+        for (uint32_t index = 0; index < 8; ++index)
+            target_config.isi_modules.push_back({index});
+        TPUDevice tpu("TPU0", device, target_config, nullptr);
+        auto names = tpu.get_registered_test_names();
         std::sort(names.begin(), names.end());
-        names.erase(std::unique(names.begin(), names.end()), names.end());
         if (command == "list") {
             if (argc != 2) throw std::invalid_argument("list takes no arguments");
             for (const auto& name : names) std::cout << name << '\n';
@@ -151,10 +182,15 @@ int main(int argc, char** argv)
         }
         if (!std::binary_search(names.begin(), names.end(), command))
             throw std::invalid_argument("testcase is not packaged in isml_uart: " + command);
+        const auto separator = command.find('_');
+        auto* target = separator == std::string::npos
+                     ? nullptr
+                     : tpu.module(command.substr(0, separator), 0);
+        if (target == nullptr)
+            throw std::invalid_argument("testcase target is not available: " + command);
         std::vector<TestArgs> runs{args};
         if (all) {
             const auto catalog = load_testcase_policies((policy_dir / "testcases").string());
-            const auto separator = command.find('_');
             const auto module_name = separator == std::string::npos
                                    ? std::string{}
                                    : command.substr(0, separator);
@@ -167,28 +203,19 @@ int main(int argc, char** argv)
                 throw std::invalid_argument("no parameter list configured for testcase: " + command);
             runs = module->second.at(local_name).runs;
         }
-        auto uart = std::make_shared<UartBridge>();
         PhalBridge phal;
-        // The object is deliberately unbound: it gives PCIe-dependent cases a
-        // safe capability check through ti.hal without performing discovery.
+        // UART-compatible cases use ti.phal_ctx. The unbound HAL keeps older
+        // PCIe-only cases from dereferencing a null capability provider.
         HalContext uart_hal;
         int aggregate = 0;
         for (size_t index = 0; index < runs.size(); ++index) {
             if (all) std::cout << "[RUN " << index + 1 << '/' << runs.size() << "] TPU0::" << command << '\n';
             // Argument validation happens before opening a port. The serial
             // session stays open across every run; only PHAL ctx is per-case.
-            auto* target = find_uart_target(*tpu, command);
-            if (target == nullptr) {
-                throw std::invalid_argument("testcase target is not available: " + command);
-            }
             const auto status = target->run_testcase_with(command, runs[index], &logger,
                 [&](TestInfo& ti, const TestcaseDefinition& test) -> TestStatus {
                     std::string error;
-                    if (uart->port().empty()) {
-                        if (!uart->open(config, &error)) { logger.error(error); return PHAL_STATUS_ERROR; }
-                        logger.info("PMU UART port=" + uart->port());
-                        if (!uart->log_path().empty()) logger.info("PMU log=" + uart->log_path());
-                    }
+                    if (!open_uart(*uart, config, logger)) return PHAL_STATUS_ERROR;
                     auto ctx = phal.create_uart_context(device, PhalProject::Atlas, &error, uart);
                     if (!ctx) { logger.error(error); return PHAL_STATUS_ERROR; }
                     ti.hal = &uart_hal;
@@ -199,6 +226,9 @@ int main(int argc, char** argv)
             std::cout << '[' << (status == PHAL_STATUS_OK ? "PASS" : test_status_name(status))
                       << "] TPU0::" << command << '\n';
             aggregate |= int(status);
+        }
+        if (uart_console && !uart->port().empty()) {
+            enter_console(true);
         }
         uart->close();
         const auto diagnostics = uart->diagnostics();

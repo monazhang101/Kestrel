@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 
@@ -21,6 +22,9 @@ struct Config {
     uint32_t baud = 115200;
     RetryConfig retry;
     bool capture_log = false;
+    // Called by the receive worker for current-session LOG frames and
+    // printable boot text. File capture and live display are independent.
+    std::function<void(const std::string&)> on_log;
     // The CLI leaves this empty and auto-selects the unique CP210x endpoint.
     // Internal callers/tests can supply an endpoint, such as a PTY.
     std::string port;
