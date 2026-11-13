@@ -17,8 +17,10 @@ using common::format::hex;
 // a CPU-visible staging or readback endpoint.
 TestStatus PCIeModule::dma_data_transfer(TestInfo& ti)
 {
-    // FW length uses 32-byte units; device offsets use 4-byte words.
+    // The descriptor encodes length in 32-byte units. Hardware additionally
+    // requires 256-byte length/address alignment when either endpoint is IMEM.
     constexpr uint64_t DMA_ALIGNMENT = 32;
+    constexpr uint64_t IMEM_ALIGNMENT = 256;
     constexpr uint64_t HOST_OFFSET = 0;
 
     auto& logger = *ti.logger;
@@ -60,10 +62,10 @@ TestStatus PCIeModule::dma_data_transfer(TestInfo& ti)
 
     if ((!host_case && !round_trip) ||
         timeout_ms == 0 || size_bytes == 0 || (host_case && size_bytes > HOST_DMA_MAX_SIZE_BYTES) ||
-        (size_bytes % DMA_ALIGNMENT) != 0) {
+        (size_bytes % (imem_case ? IMEM_ALIGNMENT : DMA_ALIGNMENT)) != 0) {
         if (ti.logger != nullptr) {
             ti.logger->error(
-                "unsupported direction or invalid range: size must be a nonzero multiple of 32 (host <= 128MiB); timeout must be nonzero");
+                "unsupported direction or invalid range: size must be a nonzero multiple of 32, or 256 for IMEM (host <= 128MiB); timeout must be nonzero");
         }
         return PHAL_STATUS_INVALID;
     }
@@ -72,12 +74,13 @@ TestStatus PCIeModule::dma_data_transfer(TestInfo& ti)
         // TODO: Align the usable address ranges and sizes for each internal
         // memory with FW/HW owners, including SRAM space reserved by FW.
         constexpr uint64_t scratch_limit = 256;
-        if (intermediate_offset % 4 != 0 ||
+        const uint64_t internal_alignment = imem_case ? IMEM_ALIGNMENT : 4;
+        if (intermediate_offset % internal_alignment != 0 ||
             intermediate_offset > scratch_limit ||
             size_bytes > scratch_limit - intermediate_offset) {
             if (ti.logger != nullptr) {
                 ti.logger->error(
-                    "invalid internal-memory range: temporary IMEM/SMEM test window [0,256); offsets must be 4-byte aligned");
+                    "invalid internal-memory range: temporary window [0,256); IMEM offsets must be 256-byte aligned and SMEM offsets 4-byte aligned");
             }
             return PHAL_STATUS_INVALID;
         }

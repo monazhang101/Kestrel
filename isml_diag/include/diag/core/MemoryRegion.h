@@ -98,7 +98,9 @@ struct MemoryRegionMap {
 struct DeviceMemoryState {
     using Key = MemoryRegion;
     std::mutex allocation_mutex;
-    std::mutex aperture_mutex;
+    // Protects the shared mutable PHAL PCIe context, including env.base.
+    // Aperture, CP queue, and DMA register paths all use this context.
+    std::mutex pcie_context_mutex;
     // CP submissions are currently serialized because they share one mutable
     // PHAL context. TODO: use independent contexts/short-lived IO locking for
     // true multi-queue parallel submission. Indexes are COMP0..3, MEM0..3.
