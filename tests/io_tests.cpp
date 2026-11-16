@@ -408,6 +408,30 @@ void atlas_resource_info_is_decoded()
     CHECK(emu_64g.fake_dmem_size_bytes ==
           64ull * 1024ull * 1024ull * 1024ull);
 
+    const auto fpga_isi_aic_cut2 =
+        decode_atlas_presilicon_resource(0x00021042u);
+    CHECK(fpga_isi_aic_cut2.valid);
+    CHECK(fpga_isi_aic_cut2.profile_matched);
+    CHECK(fpga_isi_aic_cut2.profile_name == "isi-aic-cut2");
+    CHECK(fpga_isi_aic_cut2.isi_mask == 0x33u);
+    CHECK(fpga_isi_aic_cut2.isi_indices() ==
+          std::vector<uint32_t>({0, 1, 4, 5}));
+    CHECK(fpga_isi_aic_cut2.aic.profile == AtlasAicProfile::Cut2);
+
+    const auto fpga_base_jtag1 =
+        decode_atlas_presilicon_resource(0x00100002u);
+    CHECK(fpga_base_jtag1.valid);
+    CHECK(fpga_base_jtag1.profile_matched);
+    CHECK(fpga_base_jtag1.profile_name == "base-jtag1");
+    CHECK(fpga_base_jtag1.jtag_mux == AtlasJtagMux::Chain1);
+
+    const auto fpga_base_jtag4 =
+        decode_atlas_presilicon_resource(0x00200002u);
+    CHECK(fpga_base_jtag4.valid);
+    CHECK(fpga_base_jtag4.profile_matched);
+    CHECK(fpga_base_jtag4.profile_name == "base-jtag4");
+    CHECK(fpga_base_jtag4.jtag_mux == AtlasJtagMux::Chain4);
+
     for (const auto& profile : ATLAS_EMU_RESOURCE_PROFILES) {
         const auto info = decode_atlas_presilicon_resource(profile.raw);
         CHECK(info.valid);
@@ -436,8 +460,18 @@ void atlas_resource_info_is_decoded()
     CHECK(fallback_cxl.has_cxl(0, 2));
     CHECK(fallback_cxl.dmc_mask == ATLAS_ALL_DMC_MASK);
 
-    const auto fallback_isi =
+    const auto emu_isi_0145 =
         decode_atlas_presilicon_resource(0x00001021u);
+    CHECK(emu_isi_0145.valid);
+    CHECK(emu_isi_0145.profile_matched);
+    CHECK(emu_isi_0145.profile_name == "isi");
+    CHECK(emu_isi_0145.dmc_mask == ATLAS_ALL_DMC_MASK);
+    CHECK(emu_isi_0145.isi_mask == 0x33u);
+    CHECK(emu_isi_0145.isi_indices() ==
+          std::vector<uint32_t>({0, 1, 4, 5}));
+
+    const auto fallback_isi =
+        decode_atlas_presilicon_resource(0x00101021u);
     CHECK(fallback_isi.valid);
     CHECK(!fallback_isi.profile_matched);
     CHECK(fallback_isi.isi_mask == 0x33u);
