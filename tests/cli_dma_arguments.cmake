@@ -54,10 +54,10 @@ check_invalid("module prefix" dma_data_transfer)
 check_invalid("argument=size" pcie_dma_data_transfer --size 4096)
 check_invalid("invalid drv=other" pcie_dma_data_transfer --drv other)
 check_invalid("invalid drv=isml_diag" pcie_dma_data_transfer --drv isml_diag)
-check_invalid("invalid internal-memory range" pcie_dma_data_transfer
+check_invalid("unsupported direction or invalid range" pcie_dma_data_transfer
     --direction h2i --size-bytes 288)
 check_invalid("invalid internal-memory range" pcie_dma_data_transfer
-    --direction h2s --size-bytes 256 --intermediate-offset 32)
+    --direction h2s --size-bytes 256 --intermediate-offset 2)
 
 execute_process(COMMAND "${CLI}" pcie_dma_h2d_example --drv none
     WORKING_DIRECTORY "${WORK_DIR}" RESULT_VARIABLE example_result

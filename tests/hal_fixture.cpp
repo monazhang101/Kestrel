@@ -235,7 +235,7 @@ TestStatus HalContext::with_pcie_context(
         if (error != nullptr) *error = "PCIe PHAL context is not initialized";
         return PHAL_STATUS_ERROR;
     }
-    std::lock_guard<std::mutex> lock(active_memory_->aperture_mutex);
+    std::lock_guard<std::mutex> lock(active_memory_->pcie_context_mutex);
     auto* phal = aperture_phal_context_.get();
     phal_block_ctx_enter(phal, TOP_U_PCIE_0_OFFSET);
     TestStatus status = PHAL_STATUS_ERROR;
@@ -270,7 +270,9 @@ DeviceContext HalContext::mmap_bar_space(DeviceContext ctx)
     ctx.bar_mappings.clear();
     auto& storage = test_bar_storage[this];
     for (uint32_t index : {0u, 2u, 4u}) {
-        const auto mapped_size = static_cast<size_t>(0x10000);
+        // Large enough for the 128 KiB DMA descriptor pool plus a test
+        // region's BAR offset. Hardware BAR mappings are larger still.
+        const auto mapped_size = static_cast<size_t>(0x40000);
         storage.push_back(
             std::make_unique<std::vector<uint8_t>>(mapped_size));
         BarMapping bar;
