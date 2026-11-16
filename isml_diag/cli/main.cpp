@@ -37,7 +37,7 @@ static void print_usage(const char* program)
               << "     Use -all to run every parameter line from the testcase policy.\n"
               << "DMA concurrency: pcie_dma_concurrent_transfer [--drv isml_drv|none]\n"
               << "     [--job-count <total jobs>] [--size-bytes <multiple of 32>]\n"
-              << "     Uses a sliding window of at most 256 in-flight jobs.\n"
+              << "     Uses a sliding window of at most 255 in-flight jobs.\n"
               << "     [--pattern zero|incremental|random] [--timeout-ms <whole batch ms>]\n"
               << "CP:  pcie_cp_queue_data_transfer [--direction h2sram|sram2h|d2sram|sram2d]\n"
               << "     [--queue mem0|mem1|mem2|mem3|comp0|comp1|comp2|comp3]\n"

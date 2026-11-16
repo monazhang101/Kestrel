@@ -64,7 +64,7 @@ TestStatus PCIeModule::dma_concurrent_transfer(TestInfo& ti)
 
     HqcDmaEngine engine(*ti.hal);
     const size_t window_size = static_cast<size_t>(std::min<uint64_t>(
-        job_count, HqcDmaEngine::DESCRIPTOR_SLOT_COUNT));
+        job_count, HqcDmaEngine::DESCRIPTOR_USABLE_SLOT_COUNT));
     std::vector<std::unique_ptr<DmaDescriptor>> jobs;
     std::vector<DmaDescriptor*> batch;
     std::vector<uint64_t> active_job(window_size);

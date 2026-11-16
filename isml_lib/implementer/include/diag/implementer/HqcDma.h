@@ -10,6 +10,7 @@
 #include <optional>
 #include <vector>
 
+#define SOC_HQC_SYNCFLAG_MIN_ID 1U
 #define SOC_HQC_SYNCFLAG_MAX_ID 255U
 #define SOC_HQC_SYNCFLAG_CSR_DONE_OFFSET(id) (0x400 + (id) * 4)
 #define ATL_HQC_SRAM_MCU_LOCAL_BASE 0x30000000u
@@ -103,6 +104,9 @@ private:
 class HqcDmaEngine {
 public:
     static constexpr uint32_t DESCRIPTOR_SLOT_COUNT = 256;
+    static constexpr uint32_t DESCRIPTOR_FIRST_SLOT = SOC_HQC_SYNCFLAG_MIN_ID;
+    static constexpr uint32_t DESCRIPTOR_USABLE_SLOT_COUNT =
+        DESCRIPTOR_SLOT_COUNT - DESCRIPTOR_FIRST_SLOT;
     static constexpr uint64_t DESCRIPTOR_SLOT_STRIDE = 512;
     static constexpr uint64_t DESCRIPTOR_POOL_SIZE =
         DESCRIPTOR_SLOT_COUNT * DESCRIPTOR_SLOT_STRIDE;
@@ -128,7 +132,7 @@ public:
     TestStatus wait_sync_flag(uint32_t flag, uint64_t timeout_ms) const;
     size_t available_slots() const
     {
-        return DESCRIPTOR_SLOT_COUNT - slots_in_use_.count();
+        return DESCRIPTOR_USABLE_SLOT_COUNT - slots_in_use_.count();
     }
 
 private:

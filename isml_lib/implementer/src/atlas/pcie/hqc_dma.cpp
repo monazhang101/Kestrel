@@ -300,7 +300,8 @@ TestStatus DmaDescriptor::poll_completion() { return engine_.poll_completion(*th
 TestStatus DmaDescriptor::wait(uint64_t timeout) { return engine_.wait_completion(*this, timeout); }
 TestStatus DmaDescriptor::clear_completion()
 {
-    return sync_flag_ <= SOC_HQC_SYNCFLAG_MAX_ID
+    return sync_flag_ >= SOC_HQC_SYNCFLAG_MIN_ID &&
+           sync_flag_ <= SOC_HQC_SYNCFLAG_MAX_ID
         ? engine_.clear_sync_flag_done(sync_flag_) : PHAL_STATUS_INVALID;
 }
 TestStatus DmaDescriptor::execute(uint64_t timeout)
@@ -335,7 +336,7 @@ TestStatus HqcDmaEngine::ensure_descriptor_pool()
         return PHAL_STATUS_ERROR;
     }
     log_flow(hal_, "DMA descriptor pool reserved: bank=1 slots=" +
-                       std::to_string(DESCRIPTOR_SLOT_COUNT) +
+                       std::to_string(DESCRIPTOR_USABLE_SLOT_COUNT) +
                        " stride=" + std::to_string(DESCRIPTOR_SLOT_STRIDE));
     return PHAL_STATUS_OK;
 }
@@ -422,27 +423,29 @@ TestStatus HqcDmaEngine::init_desc_ctrl()
 TestStatus HqcDmaEngine::init_ddp_ctrl()
 {
     if (ddp_initialized_) return PHAL_STATUS_OK;
+    // DDP is a top-level sibling of PCIe, so its offsets must be applied to
+    // the chip-root context rather than a context rooted under PCIe.
+    auto* ctx = hal_.phal_context();
+    if (ctx == nullptr) return PHAL_STATUS_ERROR;
+
     log_flow(hal_, "DMA configuration: DDP routing");
-    const auto status = hal_.with_pcie_context([&](phal_ctx_t* ctx) {
-        phal_status_t ret = PHAL_STATUS_OK;
-        for (uint32_t index = 0; index < DDP_COUNT; ++index) {
-            phal_block_ctx_enter(ctx, DDP_OFFSETS[index]);
-            phal_block_ctx_enter(ctx, DDP_U_DDP_NDM_REG_0_OFFSET);
-            ret |= phal_field_write(
-                ctx, DDP_NDM_REG_NDM_CTRL_OFFSET,
-                DDP_NDM_REG_NDM_CTRL_QMS_Q_PHASE_bm,
-                DDP_NDM_REG_NDM_CTRL_QMS_Q_PHASE_bp,
-                DDP_Q_PHASE[index]);
-            ret |= phal_field_write(
-                ctx, DDP_NDM_REG_NDM_CTRL_OFFSET,
-                DDP_NDM_REG_NDM_CTRL_QMS_STATION_ID_bm,
-                DDP_NDM_REG_NDM_CTRL_QMS_STATION_ID_bp,
-                DDP_Q_STATION_ID[index]);
-            phal_block_ctx_exit(ctx, DDP_U_DDP_NDM_REG_0_OFFSET);
-            phal_block_ctx_exit(ctx, DDP_OFFSETS[index]);
-        }
-        return ret;
-    });
+    phal_status_t status = PHAL_STATUS_OK;
+    for (uint32_t index = 0; index < DDP_COUNT; ++index) {
+        phal_block_ctx_enter(ctx, DDP_OFFSETS[index]);
+        phal_block_ctx_enter(ctx, DDP_U_DDP_NDM_REG_0_OFFSET);
+        status |= phal_field_write(
+            ctx, DDP_NDM_REG_NDM_CTRL_OFFSET,
+            DDP_NDM_REG_NDM_CTRL_QMS_Q_PHASE_bm,
+            DDP_NDM_REG_NDM_CTRL_QMS_Q_PHASE_bp,
+            DDP_Q_PHASE[index]);
+        status |= phal_field_write(
+            ctx, DDP_NDM_REG_NDM_CTRL_OFFSET,
+            DDP_NDM_REG_NDM_CTRL_QMS_STATION_ID_bm,
+            DDP_NDM_REG_NDM_CTRL_QMS_STATION_ID_bp,
+            DDP_Q_STATION_ID[index]);
+        phal_block_ctx_exit(ctx, DDP_U_DDP_NDM_REG_0_OFFSET);
+        phal_block_ctx_exit(ctx, DDP_OFFSETS[index]);
+    }
     if (status == PHAL_STATUS_OK) {
         ddp_initialized_ = true;
     }
@@ -461,7 +464,8 @@ TestStatus HqcDmaEngine::fill_descriptor(DmaDescriptor& desc)
     if (status != PHAL_STATUS_OK) return status;
 
     uint32_t slot = DESCRIPTOR_SLOT_COUNT;
-    for (uint32_t i = 0; i < DESCRIPTOR_SLOT_COUNT; ++i) {
+    for (uint32_t i = DESCRIPTOR_FIRST_SLOT;
+         i < DESCRIPTOR_SLOT_COUNT; ++i) {
         if (!slots_in_use_.test(i)) { slot = i; break; }
     }
     if (slot == DESCRIPTOR_SLOT_COUNT) {
@@ -511,6 +515,7 @@ TestStatus HqcDmaEngine::fill_descriptor(DmaDescriptor& desc)
 TestStatus HqcDmaEngine::submit(DmaDescriptor& desc)
 {
     if (faulted_ || desc.state_ != DmaJobState::Prepared ||
+        desc.slot_id_ < DESCRIPTOR_FIRST_SLOT ||
         desc.slot_id_ >= DESCRIPTOR_SLOT_COUNT) return PHAL_STATUS_INVALID;
     bool trigger_attempted = false;
     const auto status = send_descriptor(desc, next_core_, trigger_attempted);
@@ -549,7 +554,8 @@ TestStatus HqcDmaEngine::send_descriptor(
     DmaDescriptor& desc, uint32_t preferred_core, bool& trigger_attempted)
 {
     trigger_attempted = false;
-    if (preferred_core > 1 || desc.slot_id_ >= DESCRIPTOR_SLOT_COUNT)
+    if (preferred_core > 1 || desc.slot_id_ < DESCRIPTOR_FIRST_SLOT ||
+        desc.slot_id_ >= DESCRIPTOR_SLOT_COUNT)
         return PHAL_STATUS_INVALID;
     log_flow(hal_, "HQC descriptor submission started: preferred_core=" +
                        std::to_string(preferred_core) +
@@ -693,7 +699,8 @@ TestStatus HqcDmaEngine::send_descriptor(
 
 TestStatus HqcDmaEngine::check_sync_flag_done(uint32_t flag) const
 {
-    if (flag > SOC_HQC_SYNCFLAG_MAX_ID) return PHAL_STATUS_INVALID;
+    if (flag < SOC_HQC_SYNCFLAG_MIN_ID ||
+        flag > SOC_HQC_SYNCFLAG_MAX_ID) return PHAL_STATUS_INVALID;
     TestStatus result = PHAL_STATUS_ERROR;
     hal_.with_pcie_context([&](phal_ctx_t* ctx) {
         phal_block_ctx_enter(ctx, PCIE_U_HQC_0_OFFSET);
@@ -710,7 +717,8 @@ TestStatus HqcDmaEngine::check_sync_flag_done(uint32_t flag) const
 
 TestStatus HqcDmaEngine::clear_sync_flag_done(uint32_t flag) const
 {
-    if (flag > SOC_HQC_SYNCFLAG_MAX_ID) return PHAL_STATUS_INVALID;
+    if (flag < SOC_HQC_SYNCFLAG_MIN_ID ||
+        flag > SOC_HQC_SYNCFLAG_MAX_ID) return PHAL_STATUS_INVALID;
     log_flow(hal_, "Syncflag clear: flag=" + std::to_string(flag));
     TestStatus result = PHAL_STATUS_ERROR;
     hal_.with_pcie_context([&](phal_ctx_t* ctx) {
@@ -726,6 +734,7 @@ TestStatus HqcDmaEngine::poll_completion(DmaDescriptor& desc)
 {
     if ((desc.state_ != DmaJobState::Submitted &&
          desc.state_ != DmaJobState::Faulted) ||
+        desc.slot_id_ < DESCRIPTOR_FIRST_SLOT ||
         desc.slot_id_ >= DESCRIPTOR_SLOT_COUNT ||
         desc.sync_flag_ != desc.slot_id_) {
         return PHAL_STATUS_INVALID;
@@ -750,6 +759,7 @@ TestStatus HqcDmaEngine::wait_completion(
     if (timeout_ms == 0 ||
         (desc.state_ != DmaJobState::Submitted &&
          desc.state_ != DmaJobState::Faulted) ||
+        desc.slot_id_ < DESCRIPTOR_FIRST_SLOT ||
         desc.slot_id_ >= DESCRIPTOR_SLOT_COUNT ||
         desc.sync_flag_ != desc.slot_id_) {
         return PHAL_STATUS_INVALID;
@@ -776,7 +786,8 @@ TestStatus HqcDmaEngine::wait_completion(
 
 TestStatus HqcDmaEngine::wait_sync_flag(uint32_t flag, uint64_t timeout_ms) const
 {
-    if (flag > SOC_HQC_SYNCFLAG_MAX_ID) return PHAL_STATUS_INVALID;
+    if (flag < SOC_HQC_SYNCFLAG_MIN_ID ||
+        flag > SOC_HQC_SYNCFLAG_MAX_ID) return PHAL_STATUS_INVALID;
     log_flow(hal_, "Syncflag polling started: flag=" + std::to_string(flag) +
                        " timeout_ms=" + std::to_string(timeout_ms));
     const auto start = std::chrono::steady_clock::now();
