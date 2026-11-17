@@ -180,7 +180,7 @@ void integration()
         TPUDeviceConfig device_config; device_config.pmu_modules.push_back({0});
         TPUDevice device(config.target, context, device_config, nullptr, resource);
         hal.bind_device(device.get_context());
-        auto* pmu = device.module("pmu", 0); CHECK(pmu);
+        auto* pmu = device.module(TargetType::Pmu, 0); CHECK(pmu);
         auto result = std::async(std::launch::async, [&] {
             return pmu->run_testcase("pmu_uart_read32_example", {{"addr", "0x02105060"}}, nullptr, &hal);
         });

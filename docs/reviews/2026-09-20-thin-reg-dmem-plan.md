@@ -1,6 +1,6 @@
 # reg / dmem 薄接口审查与最小实施方案
 
-> 历史评估记录。后续确认的实施范围为：保留全部 PCIe/HQC/DMA/kernel；删除 TPU identify、DMC 和其它旧 case/Impl；PMU、DDP、ISI 各保留一个 example，只有 ISI 直接调用原生 PHAL linkup。实际接口和使用方法以 [isml_diag/README.md](../../isml_diag/README.md) 为准。本文下方关于移出 DMA、单个共享 example 等早期建议不再作为实施要求。
+> 历史评估记录。后续确认的实施范围为：保留全部 PCIe/HQC/DMA/kernel；删除 TPU identify、DMC 和其它旧 case/Impl；PMU、DDP、ISI 各保留一个 example，只有 ISI 直接调用原生 PHAL linkup。实际接口和使用方法以 [spev_diag/README.md](../../spev_diag/README.md) 为准。本文下方关于移出 DMA、单个共享 example 等早期建议不再作为实施要求。
 
 审查日期：2026-09-20。基于当前工作区，包括已有未提交改动。本次交付是审查和实施方案，没有修改运行代码。
 
@@ -14,7 +14,7 @@
 
 审查覆盖 CMake、core、device/module、testcases、implementer 产品实现、产品/用例 policy、CLI、Python binding、mock PHAL；kernel 部分核对其 DMA 分配/ioctl/mmap 边界，不展开此次范围外的 DMA/HQC 协议正确性。golden 和根目录历史归档不作为当前实现。
 
-本机为 Windows，项目 CMake 明确要求 Linux。真实 `isml_ipc/external/ProtonHal` 目录存在，但没有本项目需要的头文件/源码；能读取的是本地 mock。因此没有进行真实 PHAL 构建或硬件验证。对现有 `TestStatus |= TestStatus` 做了独立 C++17 语法检查，编译器确认缺少 `operator|=`。
+本机为 Windows，项目 CMake 明确要求 Linux。真实 `spev_ipc/external/ProtonHal` 目录存在，但没有本项目需要的头文件/源码；能读取的是本地 mock。因此没有进行真实 PHAL 构建或硬件验证。对现有 `TestStatus |= TestStatus` 做了独立 C++17 语法检查，编译器确认缺少 `operator|=`。
 
 当前架构技能文档中“case 自己 get_context / 直接计算 BAR offset”的旧约定，与此次需求不同；本方案按此次需求改为框架注入，不保留这部分旧约束。
 
@@ -22,8 +22,8 @@
 
 | 优先级 | 发现与代码位置 | 对此次目标的影响 |
 |---|---|---|
-| P1 | `isml_lib/implementer/src/atlas/pmu/pmu_impl.cpp` 的 reg_read/write/check，以及 ISI/DDP/DMC 的多项实现，只打印固定内容并返回 OK；AtlasM 也有类似情况 | PMU 写入没有写硬件，检查甚至把 expected 当 actual 输出。尚未落地的功能应返回 UNIMPLEMENTED 或移出默认注册 |
-| P1 | `isml_diag/src/core/HalContext.cpp:443` 可退回只读 mmap，但 `BarMapping` 未记录写权限，`common::bar::write` 只检查 mapped | 三参数 write 可能触发进程异常，不能可靠返回 status。增加 writable 标志并在写入前拒绝 |
+| P1 | `spev_lib/implementer/src/atlas/pmu/pmu_impl.cpp` 的 reg_read/write/check，以及 ISI/DDP/DMC 的多项实现，只打印固定内容并返回 OK；AtlasM 也有类似情况 | PMU 写入没有写硬件，检查甚至把 expected 当 actual 输出。尚未落地的功能应返回 UNIMPLEMENTED 或移出默认注册 |
+| P1 | `spev_diag/src/core/HalContext.cpp:443` 可退回只读 mmap，但 `BarMapping` 未记录写权限，`common::bar::write` 只检查 mapped | 三参数 write 可能触发进程异常，不能可靠返回 status。增加 writable 标志并在写入前拒绝 |
 | P1 | `PhalBridge.cpp:198` 的 mutex 只保护缓存取得/创建；`TestTarget.cpp` 只锁当前 target；`DevMem.cpp` 的 set/get/payload 没有共同锁 | 同一 TPU 的不同 module 并发时，可能改变同一 PHAL base 或 aperture，使 IO 落到错误地址 |
 | P1 | `testcases/isi/link_cases.cpp:28` 固定写入 DMEM 0x10000000，没有保存恢复原值；前置 linkup 实现又是固定成功 | 这个 case 不能证明真实 ISI linkup，还会改变内存；拆成明确的 dmem smoke case，使用确认的 scratch 区域并恢复 |
 | P2 | `Common.h` 只有 BAR-relative bool API；模块 base 分散在模块成员和 ModuleImplContext，偏移计算落到 GenericPCIeImpl 等调用方 | 缺少全模块统一的三参数 reg API 和 block context |
@@ -41,7 +41,7 @@
 
 第一轮停止让普通 case 经过 `Module → Impl interface → GenericImpl → AtlasImpl` 才完成一次读写。普通 case 直接调用四个 IO 函数，产品差异先由已有 module layout 与 PHAL project 承担。有真实行为差异的实现以后再保留独立函数，不再为占位功能增加虚接口。旧 implementer 文件可以暂留，但不继续作为新 case 的必经层；大规模删除不作为首个可运行版本的前置条件。
 
-DMA、HQC、FW/PMU IPC 从本轮默认注册和诊断构建依赖中移出；isml_kmod 的主机 DMA 分配能力不在 reg/dmem 调用链中。PHAL 内部源码是否能删减，需要真实依赖树决定，不能盲目移除 init 所引用的组件。
+DMA、HQC、FW/PMU IPC 从本轮默认注册和诊断构建依赖中移出；spev_kmod 的主机 DMA 分配能力不在 reg/dmem 调用链中。PHAL 内部源码是否能删减，需要真实依赖树决定，不能盲目移除 init 所引用的组件。
 
 ## 四个 API 的明确契约
 

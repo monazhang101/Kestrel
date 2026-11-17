@@ -53,15 +53,15 @@ void HalContext::bind_device(const DeviceContext& ctx, Logger* logger)
         : std::make_shared<DeviceMemoryState>();
     active_device_.memory = active_memory_;
     active_device_.memory_regions = active_memory_regions_;
-    host_dma_mode_ = HostDmaMode::IsmlDrv;
+    host_dma_mode_ = HostDmaMode::SpevDrv;
     device_bound_ = true;
     test_pmu_unlocked[this] = false;
 }
 
 TestStatus HalContext::configure_host_dma(const std::string& driver)
 {
-    if (driver == "isml_drv") {
-        host_dma_mode_ = HostDmaMode::IsmlDrv;
+    if (driver == "spev_drv") {
+        host_dma_mode_ = HostDmaMode::SpevDrv;
         return PHAL_STATUS_OK;
     }
     if (driver == "none") {
@@ -70,7 +70,7 @@ TestStatus HalContext::configure_host_dma(const std::string& driver)
     }
     if (active_device_.logger != nullptr) {
         active_device_.logger->error(
-            "invalid drv=" + driver + "; expected isml_drv or none");
+            "invalid drv=" + driver + "; expected spev_drv or none");
     }
     return PHAL_STATUS_INVALID;
 }

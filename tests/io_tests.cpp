@@ -73,7 +73,7 @@ void phal_is_chip_scoped()
 class ProbeTarget : public TestTarget {
 public:
     ProbeTarget(const DeviceContext& ctx, bool* saw_context)
-        : TestTarget("probe", "probe", ctx)
+        : TestTarget("probe", TargetType::Pcie, ctx)
     {
         _add_test("probe", {}, [saw_context](TestInfo& ti) {
             *saw_context = ti.phal_ctx != nullptr &&
@@ -86,7 +86,7 @@ public:
 class UartProbeTarget : public TestTarget {
 public:
     UartProbeTarget(const DeviceContext& ctx, bool* invoked)
-        : TestTarget("uart-probe", "uart_probe", ctx)
+        : TestTarget("uart-probe", TargetType::Pmu, ctx)
     {
         _add_test("probe", {}, [invoked](TestInfo&) {
             *invoked = true;
@@ -290,8 +290,8 @@ void csr_headers_are_available()
 
 void testcase_parameter_lists_are_loaded_in_order()
 {
-    const auto catalog = load_testcase_policies("isml_diag/policies/testcases");
-    const auto& runs = catalog.at("pcie").at("dma_data_transfer").runs;
+    const auto catalog = load_testcase_policies("spev_diag/policies/testcases");
+    const auto& runs = catalog.at(TargetType::Pcie).at("dma_data_transfer").runs;
     CHECK(runs.size() == 8);
     CHECK(runs[0].at("direction") == "h2d");
     CHECK(runs[0].at("size_bytes") == "4096");
@@ -313,6 +313,17 @@ void testcase_parameter_lists_are_loaded_in_order()
     CHECK(runs[6].at("size_bytes") == "256");
     CHECK(runs[7].at("direction") == "s2h");
     CHECK(runs[7].at("size_bytes") == "256");
+}
+
+void target_types_and_product_policies_are_typed()
+{
+    CHECK(std::string(to_string(TargetType::Pcie)) == "pcie");
+    CHECK(target_type_from_string("pmu") == TargetType::Pmu);
+
+    const auto policies = load_product_policies("spev_diag/policies/product");
+    CHECK(policies.size() == 2);
+    CHECK(policies[0].product == "atlas_m");
+    CHECK(policies[1].product == "atlas");
 }
 
 void atlas_resource_info_is_decoded()
@@ -505,7 +516,7 @@ void bar_write32_round_trips()
 
 void discovery_uses_resource_inventory()
 {
-    DeviceManager manager("isml_diag/policies");
+    DeviceManager manager("spev_diag/policies");
     const auto tree = manager.discover();
 
     const auto find = [&tree](const std::string& name)
@@ -622,6 +633,7 @@ int main()
         dmem_supports_native_64_bit_access();
         csr_headers_are_available();
         testcase_parameter_lists_are_loaded_in_order();
+        target_types_and_product_policies_are_typed();
         atlas_resource_info_is_decoded();
         bar_write32_round_trips();
         discovery_uses_resource_inventory();

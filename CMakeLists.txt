@@ -1,59 +1,59 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(IsmlDiag LANGUAGES C CXX)
+project(SpevDiag LANGUAGES C CXX)
 
 # The production runtime depends on Linux PCI sysfs, mmap/ioctl, and the
-# isml_diag kernel UAPI. Unsupported hosts should fail at configure time
+# spev_diag kernel UAPI. Unsupported hosts should fail at configure time
 # instead of compiling a HAL implementation that can only fail at runtime.
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    message(FATAL_ERROR "IsmlDiag supports Linux only")
+    message(FATAL_ERROR "SpevDiag supports Linux only")
 endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(ISML_BUILD_DIAG "Build the PCIe diagnostic library and tool" ON)
-option(ISML_BUILD_UART "Build the standalone UART tool" ON)
-option(ISML_BUILD_CLI "Build the ISML diagnostic CLI" ON)
-option(ISML_BUILD_PYTHON_BINDINGS "Build pybind11 Python bindings" OFF)
-option(ISML_USE_MOCK_PHAL "Use the bundled compile/smoke PHAL mock" OFF)
-option(ISML_BUILD_TESTS "Build software IO contract tests (no hardware access)" OFF)
+option(SPEV_BUILD_DIAG "Build the PCIe diagnostic library and tool" ON)
+option(SPEV_BUILD_UART "Build the standalone UART tool" ON)
+option(SPEV_BUILD_CLI "Build the SPEV diagnostic CLI" ON)
+option(SPEV_BUILD_PYTHON_BINDINGS "Build pybind11 Python bindings" OFF)
+option(SPEV_USE_MOCK_PHAL "Use the bundled compile/smoke PHAL mock" OFF)
+option(SPEV_BUILD_TESTS "Build software IO contract tests (no hardware access)" OFF)
 
-if(ISML_BUILD_UART AND NOT ISML_BUILD_DIAG)
+if(SPEV_BUILD_UART AND NOT SPEV_BUILD_DIAG)
     message(FATAL_ERROR
-        "ISML_BUILD_UART uses the shared module/testcase runtime and requires "
-        "ISML_BUILD_DIAG=ON")
+        "SPEV_BUILD_UART uses the shared module/testcase runtime and requires "
+        "SPEV_BUILD_DIAG=ON")
 endif()
 
-set(ISML_DIAG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/isml_diag)
-set(ISML_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/isml_lib)
-set(ISML_IMPLEMENTER_DIR ${ISML_LIB_DIR}/implementer)
+set(SPEV_DIAG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/spev_diag)
+set(SPEV_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/spev_lib)
+set(SPEV_IMPLEMENTER_DIR ${SPEV_LIB_DIR}/implementer)
 include(${CMAKE_CURRENT_SOURCE_DIR}/Uart.cmake)
-set(ISML_POLICY_SOURCE_DIR ${ISML_DIAG_DIR}/policies)
-set(ISML_POLICY_BINARY_DIR ${CMAKE_BINARY_DIR}/policies)
+set(SPEV_POLICY_SOURCE_DIR ${SPEV_DIAG_DIR}/policies)
+set(SPEV_POLICY_BINARY_DIR ${CMAKE_BINARY_DIR}/policies)
 
 # Keep a deployable policy copy next to the artifacts in the directory chosen
 # by cmake -B. Configure creates it immediately; every build resynchronizes it.
-file(REMOVE_RECURSE "${ISML_POLICY_BINARY_DIR}")
-file(COPY "${ISML_POLICY_SOURCE_DIR}" DESTINATION "${CMAKE_BINARY_DIR}")
-add_custom_target(isml_diag_policies ALL
-    COMMAND ${CMAKE_COMMAND} -E remove_directory "${ISML_POLICY_BINARY_DIR}"
+file(REMOVE_RECURSE "${SPEV_POLICY_BINARY_DIR}")
+file(COPY "${SPEV_POLICY_SOURCE_DIR}" DESTINATION "${CMAKE_BINARY_DIR}")
+add_custom_target(spev_diag_policies ALL
+    COMMAND ${CMAKE_COMMAND} -E remove_directory "${SPEV_POLICY_BINARY_DIR}"
     COMMAND ${CMAKE_COMMAND} -E copy_directory
-            "${ISML_POLICY_SOURCE_DIR}" "${ISML_POLICY_BINARY_DIR}"
-    COMMENT "Syncing ISML diagnostic policies")
+            "${SPEV_POLICY_SOURCE_DIR}" "${SPEV_POLICY_BINARY_DIR}"
+    COMMENT "Syncing SPEV diagnostic policies")
 
 # ProtonHal and the generated Atlas CSR headers are supplied by the external
 # dependency tree. The legacy smoke option is retained for compatibility, but
 # it now resolves to the same external ProtonHal tree.
-set(PHAL_REAL_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/isml_ipc/external/ProtonHal)
+set(PHAL_REAL_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/spev_ipc/external/ProtonHal)
 # The external tree is the only ProtonHal source now.  Keep the legacy option
 # usable for local smoke builds, but point it at the same dependency tree.
 set(PHAL_MOCK_ROOT ${PHAL_REAL_ROOT})
 
-if(ISML_USE_MOCK_PHAL)
+if(SPEV_USE_MOCK_PHAL)
     set(PHAL_ROOT ${PHAL_MOCK_ROOT})
-    set(ISML_USING_MOCK_PHAL ON)
+    set(SPEV_USING_MOCK_PHAL ON)
     set(PHAL_CORE_SOURCES
         ${PHAL_ROOT}/src/phal/init.c
         ${PHAL_ROOT}/src/phal/ops.c
@@ -69,13 +69,13 @@ elseif(NOT EXISTS "${PHAL_REAL_ROOT}/src/phal/init.c" OR
         "Real ProtonHal is missing or incomplete at ${PHAL_REAL_ROOT}. "
         "Hardware builds must provide the complete ProtonHal tree. "
         "For local compile/smoke testing only, explicitly set "
-        "-DISML_USE_MOCK_PHAL=ON.")
+        "-DSPEV_USE_MOCK_PHAL=ON.")
 else()
     set(PHAL_ROOT ${PHAL_REAL_ROOT})
-    set(ISML_USING_MOCK_PHAL OFF)
+    set(SPEV_USING_MOCK_PHAL OFF)
 
     if(NOT DEFINED FLOWRA_SOURCES_DIR)
-        set(FLOWRA_SOURCES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/isml_ipc/external)
+        set(FLOWRA_SOURCES_DIR ${CMAKE_CURRENT_SOURCE_DIR}/spev_ipc/external)
     endif()
     message(STATUS "PHAL flowra sources dir: ${FLOWRA_SOURCES_DIR}")
 
@@ -128,11 +128,11 @@ target_include_directories(phal
         ${PHAL_ROOT}/include
 )
 
-if(ISML_USING_MOCK_PHAL)
-    target_include_directories(phal PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/isml_ipc/external)
+if(SPEV_USING_MOCK_PHAL)
+    target_include_directories(phal PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/spev_ipc/external)
 endif()
 
-if(NOT ISML_USING_MOCK_PHAL)
+if(NOT SPEV_USING_MOCK_PHAL)
     target_include_directories(phal PRIVATE ${PHAL_CSR_INCLUDE_DIRS})
 endif()
 
@@ -150,121 +150,114 @@ set_target_properties(phal PROPERTIES
 
 add_library(ProtonHal::phal ALIAS phal)
 
-add_library(isml_test_core STATIC
-    isml_diag/src/core/TestTarget.cpp
-    isml_diag/src/core/PolicyParser.cpp
-    isml_diag/src/core/PhalContext.cpp)
-target_include_directories(isml_test_core PUBLIC ${ISML_DIAG_DIR}/include)
-target_link_libraries(isml_test_core PUBLIC phal)
+add_library(spev_test_core STATIC
+    spev_diag/src/core/TestTarget.cpp
+    spev_diag/src/core/PolicyParser.cpp
+    spev_diag/src/core/PhalContext.cpp)
+target_include_directories(spev_test_core PUBLIC ${SPEV_DIAG_DIR}/include)
+target_link_libraries(spev_test_core PUBLIC phal)
 
-add_library(isml_uart_runtime STATIC isml_diag/src/core/UartPhalBridge.cpp)
-target_link_libraries(isml_uart_runtime PUBLIC isml_test_core isml_uart_transport)
-set_target_properties(isml_test_core isml_uart_runtime PROPERTIES POSITION_INDEPENDENT_CODE ON)
+add_library(spev_uart_runtime STATIC spev_diag/src/core/UartPhalBridge.cpp)
+target_link_libraries(spev_uart_runtime PUBLIC spev_test_core spev_uart_transport)
+set_target_properties(spev_test_core spev_uart_runtime PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # GCC 8 and earlier ship std::filesystem in a separate compatibility library.
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND
    CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
-    target_link_libraries(isml_test_core PUBLIC stdc++fs)
-    target_link_libraries(isml_uart_transport PUBLIC stdc++fs)
+    target_link_libraries(spev_test_core PUBLIC stdc++fs)
+    target_link_libraries(spev_uart_transport PUBLIC stdc++fs)
 endif()
 
 
-if(ISML_BUILD_DIAG)
-add_library(isml_lib
-    isml_lib/implementer/src/implementer.cpp
-    isml_lib/implementer/src/generic/generic_impl.cpp
-    isml_lib/implementer/src/atlas/memory_regions.cpp
-    isml_lib/implementer/src/atlas/resource.cpp
-    isml_lib/implementer/src/atlas/pcie/hqc_dma.cpp
-    isml_lib/implementer/src/atlas/pcie/hqc_cp_queue.cpp
-    isml_lib/implementer/src/atlas/pcie/pcie_impl.cpp
-    isml_lib/implementer/src/atlas_m/pcie/pcie_impl.cpp
+if(SPEV_BUILD_DIAG)
+add_library(spev_lib
+    spev_lib/implementer/src/implementer.cpp
+    spev_lib/implementer/src/generic/generic_impl.cpp
+    spev_lib/implementer/src/atlas/memory_regions.cpp
+    spev_lib/implementer/src/atlas/resource.cpp
+    spev_lib/implementer/src/atlas/pcie/hqc_dma.cpp
+    spev_lib/implementer/src/atlas/pcie/hqc_cp_queue.cpp
+    spev_lib/implementer/src/atlas/pcie/pcie_impl.cpp
+    spev_lib/implementer/src/atlas_m/pcie/pcie_impl.cpp
 )
 
-target_include_directories(isml_lib
+target_include_directories(spev_lib
     PUBLIC
-        ${ISML_IMPLEMENTER_DIR}/include
-        ${ISML_DIAG_DIR}/include
+        ${SPEV_IMPLEMENTER_DIR}/include
+        ${SPEV_DIAG_DIR}/include
     PRIVATE
-        ${ISML_IMPLEMENTER_DIR}/src
+        ${SPEV_IMPLEMENTER_DIR}/src
 )
 
 # AtlasResource.h is a public header that includes generated CSR headers, so
-# the CSR include paths must propagate to isml_lib's dependents.
-if(NOT ISML_USING_MOCK_PHAL)
-    target_include_directories(isml_lib PUBLIC ${PHAL_CSR_INCLUDE_DIRS})
+# the CSR include paths must propagate to spev_lib's dependents.
+if(NOT SPEV_USING_MOCK_PHAL)
+    target_include_directories(spev_lib PUBLIC ${PHAL_CSR_INCLUDE_DIRS})
 endif()
 
-target_link_libraries(isml_lib PUBLIC phal)
+target_link_libraries(spev_lib PUBLIC phal)
 
-add_library(isml_diag
-    isml_diag/src/core/TestTargetPcie.cpp
-    isml_diag/src/core/DevMem.cpp
-    isml_diag/src/core/PhalBridge.cpp
-    isml_diag/src/core/IpcBridge.cpp
-    isml_diag/src/core/HalContext.cpp
-    isml_diag/src/device/DeviceManager.cpp
-    isml_diag/src/device/TPUDevice.cpp
-    isml_diag/testcases/ddp/DDPModule.cpp
-    isml_diag/testcases/isi/ISIModule.cpp
-    isml_diag/testcases/pcie/PCIeModule.cpp
-    isml_diag/testcases/pmu/PMUModule.cpp
-    isml_diag/testcases/pmu/example.cpp
-    isml_diag/testcases/soc/SocModule.cpp
-    isml_diag/testcases/soc/example.cpp
-    isml_diag/testcases/ddp/example.cpp
-    isml_diag/testcases/isi/example.cpp
-    isml_diag/testcases/pcie/example.cpp
-    isml_diag/testcases/pcie/dma_copy.cpp
-    isml_diag/testcases/pcie/dma_concurrent.cpp
-    isml_diag/testcases/pcie/cp_copy.cpp
-    isml_diag/testcases/pcie/aperture_mapping.cpp
+add_library(spev_diag
+    spev_diag/src/core/TestTargetPcie.cpp
+    spev_diag/src/core/DevMem.cpp
+    spev_diag/src/core/PhalBridge.cpp
+    spev_diag/src/core/IpcBridge.cpp
+    spev_diag/src/core/HalContext.cpp
+    spev_diag/src/core/HalContextDma.cpp
+    spev_diag/src/device/DeviceManager.cpp
+    spev_diag/src/device/TPUDevice.cpp
 )
 
-target_include_directories(isml_diag
+add_subdirectory(spev_diag/testcases/ddp)
+add_subdirectory(spev_diag/testcases/isi)
+add_subdirectory(spev_diag/testcases/pcie)
+add_subdirectory(spev_diag/testcases/pmu)
+add_subdirectory(spev_diag/testcases/soc)
+
+target_include_directories(spev_diag
     PUBLIC
-        ${ISML_DIAG_DIR}/include
-        ${ISML_IMPLEMENTER_DIR}/include
+        ${SPEV_DIAG_DIR}/include
+        ${SPEV_IMPLEMENTER_DIR}/include
     PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/isml_kmod
+        ${CMAKE_CURRENT_SOURCE_DIR}/spev_kmod
 )
-if(NOT ISML_USING_MOCK_PHAL)
-    target_include_directories(isml_diag PRIVATE ${PHAL_CSR_INCLUDE_DIRS})
+if(NOT SPEV_USING_MOCK_PHAL)
+    target_include_directories(spev_diag PRIVATE ${PHAL_CSR_INCLUDE_DIRS})
 endif()
 
-target_link_libraries(isml_diag PUBLIC isml_lib isml_test_core isml_uart_runtime)
+target_link_libraries(spev_diag PUBLIC spev_lib spev_test_core spev_uart_runtime)
 
 
-set_target_properties(isml_diag PROPERTIES OUTPUT_NAME isml_diag)
-add_dependencies(isml_diag isml_diag_policies)
+set_target_properties(spev_diag PROPERTIES OUTPUT_NAME spev_diag)
+add_dependencies(spev_diag spev_diag_policies)
 
-if(ISML_BUILD_CLI)
-    add_executable(isml_diag_cli isml_diag/cli/main.cpp)
-    target_link_libraries(isml_diag_cli PRIVATE isml_diag)
-    set_target_properties(isml_diag_cli PROPERTIES OUTPUT_NAME isml_diag)
+if(SPEV_BUILD_CLI)
+    add_executable(spev_diag_cli spev_diag/cli/main.cpp)
+    target_link_libraries(spev_diag_cli PRIVATE spev_diag)
+    set_target_properties(spev_diag_cli PROPERTIES OUTPUT_NAME spev_diag)
 endif()
 
-if(ISML_BUILD_UART AND ISML_BUILD_CLI)
+if(SPEV_BUILD_UART AND SPEV_BUILD_CLI)
     # Both executables use the same module constructors and testcase catalog.
     # Only the entrypoint selects the active PCIe or UART backend.
-    add_executable(isml_uart isml_diag/cli/uart_main.cpp)
-    target_include_directories(isml_uart PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/isml_ipc/external)
-    if(NOT ISML_USING_MOCK_PHAL)
-        target_include_directories(isml_uart PRIVATE ${PHAL_CSR_INCLUDE_DIRS})
+    add_executable(spev_uart spev_diag/cli/uart_main.cpp)
+    target_include_directories(spev_uart PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/spev_ipc/external)
+    if(NOT SPEV_USING_MOCK_PHAL)
+        target_include_directories(spev_uart PRIVATE ${PHAL_CSR_INCLUDE_DIRS})
     endif()
-    target_link_libraries(isml_uart PRIVATE isml_diag)
-    add_dependencies(isml_uart isml_diag_policies)
+    target_link_libraries(spev_uart PRIVATE spev_diag)
+    add_dependencies(spev_uart spev_diag_policies)
 endif()
 
-if(ISML_BUILD_PYTHON_BINDINGS)
+if(SPEV_BUILD_PYTHON_BINDINGS)
     find_package(pybind11 CONFIG REQUIRED)
-    pybind11_add_module(tpu_hal isml_diag/bindings/PyBinding.cpp)
-    target_link_libraries(tpu_hal PRIVATE isml_diag)
+    pybind11_add_module(tpu_hal spev_diag/bindings/PyBinding.cpp)
+    target_link_libraries(tpu_hal PRIVATE spev_diag)
 endif()
 
-endif() # ISML_BUILD_DIAG
+endif() # SPEV_BUILD_DIAG
 
-if(ISML_BUILD_TESTS)
+if(SPEV_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif()

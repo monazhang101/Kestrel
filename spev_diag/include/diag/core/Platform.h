@@ -1,0 +1,78 @@
+#pragma once
+
+#include "diag/core/MemoryRegion.h"
+
+#include <cstdint>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <vector>
+
+enum class TPUType { Unknown, Atlas, AtlasM };
+
+class Logger;
+
+inline std::string to_string(TPUType tpu_type)
+{
+    switch (tpu_type) {
+    case TPUType::Atlas: return "atlas";
+    case TPUType::AtlasM: return "atlas_m";
+    case TPUType::Unknown: return "unknown";
+    }
+    return "unknown";
+}
+
+struct BarMapping {
+    uint32_t bar_index = 0;
+    std::string name;
+    void* mapped_base = nullptr;
+    uint64_t device_base = 0;
+    uint64_t expected_size = 0;
+    uint64_t resource_size = 0;
+    uint64_t mapped_size = 0;
+    bool mapped = false;
+    bool writable = false;
+    std::string error;
+    std::vector<std::string> layout;
+};
+
+struct DeviceContext {
+    std::string bdf;
+    uint16_t vendor_id = 0;
+    uint16_t device_id = 0;
+    TPUType tpu_type = TPUType::Unknown;
+    std::vector<BarMapping> bar_mappings;
+    uint32_t module_index = 0;
+    MemoryRegionMap memory_regions;
+    std::shared_ptr<DeviceMemoryState> memory = std::make_shared<DeviceMemoryState>();
+    Logger* logger = nullptr; // Borrowed only during a testcase.
+    std::string target_name;
+    // Copies passed to sibling modules share the physical device lock.
+    std::shared_ptr<std::mutex> testcase_mutex = std::make_shared<std::mutex>();
+};
+
+struct ModuleInstanceConfig {
+    uint32_t index = 0;
+};
+
+struct TPUDeviceConfig {
+    std::string name;
+    std::string slot;
+    std::string position;
+    uint32_t tpu_index = 0;
+    std::vector<ModuleInstanceConfig> pcie_modules;
+    std::vector<ModuleInstanceConfig> pmu_modules;
+    std::vector<ModuleInstanceConfig> isi_modules;
+    std::vector<ModuleInstanceConfig> ddp_modules;
+};
+
+struct PolicyEntry {
+    uint16_t match_vendor_id = 0;
+    uint16_t match_device_id = 0;
+    std::string product;
+    TPUType tpu_type = TPUType::Unknown;
+    TPUDeviceConfig device_config;
+};
+
+std::vector<PolicyEntry> load_product_policy(const std::vector<std::string>& paths);
+std::vector<PolicyEntry> load_product_policies(const std::string& directory);
