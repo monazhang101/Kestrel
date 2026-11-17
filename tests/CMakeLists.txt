@@ -26,7 +26,7 @@ list(REMOVE_ITEM IO_TEST_SOURCES ${REPO}/spev_diag/src/core/HalContextDma.cpp)
 list(REMOVE_ITEM IO_TEST_SOURCES
     ${REPO}/spev_diag/src/core/UartBridge.cpp
     ${REPO}/spev_diag/src/uart/UartProtocol.cpp
-    ${REPO}/spev_diag/src/uart/UartConsole.cpp)
+    ${REPO}/spev_diag/src/uart/UartRepl.cpp)
 add_library(io_test_code STATIC ${IO_TEST_SOURCES}
     hal_fixture.cpp
     ${REPO}/spev_ipc/external/ProtonHal/src/phal/init.c

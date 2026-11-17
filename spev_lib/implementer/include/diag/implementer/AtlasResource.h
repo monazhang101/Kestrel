@@ -75,9 +75,10 @@ enum class AtlasAicProfile : uint8_t {
     AccOnly,
     EmuCut1,
     Cut2,
-    FpgaCut3,
+    Cut3,
     FpgaCut1,
-    EmuFull,
+    EmuCut4,
+    FpgaCut5,
     Unknown,
 };
 
@@ -100,27 +101,31 @@ struct AtlasPresiliconResourceProfile {
 
 // Known exact DB values used to present the presilicon inventory tree. The
 // decoder still exposes fields from structurally valid unmatched DB values.
-inline constexpr std::array<AtlasPresiliconResourceProfile, 11>
+inline constexpr std::array<AtlasPresiliconResourceProfile, 14>
     ATLAS_EMU_RESOURCE_PROFILES{{
         {0x000001u, "base1", ATLAS_ALL_DMC_MASK},
         {0x400001u, "base2", ATLAS_ALL_DMC_MASK},
         {0x010031u, "aic-cut1", ATLAS_ALL_DMC_MASK},
         {0x020031u, "aic-cut2", ATLAS_ALL_DMC_MASK},
-        {0x050031u, "aic-cut3", ATLAS_ALL_DMC_MASK},
+        {0x030031u, "aic-cut3", ATLAS_ALL_DMC_MASK},
+        {0x050031u, "aic-cut4", ATLAS_ALL_DMC_MASK},
         {0x000021u, "isi", ATLAS_ALL_DMC_MASK},
         {0x001021u, "isi", ATLAS_ALL_DMC_MASK},
+        {0x021041u, "isi-aic-cut2", ATLAS_ALL_DMC_MASK},
+        {0x031041u, "isi-aic-cut3", ATLAS_ALL_DMC_MASK},
         {0x000111u, "cxl1", ATLAS_ALL_DMC_MASK},
         {0x000211u, "cxl2", ATLAS_ALL_DMC_MASK},
         {0x000311u, "cxl3", ATLAS_ALL_DMC_MASK},
-        {0x020151u, "cxl4", ATLAS_ALL_DMC_MASK},
+        {0x030151u, "cxl4", ATLAS_ALL_DMC_MASK},
     }};
 
-inline constexpr std::array<AtlasPresiliconResourceProfile, 9>
+inline constexpr std::array<AtlasPresiliconResourceProfile, 10>
     ATLAS_FPGA_RESOURCE_PROFILES{{
         {0x000002u, "base", ATLAS_DMC0_MASK},
         {0x040032u, "aic-cut1", ATLAS_DMC0_MASK},
         {0x020032u, "aic-cut2", ATLAS_DMC0_MASK},
         {0x030032u, "aic-cut3", ATLAS_DMC0_MASK},
+        {0x050032u, "aic-cut5", ATLAS_DMC0_MASK},
         {0x001022u, "isi", ATLAS_DMC0_MASK},
         {0x031042u, "isi-aic-cut3", ATLAS_DMC0_MASK},
         {0x021042u, "isi-aic-cut2", ATLAS_DMC0_MASK},

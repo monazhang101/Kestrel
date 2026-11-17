@@ -29,7 +29,8 @@ uint32_t all_lpe()
     return ATLAS_AIC_LPE0 | ATLAS_AIC_LPE1;
 }
 
-AtlasAicInfo decode_aic(uint8_t cfg, bool has_extension)
+AtlasAicInfo decode_aic(uint8_t cfg, bool has_extension,
+                        AtlasPlatform platform)
 {
     AtlasAicInfo info;
     info.cfg_code = cfg;
@@ -42,7 +43,7 @@ AtlasAicInfo decode_aic(uint8_t cfg, bool has_extension)
                           ATLAS_AIC_TPE0 | ATLAS_AIC_LPE0;
         info.vpe_count = 1;
         info.vpe_lanes = 128;
-        info.vpe_memory_mib = 32;
+        info.vpe_memory_mib = 96;
         info.tpe_count = 1;
         info.lpe_count = 1;
         break;
@@ -56,12 +57,12 @@ AtlasAicInfo decode_aic(uint8_t cfg, bool has_extension)
         info.lpe_count = 2;
         break;
     case 3:
-        info.profile = AtlasAicProfile::FpgaCut3;
+        info.profile = AtlasAicProfile::Cut3;
         info.block_mask = ATLAS_AIC_ACC | ATLAS_AIC_VPE |
-                          ATLAS_AIC_TPE0 | all_lpe();
+                          all_tpe() | all_lpe();
         info.vpe_count = 1;
-        info.vpe_lanes = 16;
-        info.tpe_count = 1;
+        info.vpe_lanes = 8;
+        info.tpe_count = 4;
         info.lpe_count = 2;
         break;
     case 4:
@@ -74,12 +75,25 @@ AtlasAicInfo decode_aic(uint8_t cfg, bool has_extension)
         info.lpe_count = 1;
         break;
     case 5:
-        info.profile = AtlasAicProfile::EmuFull;
-        info.block_mask = ATLAS_AIC_ACC | ATLAS_AIC_VPE |
-                          all_tpe() | all_lpe();
-        info.vpe_count = 1;
-        info.tpe_count = 4;
-        info.lpe_count = 2;
+        if (platform == AtlasPlatform::Emu) {
+            info.profile = AtlasAicProfile::EmuCut4;
+            info.block_mask = ATLAS_AIC_ACC | ATLAS_AIC_VPE |
+                              all_tpe() | all_lpe();
+            info.vpe_count = 1;
+            info.tpe_count = 4;
+            info.lpe_count = 2;
+        } else if (platform == AtlasPlatform::Fpga) {
+            info.profile = AtlasAicProfile::FpgaCut5;
+            info.block_mask = ATLAS_AIC_ACC | ATLAS_AIC_VPE |
+                              ATLAS_AIC_TPE0 | all_lpe();
+            info.vpe_count = 1;
+            info.vpe_lanes = 16;
+            info.tpe_count = 1;
+            info.lpe_count = 2;
+        } else {
+            info.profile = AtlasAicProfile::Unknown;
+            info.block_mask = ATLAS_AIC_ACC;
+        }
         break;
     default:
         info.profile = AtlasAicProfile::Unknown;
@@ -206,7 +220,8 @@ AtlasResourceInfo decode_atlas_presilicon_resource(uint32_t raw)
     if (has_isi_subsystem && info.isi_cfg == 0) info.isi_mask = 0x03u;
     else if (has_isi_subsystem && info.isi_cfg == 1) info.isi_mask = 0x33u;
 
-    info.aic = decode_aic(info.aic_cfg, info.has_aic_extension);
+    info.aic = decode_aic(info.aic_cfg, info.has_aic_extension,
+                          info.platform);
     info.aic_mask = info.aic.block_mask;
 
     if (info.has_cxl_subsystem) {
@@ -273,9 +288,10 @@ std::string to_string(AtlasAicProfile profile)
     case AtlasAicProfile::AccOnly: return "acc-only";
     case AtlasAicProfile::EmuCut1: return "emu-cut1";
     case AtlasAicProfile::Cut2: return "cut2";
-    case AtlasAicProfile::FpgaCut3: return "fpga-cut3";
+    case AtlasAicProfile::Cut3: return "cut3";
     case AtlasAicProfile::FpgaCut1: return "fpga-cut1";
-    case AtlasAicProfile::EmuFull: return "emu-full";
+    case AtlasAicProfile::EmuCut4: return "emu-cut4";
+    case AtlasAicProfile::FpgaCut5: return "fpga-cut5";
     case AtlasAicProfile::Unknown: return "unknown";
     }
     return "unknown";

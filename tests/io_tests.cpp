@@ -83,25 +83,13 @@ public:
     }
 };
 
-class UartProbeTarget : public TestTarget {
-public:
-    UartProbeTarget(const DeviceContext& ctx, bool* invoked)
-        : TestTarget("uart-probe", TargetType::Pmu, ctx)
-    {
-        _add_test("probe", {}, [invoked](TestInfo&) {
-            *invoked = true;
-            return PHAL_STATUS_OK;
-        }, {CtxResource::uart()});
-    }
-};
-
 void framework_injects_context()
 {
     HalContext hal;
     auto device = make_device(hal);
     bool saw_context = false;
     ProbeTarget target(device, &saw_context);
-    CHECK(target.run_testcase("probe_probe", {}, nullptr, &hal) == PHAL_STATUS_OK);
+    CHECK(target.run_testcase("pcie_probe", {}, nullptr, &hal) == PHAL_STATUS_OK);
     CHECK(saw_context);
 }
 
@@ -110,63 +98,17 @@ void context_resources_are_typed_and_composable()
     const auto ipc = CtxResource::ipc(IpcFwId::Hqc);
     CHECK(ipc.ctx_type == CtxResourceType::Ipc);
     CHECK(ipc.ipc_fw.has_value() && *ipc.ipc_fw == IpcFwId::Hqc);
-    const auto uart = CtxResource::uart();
-    CHECK(uart.ctx_type == CtxResourceType::Uart);
-    CHECK(!uart.ipc_fw.has_value());
-
     const CtxResources none;
     CHECK(!none.requires_ipc(IpcFwId::Hqc));
-    CHECK(!none.requires_uart());
 
     const CtxResources resources{
         CtxResource::ipc(IpcFwId::Hqc),
         CtxResource::ipc(IpcFwId::Ddp2),
-        CtxResource::uart(),
     };
     CHECK(resources.requires_ipc(IpcFwId::Hqc));
     CHECK(resources.requires_ipc(IpcFwId::Ddp2));
     CHECK(!resources.requires_ipc(IpcFwId::Pmu));
     CHECK(!resources.requires_ipc(IpcFwId::Ddp0));
-    CHECK(resources.requires_uart());
-}
-
-void framework_propagates_context_resources()
-{
-    HalContext hal;
-    auto device = make_device(hal, "uart-probe");
-    bool invoked = false;
-    UartProbeTarget target(device, &invoked);
-    AtlasResourceInfo resource;
-    resource.valid = true; resource.platform = AtlasPlatform::Fpga;
-    TPUDeviceConfig config; config.name = "uart-unavailable-test";
-    TPUDevice parent(config.name, device, config, nullptr, resource);
-    target.set_device(&parent);
-    const auto output = capture_stdout([&] {
-        CHECK(target.run_testcase("uart_probe_probe", {}, nullptr, &hal) ==
-              PHAL_STATUS_ERROR);
-    });
-    CHECK(!invoked);
-    CHECK(output.find("UART PHAL initialization failed") != std::string::npos);
-    CHECK(hal.phal_context() == nullptr);
-}
-
-void unavailable_uart_context_rolls_back()
-{
-    HalContext hal;
-    auto device = make_device(hal, "uart-context");
-    std::string error;
-    auto uart_scope = hal.begin_testcase(
-        &error, {CtxResource::uart()});
-    CHECK(!uart_scope);
-    CHECK(error.find("UART PHAL initialization failed") != std::string::npos);
-    CHECK(!error.empty());
-    CHECK(hal.phal_context() == nullptr);
-    CHECK(hal.uart_context() == nullptr);
-
-    auto direct_scope = hal.begin_testcase(&error);
-    CHECK(direct_scope);
-    CHECK(error.empty());
-    CHECK(hal.phal_context() != nullptr);
 }
 
 void allocations_are_independent_of_phal_root()
@@ -345,8 +287,9 @@ void atlas_resource_info_is_decoded()
     CHECK(isi_aic.isi_indices() == std::vector<uint32_t>({0, 1, 4, 5}));
     CHECK(!isi_aic.has_isi(3));
     CHECK(isi_aic.has_isi(4));
-    CHECK(isi_aic.aic.profile == AtlasAicProfile::FpgaCut3);
-    CHECK(isi_aic.aic.tpe_count == 1);
+    CHECK(isi_aic.aic.profile == AtlasAicProfile::Cut3);
+    CHECK(isi_aic.aic.vpe_lanes == 8);
+    CHECK(isi_aic.aic.tpe_count == 4);
     CHECK(isi_aic.aic.lpe_count == 2);
     CHECK(isi_aic.profile_name == "isi-aic-cut3");
     CHECK(isi_aic.fake_dmem_size_bytes ==
@@ -405,12 +348,13 @@ void atlas_resource_info_is_decoded()
     CHECK(cxl3.get_dmc_type(2, 0) == AtlasDmcType::Cxl20);
     CHECK(cxl3.get_dmc_type(3, 0) == AtlasDmcType::Cxl20);
 
-    const auto cxl4 = decode_atlas_presilicon_resource(0x00020151u);
+    const auto cxl4 = decode_atlas_presilicon_resource(0x00030151u);
     CHECK(cxl4.valid);
     CHECK(cxl4.profile_name == "cxl4");
     CHECK(cxl4.dmc_mask == 0xfffu);
     CHECK(cxl4.cxl_mask == 0x001u);
-    CHECK(cxl4.aic.profile == AtlasAicProfile::Cut2);
+    CHECK(cxl4.aic.profile == AtlasAicProfile::Cut3);
+    CHECK(cxl4.aic.vpe_lanes == 8);
 
     const auto emu_64g = decode_atlas_presilicon_resource(0x00400001u);
     CHECK(emu_64g.valid);
@@ -418,6 +362,49 @@ void atlas_resource_info_is_decoded()
     CHECK(emu_64g.profile_name == "base2");
     CHECK(emu_64g.fake_dmem_size_bytes ==
           64ull * 1024ull * 1024ull * 1024ull);
+
+    const auto emu_aic_cut1 =
+        decode_atlas_presilicon_resource(0x00010031u);
+    CHECK(emu_aic_cut1.valid);
+    CHECK(emu_aic_cut1.profile_matched);
+    CHECK(emu_aic_cut1.aic.profile == AtlasAicProfile::EmuCut1);
+    CHECK(emu_aic_cut1.aic.vpe_memory_mib == 96);
+
+    const auto emu_aic_cut3 =
+        decode_atlas_presilicon_resource(0x00030031u);
+    CHECK(emu_aic_cut3.valid);
+    CHECK(emu_aic_cut3.profile_matched);
+    CHECK(emu_aic_cut3.profile_name == "aic-cut3");
+    CHECK(emu_aic_cut3.aic.profile == AtlasAicProfile::Cut3);
+    CHECK(emu_aic_cut3.aic.vpe_lanes == 8);
+    CHECK(emu_aic_cut3.aic.tpe_count == 4);
+    CHECK(emu_aic_cut3.aic.lpe_count == 2);
+
+    const auto emu_aic_cut4 =
+        decode_atlas_presilicon_resource(0x00050031u);
+    CHECK(emu_aic_cut4.valid);
+    CHECK(emu_aic_cut4.profile_matched);
+    CHECK(emu_aic_cut4.profile_name == "aic-cut4");
+    CHECK(emu_aic_cut4.aic.profile == AtlasAicProfile::EmuCut4);
+    CHECK(emu_aic_cut4.aic.tpe_count == 4);
+    CHECK(emu_aic_cut4.aic.lpe_count == 2);
+
+    const auto emu_isi_aic_cut2 =
+        decode_atlas_presilicon_resource(0x00021041u);
+    CHECK(emu_isi_aic_cut2.valid);
+    CHECK(emu_isi_aic_cut2.profile_matched);
+    CHECK(emu_isi_aic_cut2.profile_name == "isi-aic-cut2");
+    CHECK(emu_isi_aic_cut2.isi_mask == 0x33u);
+    CHECK(emu_isi_aic_cut2.aic.profile == AtlasAicProfile::Cut2);
+
+    const auto emu_isi_aic_cut3 =
+        decode_atlas_presilicon_resource(0x00031041u);
+    CHECK(emu_isi_aic_cut3.valid);
+    CHECK(emu_isi_aic_cut3.profile_matched);
+    CHECK(emu_isi_aic_cut3.profile_name == "isi-aic-cut3");
+    CHECK(emu_isi_aic_cut3.isi_mask == 0x33u);
+    CHECK(emu_isi_aic_cut3.aic.profile == AtlasAicProfile::Cut3);
+    CHECK(emu_isi_aic_cut3.aic.vpe_lanes == 8);
 
     const auto fpga_isi_aic_cut2 =
         decode_atlas_presilicon_resource(0x00021042u);
@@ -428,6 +415,16 @@ void atlas_resource_info_is_decoded()
     CHECK(fpga_isi_aic_cut2.isi_indices() ==
           std::vector<uint32_t>({0, 1, 4, 5}));
     CHECK(fpga_isi_aic_cut2.aic.profile == AtlasAicProfile::Cut2);
+
+    const auto fpga_aic_cut5 =
+        decode_atlas_presilicon_resource(0x00050032u);
+    CHECK(fpga_aic_cut5.valid);
+    CHECK(fpga_aic_cut5.profile_matched);
+    CHECK(fpga_aic_cut5.profile_name == "aic-cut5");
+    CHECK(fpga_aic_cut5.aic.profile == AtlasAicProfile::FpgaCut5);
+    CHECK(fpga_aic_cut5.aic.vpe_lanes == 16);
+    CHECK(fpga_aic_cut5.aic.tpe_count == 1);
+    CHECK(fpga_aic_cut5.aic.lpe_count == 2);
 
     const auto fpga_base_jtag1 =
         decode_atlas_presilicon_resource(0x00100002u);
@@ -554,7 +551,7 @@ void discovery_uses_resource_inventory()
 
     const auto* aic = find("AIC_0");
     CHECK(aic != nullptr);
-    CHECK(aic->properties.at("profile") == "fpga-cut3");
+    CHECK(aic->properties.at("profile") == "cut3");
 }
 
 void logging_uses_flow_and_regio_levels()
@@ -626,8 +623,6 @@ int main()
         phal_is_chip_scoped();
         framework_injects_context();
         context_resources_are_typed_and_composable();
-        framework_propagates_context_resources();
-        unavailable_uart_context_rolls_back();
         allocations_are_independent_of_phal_root();
         testcase_setup_restores_default_dmem_aperture();
         dmem_supports_native_64_bit_access();

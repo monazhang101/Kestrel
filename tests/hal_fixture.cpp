@@ -27,7 +27,6 @@ void HalContext::clear_mappings()
     phal_context_ = {};
     aperture_phal_context_ = {};
     for (auto& ctx : ipc_contexts_) ctx = {};
-    uart_context_ = {};
     test_bar_storage.erase(this);
     test_pmu_unlocked.erase(this);
 }
@@ -44,7 +43,6 @@ void HalContext::bind_device(const DeviceContext& ctx, Logger* logger)
     phal_context_ = {};
     aperture_phal_context_ = {};
     for (auto& ctx : ipc_contexts_) ctx = {};
-    uart_context_ = {};
     active_device_ = ctx;
     active_device_.logger = logger != nullptr ? logger : ctx.logger;
     active_memory_regions_ = ctx.memory_regions;
@@ -89,8 +87,7 @@ HalContext::TestcaseScope HalContext::begin_testcase(
         }
         return false;
     };
-    if (phal_context_ || aperture_phal_context_ || any_ipc_context_active() ||
-        uart_context_) {
+    if (phal_context_ || aperture_phal_context_ || any_ipc_context_active()) {
         if (error != nullptr) *error = "a testcase context is already active";
         return {};
     }
@@ -127,21 +124,6 @@ HalContext::TestcaseScope HalContext::begin_testcase(
             return {};
         }
     }
-    if (ctx_resources.requires_uart()) {
-        init_error.clear();
-        uart_context_ =
-            phal_bridge_.create_uart_context(active_device_, project,
-                                             &init_error);
-        if (!uart_context_) {
-            phal_context_ = {};
-            aperture_phal_context_ = {};
-            for (auto& ctx : ipc_contexts_) ctx = {};
-            if (error != nullptr) {
-                *error = "UART PHAL initialization failed: " + init_error;
-            }
-            return {};
-        }
-    }
     const auto* dmem = find_df_region(active_memory_regions_.df, DMEM);
     if (dmem != nullptr && dmem->supported &&
         aperture_set(*this, dmem->bar_index, dmem->aperture_index,
@@ -150,7 +132,6 @@ HalContext::TestcaseScope HalContext::begin_testcase(
         phal_context_ = {};
         aperture_phal_context_ = {};
         for (auto& ctx : ipc_contexts_) ctx = {};
-        uart_context_ = {};
         if (error != nullptr) {
             *error = "default DMEM aperture initialization failed";
         }
@@ -165,7 +146,6 @@ HalContext::TestcaseScope::~TestcaseScope()
         owner_->phal_context_ = {};
         owner_->aperture_phal_context_ = {};
         for (auto& ctx : owner_->ipc_contexts_) ctx = {};
-        owner_->uart_context_ = {};
     }
 }
 
@@ -182,7 +162,6 @@ HalContext::TestcaseScope& HalContext::TestcaseScope::operator=(TestcaseScope&& 
             owner_->phal_context_ = {};
             owner_->aperture_phal_context_ = {};
             for (auto& ctx : owner_->ipc_contexts_) ctx = {};
-            owner_->uart_context_ = {};
         }
         owner_ = other.owner_;
         other.owner_ = nullptr;

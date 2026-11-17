@@ -130,9 +130,10 @@ PYBIND11_MODULE(tpu_hal, m)
         .value("ACC_ONLY", AtlasAicProfile::AccOnly)
         .value("EMU_CUT1", AtlasAicProfile::EmuCut1)
         .value("CUT2", AtlasAicProfile::Cut2)
-        .value("FPGA_CUT3", AtlasAicProfile::FpgaCut3)
+        .value("CUT3", AtlasAicProfile::Cut3)
         .value("FPGA_CUT1", AtlasAicProfile::FpgaCut1)
-        .value("EMU_FULL", AtlasAicProfile::EmuFull)
+        .value("EMU_CUT4", AtlasAicProfile::EmuCut4)
+        .value("FPGA_CUT5", AtlasAicProfile::FpgaCut5)
         .value("UNKNOWN", AtlasAicProfile::Unknown);
 
     py::class_<AtlasAicInfo>(m, "AtlasAicInfo")
