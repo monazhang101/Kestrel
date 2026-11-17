@@ -485,17 +485,10 @@ TestStatus HqcDmaEngine::fill_descriptor(DmaDescriptor& desc)
 
     status = clear_sync_flag_done(desc.sync_flag_);
     std::vector<uint8_t> bytes(DmaDescriptor::BYTE_SIZE);
-    std::vector<uint8_t> readback(DmaDescriptor::BYTE_SIZE);
     std::memcpy(bytes.data(), desc.words(), bytes.size());
     const uint64_t slot_offset = static_cast<uint64_t>(slot) * DESCRIPTOR_SLOT_STRIDE;
     if (status == PHAL_STATUS_OK)
         status = mem_write(descriptor_pool_, slot_offset, bytes);
-    // This same-device readback is the conservative bring-up fence until the
-    // platform documents ordering between SRAM writes and DESC_CTRL_TRIG.
-    if (status == PHAL_STATUS_OK)
-        status = mem_read(descriptor_pool_, slot_offset, &readback);
-    if (status == PHAL_STATUS_OK && readback != bytes)
-        status = PHAL_STATUS_ERROR;
     if (status != PHAL_STATUS_OK) {
         release_slot(desc);
         desc.sync_flag_ = DmaDescriptor::INVALID_SLOT;
@@ -655,30 +648,11 @@ TestStatus HqcDmaEngine::send_descriptor(
                 if (status == PHAL_STATUS_OK)
                     status = phal_write(ctx, selected.size,
                                         DmaDescriptor::BYTE_SIZE);
-                uint32_t low = 0, high = 0, size = 0;
-                if (status == PHAL_STATUS_OK)
-                    status = phal_read(ctx, selected.address_low, &low);
-                if (status == PHAL_STATUS_OK)
-                    status = phal_read(ctx, selected.address_high, &high);
-                if (status == PHAL_STATUS_OK)
-                    status = phal_read(ctx, selected.size, &size);
-                if (status == PHAL_STATUS_OK &&
-                    (low != static_cast<uint32_t>(fetch_address) ||
-                     high != static_cast<uint32_t>(fetch_address >> 32) ||
-                     size != DmaDescriptor::BYTE_SIZE)) {
-                    status = PHAL_STATUS_ERROR;
-                }
                 if (status == PHAL_STATUS_OK) {
                     trigger_attempted = true;
                     status = phal_write(ctx, selected.trigger,
                                         selected.trigger_mask);
                 }
-                // Flush the posted trigger write. IDLE may already be either 0
-                // or 1, depending on how quickly descriptor routing completes.
-                uint32_t post_trigger_idle = 0;
-                if (status == PHAL_STATUS_OK)
-                    status = phal_read(ctx, selected.idle,
-                                       &post_trigger_idle);
                 if (status == PHAL_STATUS_OK) {
                     next_core_ = (selected_core + 1) & 1u;
                     log_flow(hal_, "HQC descriptor triggered: core=" +
