@@ -87,8 +87,10 @@ add_test(NAME cli_legacy_debug_log_level COMMAND io_test_cli pcie_bar_read32 --b
 add_test(NAME cli_legacy_trace_log_level COMMAND io_test_cli pcie_bar_read32 --bar-index 0 --offset 4 --log-level trace)
 add_test(NAME cli_bar_write32 COMMAND io_test_cli pcie_bar_write32 --bar-index 0 --offset 4 --value 0x1234abcd)
 add_test(NAME cli_discover COMMAND io_test_cli discover)
+add_test(NAME cli_discover_policy COMMAND io_test_cli discover
+    --policy-dir ${TEST_POLICY_BINARY_DIR} --log-level error)
 set_tests_properties(
-    cli_discover cli_bar_write32 cli_flow_log_level cli_regio_log_level
+    cli_discover cli_discover_policy cli_bar_write32 cli_flow_log_level cli_regio_log_level
     cli_legacy_debug_log_level cli_legacy_trace_log_level
     PROPERTIES WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 
@@ -106,3 +108,24 @@ add_test(NAME cli_dma_arguments COMMAND ${CMAKE_COMMAND}
     -DCLI=$<TARGET_FILE:io_test_cli> -DREPO=${REPO}
     -DWORK_DIR=${CMAKE_BINARY_DIR}
     -P ${CMAKE_CURRENT_LIST_DIR}/cli_dma_arguments.cmake)
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME regression_runner_contract
+        COMMAND ${Python3_EXECUTABLE}
+                ${CMAKE_CURRENT_LIST_DIR}/test_regression_runner.py)
+    add_test(NAME regression_runner_cli
+        COMMAND ${CMAKE_COMMAND} -E env
+                FLOWRA_REPORTS_PATH=${CMAKE_CURRENT_BINARY_DIR}/regression-runner-cli
+                ${Python3_EXECUTABLE}
+                ${REPO}/spev_diag/cicd/run_regression.py
+                --suite ${CMAKE_CURRENT_LIST_DIR}/regression_smoke.yaml
+                --binary $<TARGET_FILE:io_test_cli>
+                --policy-dir ${TEST_POLICY_BINARY_DIR}
+                --target TPU0
+                --log-level error)
+    set_tests_properties(regression_runner_contract PROPERTIES
+        WORKING_DIRECTORY ${REPO})
+    set_tests_properties(regression_runner_cli PROPERTIES
+        WORKING_DIRECTORY ${REPO})
+endif()

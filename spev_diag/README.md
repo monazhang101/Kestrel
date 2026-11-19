@@ -83,6 +83,41 @@ For ordered parameter runs, add entries under the local testcase name in
 `spev_diag/policies/testcases/<module>.yaml`, then run
 `spev_diag <module_test_name> -all`. CMake copies policies beside the binaries.
 
+## Run daily regression profiles
+
+Daily regression profiles are independent of the per-module `-all` policies.
+Each profile contains the exact testcase and parameter combinations qualified
+for one platform database. Testcase owners maintain the profiles under
+`spev_diag/policies/daily_regression/` using full CLI testcase names:
+
+```yaml
+version: 1
+testcases:
+  pcie_dma_data_transfer:
+    - direction=h2d, size_bytes=4096, pattern=incremental, timeout_ms=30000
+  isi_example:
+    - {}
+```
+
+Each argument line produces one CLI invocation. Use `{}` to run a testcase once
+with its registered defaults. The runner uses only the Python standard library.
+Execute a suite with:
+
+```bash
+FLOWRA_REPORTS_PATH=artifacts/EMU_db1 \
+python3 build-fpga/cicd/run_regression.py \
+  --suite build-fpga/policies/daily_regression/EMU_db1.yaml \
+  --binary ./build-fpga/spev_diag \
+  --policy-dir ./build-fpga/policies \
+  --target TPU0
+```
+
+The runner executes every configured run in order, continues after testcase
+failures, and returns nonzero if any run fails. It writes `result.json`,
+Jenkins-compatible `ct.xml`, and one log per invocation under
+`FLOWRA_REPORTS_PATH`; when the variable is unset it uses `reports/`. Empty
+suites are rejected so a daily job cannot pass without executing tests.
+
 ## Run PMU UART examples
 
 One terminal is sufficient. The tool automatically opens the unique CP210x

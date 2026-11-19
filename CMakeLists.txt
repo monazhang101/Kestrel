@@ -32,6 +32,12 @@ set(SPEV_IMPLEMENTER_DIR ${SPEV_LIB_DIR}/implementer)
 include(${CMAKE_CURRENT_SOURCE_DIR}/Uart.cmake)
 set(SPEV_POLICY_SOURCE_DIR ${SPEV_DIAG_DIR}/policies)
 set(SPEV_POLICY_BINARY_DIR ${CMAKE_BINARY_DIR}/policies)
+set(SPEV_CICD_SOURCE_DIR ${SPEV_DIAG_DIR}/cicd)
+set(SPEV_CICD_BINARY_DIR ${CMAKE_BINARY_DIR}/cicd)
+set(SPEV_CICD_RUNTIME_FILES
+    ${SPEV_CICD_SOURCE_DIR}/__init__.py
+    ${SPEV_CICD_SOURCE_DIR}/requirements.txt
+    ${SPEV_CICD_SOURCE_DIR}/run_regression.py)
 
 # Keep a deployable policy copy next to the artifacts in the directory chosen
 # by cmake -B. Configure creates it immediately; every build resynchronizes it.
@@ -42,6 +48,18 @@ add_custom_target(spev_diag_policies ALL
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${SPEV_POLICY_SOURCE_DIR}" "${SPEV_POLICY_BINARY_DIR}"
     COMMENT "Syncing SPEV diagnostic policies")
+
+# Keep the Jenkins-facing regression runner beside the build artifacts. Copy
+# only the declared runtime files so local Python bytecode is never deployed.
+file(REMOVE_RECURSE "${SPEV_CICD_BINARY_DIR}")
+file(MAKE_DIRECTORY "${SPEV_CICD_BINARY_DIR}")
+file(COPY ${SPEV_CICD_RUNTIME_FILES} DESTINATION "${SPEV_CICD_BINARY_DIR}")
+add_custom_target(spev_diag_cicd ALL
+    COMMAND ${CMAKE_COMMAND} -E remove_directory "${SPEV_CICD_BINARY_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${SPEV_CICD_BINARY_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${SPEV_CICD_RUNTIME_FILES} "${SPEV_CICD_BINARY_DIR}"
+    COMMENT "Syncing SPEV diagnostic CI/CD runner")
 
 # ProtonHal and the generated Atlas CSR headers are supplied by the external
 # dependency tree. The legacy smoke option is retained for compatibility, but
@@ -229,7 +247,7 @@ target_link_libraries(spev_diag PUBLIC spev_lib spev_test_core spev_uart_runtime
 
 
 set_target_properties(spev_diag PROPERTIES OUTPUT_NAME spev_diag)
-add_dependencies(spev_diag spev_diag_policies)
+add_dependencies(spev_diag spev_diag_policies spev_diag_cicd)
 
 if(SPEV_BUILD_CLI)
     add_executable(spev_diag_cli spev_diag/cli/main.cpp)
@@ -246,7 +264,7 @@ if(SPEV_BUILD_UART AND SPEV_BUILD_CLI)
         target_include_directories(spev_uart PRIVATE ${PHAL_CSR_INCLUDE_DIRS})
     endif()
     target_link_libraries(spev_uart PRIVATE spev_diag)
-    add_dependencies(spev_uart spev_diag_policies)
+    add_dependencies(spev_uart spev_diag_policies spev_diag_cicd)
 endif()
 
 if(SPEV_BUILD_PYTHON_BINDINGS)

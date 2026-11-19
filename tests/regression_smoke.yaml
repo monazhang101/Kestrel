@@ -1,0 +1,4 @@
+version: 1
+testcases:
+  pcie_bar_read32:
+    - bar_index=0, offset=4

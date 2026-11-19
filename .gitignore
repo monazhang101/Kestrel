@@ -3,6 +3,10 @@
 /build-*/
 /spev_kmod/build/
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+
 # Local source archives
 /*.tar
 /*.zip

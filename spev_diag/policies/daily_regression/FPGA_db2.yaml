@@ -1,0 +1,9 @@
+version: 1
+
+# Testcase owners add only combinations qualified for FPGA db2. For example:
+# testcases:
+#   pcie_dma_data_transfer:
+#     - direction=h2d, size_bytes=4096, pattern=incremental, timeout_ms=30000
+#   isi_example:
+#     - {}
+testcases: {}

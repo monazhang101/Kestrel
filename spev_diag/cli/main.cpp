@@ -22,7 +22,7 @@ static int run_test(DeviceManager& device_manager,
 static void print_usage(const char* program)
 {
     std::cout << "Usage:\n"
-              << "  " << program << " discover\n"
+              << "  " << program << " discover [--policy-dir <path>] [--log-level <level>]\n"
               << "  " << program << " <module_test_name> [--target TPU0] [--<argument> <value>]...\n"
               << "  " << program << " <module_test_name> [--target TPU0] -all\n"
               << "\n"
@@ -119,6 +119,23 @@ static std::string get_option(int argc,
     return default_value;
 }
 
+static bool validate_discover_args(int argc, char** argv, std::string& error)
+{
+    for (int i = 2; i < argc; ++i) {
+        const std::string option = argv[i];
+        if (option != "--log-level" && option != "--policy-dir") {
+            error = "invalid discover option: " + option;
+            return false;
+        }
+        if (i + 1 >= argc) {
+            error = option + " requires a value";
+            return false;
+        }
+        ++i;
+    }
+    return true;
+}
+
 static bool parse_test_args(int argc,
                             char** argv,
                             TestArgs& args,
@@ -194,9 +211,12 @@ int main(int argc, char** argv)
     }
 
     const std::string command = argv[1];
-    if (command == "discover" && argc != 2) {
-        std::cerr << "discover takes no arguments" << std::endl;
-        return 1;
+    if (command == "discover") {
+        std::string error;
+        if (!validate_discover_args(argc, argv, error)) {
+            std::cerr << error << std::endl;
+            return 1;
+        }
     }
 
     const auto policy_dir = get_option(
