@@ -17,6 +17,8 @@ extern "C" {
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
+#include <vector>
 
 #define CHECK(expr) do { if (!(expr)) throw std::runtime_error(#expr); } while (false)
 
@@ -583,6 +585,38 @@ void logging_uses_flow_and_regio_levels()
     CHECK(output.find("[REGIO] legacy-trace") != std::string::npos);
 }
 
+void logging_preserves_lines_across_threads()
+{
+    Logger logger;
+    logger.set_level(LogLevel::Info);
+    constexpr size_t THREAD_COUNT = 4;
+    constexpr size_t LINES_PER_THREAD = 100;
+
+    const auto output = capture_stdout([&] {
+        std::vector<std::thread> workers;
+        workers.reserve(THREAD_COUNT);
+        for (size_t worker = 0; worker < THREAD_COUNT; ++worker) {
+            workers.emplace_back([&, worker] {
+                for (size_t line = 0; line < LINES_PER_THREAD; ++line) {
+                    logger.info("worker=" + std::to_string(worker) +
+                                " line=" + std::to_string(line));
+                }
+            });
+        }
+        for (auto& worker : workers) worker.join();
+    });
+
+    std::istringstream stream(output);
+    std::string line;
+    size_t line_count = 0;
+    while (std::getline(stream, line)) {
+        CHECK(line.rfind("[INFO] worker=", 0) == 0);
+        CHECK(line.find("[INFO]", 1) == std::string::npos);
+        ++line_count;
+    }
+    CHECK(line_count == THREAD_COUNT * LINES_PER_THREAD);
+}
+
 void phal_regio_suppression_is_scoped()
 {
     Logger logger;
@@ -633,6 +667,7 @@ int main()
         bar_write32_round_trips();
         discovery_uses_resource_inventory();
         logging_uses_flow_and_regio_levels();
+        logging_preserves_lines_across_threads();
         phal_regio_suppression_is_scoped();
         std::cout << "IO contracts passed (software only; no hardware validation)\n";
         return 0;

@@ -39,7 +39,7 @@ cmake --build build-fpga --parallel "$(nproc)"
 
 `SPEV_USE_MOCK_PHAL` 默认 `OFF`；真实 PHAL 缺失时配置直接失败。`ON` 仅用于本地编译/smoke，不证明硬件功能。复用旧 build 目录时核对 `CMakeCache.txt`，因为它可能缓存过 mock 选项或绝对依赖路径。当前 CLI 构建开关是 `SPEV_BUILD_CLI`，产物为 `build-fpga/spev_diag`；早期文档中的 `SPEV_BUILD_EXAMPLES` / `spev_diag_example` 已过时。项目 CMake 仅支持 Linux，kmod 则另外使用 `make -C spev_kmod`。
 
-构建机器与 tester 都需要完整的顶层 `CMakeLists.txt`、`spev_diag/`、`spev_lib/`、`spev_kmod/` 的 UAPI 头、真实 `spev_ipc/external/ProtonHal/` 以及 Flowra/CSR sources。不要把另一个机器的 CMake build 目录当成可移植源码。2026-09-09 在 tester 上还遇到 CMake 不在 `PATH`、旧 GCC 链接 `std::filesystem` 需 `stdc++fs` 的问题；当前 CMake 对 GCC < 9 已有条件链接。
+构建机器与 tester 都需要完整的顶层 `CMakeLists.txt`、`spev_diag/`、`spev_adapter/`、`spev_kmod/` 的 UAPI 头、真实 `spev_ipc/external/ProtonHal/` 以及 Flowra/CSR sources。不要把另一个机器的 CMake build 目录当成可移植源码。2026-09-09 在 tester 上还遇到 CMake 不在 `PATH`、旧 GCC 链接 `std::filesystem` 需 `stdc++fs` 的问题；当前 CMake 对 GCC < 9 已有条件链接。
 
 ## 决策中的变化与边界
 

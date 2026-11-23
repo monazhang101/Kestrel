@@ -244,6 +244,7 @@ void HalContext::bind_device(const DeviceContext& ctx, Logger* logger)
 {
     // A HalContext represents one currently bound physical device. Rebinding
     // releases contexts tied to the previous BAR mapping before replacing it.
+    dma_engine_.reset();
     phal_context_ = {};
     aperture_phal_context_ = {};
     for (auto& ctx : ipc_contexts_) ctx = {};
@@ -341,6 +342,7 @@ HalContext::TestcaseScope HalContext::begin_testcase(
 HalContext::TestcaseScope::~TestcaseScope()
 {
     if (owner_ != nullptr) {
+        owner_->dma_engine_.reset();
         owner_->phal_context_ = {};
         owner_->aperture_phal_context_ = {};
         for (auto& ctx : owner_->ipc_contexts_) ctx = {};
@@ -357,6 +359,7 @@ HalContext::TestcaseScope& HalContext::TestcaseScope::operator=(TestcaseScope&& 
 {
     if (this != &other) {
         if (owner_ != nullptr) {
+            owner_->dma_engine_.reset();
             owner_->phal_context_ = {};
             owner_->aperture_phal_context_ = {};
             for (auto& ctx : owner_->ipc_contexts_) ctx = {};
@@ -626,6 +629,7 @@ DeviceContext HalContext::mmap_bar_space(DeviceContext ctx)
 
 void HalContext::clear_mappings()
 {
+    dma_engine_.reset();
     phal_context_ = {};
     aperture_phal_context_ = {};
     for (auto& ctx : ipc_contexts_) ctx = {};

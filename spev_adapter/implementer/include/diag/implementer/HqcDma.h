@@ -4,11 +4,12 @@
 #include "diag/core/HalContext.h"
 
 #include <array>
+#include <atomic>
 #include <bitset>
 #include <cstdint>
 #include <limits>
+#include <mutex>
 #include <optional>
-#include <vector>
 
 #define SOC_HQC_SYNCFLAG_MIN_ID 1U
 #define SOC_HQC_SYNCFLAG_MAX_ID 255U
@@ -64,6 +65,8 @@ public:
     TestStatus finalize();
     TestStatus fill_descriptor();
     TestStatus submit();
+    // OK with triggered=false means both descriptor controllers are busy.
+    TestStatus try_submit(bool& triggered);
     TestStatus poll_completion();
     TestStatus wait(uint64_t timeout_ms);
     TestStatus clear_completion();
@@ -121,28 +124,30 @@ public:
     TestStatus init_ddp_ctrl();
     TestStatus fill_descriptor(DmaDescriptor& desc);
     TestStatus submit(DmaDescriptor& desc);
-    // Earlier descriptors may already be submitted when a later entry fails.
-    TestStatus submit(const std::vector<DmaDescriptor*>& descriptors);
+    TestStatus try_submit(DmaDescriptor& desc, bool& triggered);
     TestStatus poll_completion(DmaDescriptor& desc);
     TestStatus wait_completion(DmaDescriptor& desc, uint64_t timeout_ms);
-    // Compatibility helper: fill followed by submit.
-    TestStatus copy_descriptor(DmaDescriptor& desc);
     TestStatus check_sync_flag_done(uint32_t flag) const;
     TestStatus clear_sync_flag_done(uint32_t flag) const;
     TestStatus wait_sync_flag(uint32_t flag, uint64_t timeout_ms) const;
-    size_t available_slots() const
-    {
-        return DESCRIPTOR_USABLE_SLOT_COUNT - slots_in_use_.count();
-    }
+    size_t available_slots() const;
 
 private:
     friend class DmaDescriptor;
     enum class SlotState : uint8_t { Free, Prepared, Submitted, Faulted };
 
     HalContext& hal_;
+    // Initialization is independent from descriptor ownership and may be
+    // reached concurrently by the first descriptors created by worker threads.
+    std::mutex init_mutex_;
+    // Protect descriptor-pool ownership, slot state, and execution-thread IDs.
+    mutable std::mutex state_mutex_;
+    // Keep idle selection, controller programming, trigger, and next_core_
+    // together as one submission transaction.
+    std::mutex submission_mutex_;
     bool initialized_ = false;
     bool ddp_initialized_ = false;
-    bool faulted_ = false;
+    std::atomic<bool> faulted_{false};
     uint32_t next_core_ = 0;
     uint32_t next_thread_ = 0;
     common::MemBuffer descriptor_pool_;
@@ -151,6 +156,7 @@ private:
 
     TestStatus ensure_descriptor_pool();
     TestStatus send_descriptor(DmaDescriptor& desc, uint32_t preferred_core,
+                               bool wait_for_idle, bool& triggered,
                                bool& trigger_attempted);
     void release_slot(DmaDescriptor& desc);
     void abandon_descriptor(DmaDescriptor& desc);

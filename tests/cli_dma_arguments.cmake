@@ -58,6 +58,19 @@ check_invalid("unsupported direction or invalid range" pcie_dma_data_transfer
     --direction h2i --size-bytes 288)
 check_invalid("invalid internal-memory range" pcie_dma_data_transfer
     --direction h2s --size-bytes 256 --intermediate-offset 2)
+check_invalid("threaded stress requires" pcie_dma_threaded_stress
+    --iterations 0)
+
+execute_process(COMMAND "${CLI}" pcie_dma_threaded_stress
+    --iterations 1 --size-bytes 4096 --timeout-ms 30000
+    WORKING_DIRECTORY "${WORK_DIR}" RESULT_VARIABLE threaded_result
+    OUTPUT_VARIABLE threaded_output ERROR_VARIABLE threaded_error)
+if(NOT threaded_result EQUAL 2 OR
+   NOT threaded_output MATCHES "threaded stress buffer allocation failed" OR
+   NOT threaded_output MATCHES "TPU0::pcie_dma_threaded_stress")
+    message(FATAL_ERROR
+        "Threaded DMA CLI dispatch failed (${threaded_result}): ${threaded_output}${threaded_error}")
+endif()
 
 execute_process(COMMAND "${CLI}" pcie_dma_h2d_example --drv none
     WORKING_DIRECTORY "${WORK_DIR}" RESULT_VARIABLE example_result

@@ -17,17 +17,62 @@ PCIeModule::dma_data_transfer()
   -> DMEM/host payload readback and compare
 ```
 
-并发 testcase 使用同一个 `HqcDmaEngine`：
+当前 DMA descriptor API 有三种使用模式。所有模式都必须先通过同一个
+`HqcDmaEngine` 创建 `DmaDescriptor`，descriptor 的 source、destination、profile
+和 size 由调用者独立配置。
+
+#### 同步 one-shot
+
+适合一个 testcase 只搬运一个 descriptor，并且希望 API 返回时搬运已经完成：
+
+```cpp
+auto& engine = ti.hal->dma_engine();
+DmaDescriptor desc(engine, DmaProfile::H2D);
+desc.set_src(host, host_offset);
+desc.set_dst(device, device_offset);
+desc.set_size(size_bytes);
+desc.fill_descriptor();
+desc.submit();
+desc.wait(timeout_ms);
+```
+
+`submit()` 等待 descriptor controller 有空闲 core，然后完成一次 trigger；它不
+等待 payload 完成。`wait()` 才负责等待对应 sync flag。`execute(timeout_ms)` 是
+上述 `fill_descriptor -> submit -> wait` 的同步快捷路径。
+
+#### 单线程异步 pump
+
+适合一个线程维护多个在途 descriptor。`try_submit()` 只检查一次 controller
+idle 状态：返回 `PHAL_STATUS_OK` 且 `triggered == false` 表示当前不能提交，调用者
+稍后重试；提交成功后用 `poll_completion()` 收割完成的 descriptor，并复用已经
+完成的对象：
 
 ```text
 fill_descriptor() for N jobs
-  -> submit(batch)
+  -> try_submit() for each Prepared job
   -> poll_completion() for every active job
   -> refill the released slot and submit the next job
 ```
 
-代码只使用一个软件线程；并发来自硬件 DMA engine 和两个 descriptor-control
-core。`dma_data_transfer` 保留同步 API，等价于 `fill -> submit -> wait`。
+`try_submit()` 不等待 controller，因此适合 non-blocking pump；它不是硬件 atomic
+batch。当前 `submit(vector)` 接口已删除，调用者需要逐个 descriptor 调用
+`submit()` 或 `try_submit()`。
+
+#### 多线程 composite testcase
+
+一个 testcase 内的多个 worker 可以共享同一个 `HalContext::dma_engine()`：
+
+```text
+worker H2D: DmaDescriptor(engine, H2D) -> fill -> submit/try_submit -> wait/poll
+worker D2H: DmaDescriptor(engine, D2H) -> fill -> submit/try_submit -> wait/poll
+worker D2I: DmaDescriptor(engine, D2I) -> fill -> submit/try_submit -> wait/poll
+```
+
+每个 `DmaDescriptor` 只能由创建它的 worker 使用；engine 内部保护 slot/sync
+flag bitmap、controller 选择、寄存器编程和 trigger。不同 profile 可以并发提交，
+完成也按 descriptor 独立归属。当前 `pcie_dma_threaded_stress` 示例使用 H2D、
+D2H 和 DMEM MMIO 三个 worker；它验证的是共享 engine 和线程安全，不是一个
+硬件原子 batch。
 
 当前并发 ownership 只在一个 `HqcDmaEngine` 内成立。slot bitmap 是 engine
 成员，而整个 SRAM1 pool 通过 `HalContext` 固定范围 allocation 保护：同一
@@ -47,8 +92,8 @@ core。`dma_data_transfer` 保留同步 API，等价于 `fill -> submit -> wait`
 - `fill_descriptor()` 完成 descriptor 编码、分配 slot、清理旧 done 位并写入
   SRAM；状态变为 `Prepared`。
 - `submit()` 只接受 `Prepared` descriptor；提交成功后状态变为 `Submitted`。
-- `submit(batch)` 先校验全部对象，再逐条 trigger；它不是 hardware atomic batch，
-  后一条失败时，前面已经提交的 descriptor 仍然在途。
+- `try_submit()` 在 controller 忙时返回 `OK + triggered=false`，descriptor 保持
+  `Prepared`，不会被错误地标记为已提交。
 - completion 被观察并清零后，状态变为 `Completed`，slot 可复用。
 - timeout 或 trigger 后的错误不会释放在途 descriptor/buffer；当前策略是标记
   engine faulted 并保留资源，等待硬件 reset/quiesce 方案。
@@ -171,14 +216,17 @@ CP queue 的“128 alignment”是 payload 两端地址和长度约束，不是 
 ## 3. Current command examples
 
 ```sh
-spev_diag dma_data_transfer --target TPU0 \
+spev_diag pcie_dma_data_transfer --target TPU0 \
   --direction h2d --size-bytes 4096 --pattern incremental
 
-spev_diag dma_concurrent_transfer --target TPU0 \
+spev_diag pcie_dma_concurrent_transfer --target TPU0 \
   --job-count 8 --size-bytes 4096 --timeout-ms 30000
 
-spev_diag dma_concurrent_transfer --target TPU0 \
+spev_diag pcie_dma_concurrent_transfer --target TPU0 \
   --job-count 256 --size-bytes 32 --timeout-ms 30000
+
+spev_diag pcie_dma_threaded_stress --target TPU0 \
+  --iterations 100 --size-bytes 4096 --timeout-ms 30000
 
 spev_diag cp_queue_data_transfer --target TPU0 \
   --direction h2sram --queue mem3 --size-bytes 512 --sram-bank 0
@@ -189,9 +237,10 @@ spev_diag cp_queue_data_transfer --target TPU0 \
 并发 testcase 的 overall deadline 在初始 window 全部 submit 完成后才开始，
 不覆盖前置 DMEM prepare、descriptor fill 或 initial submit 所花时间。
 
-另一个不影响传输但会误导调试的代码问题：同步 `dma_copy()` 在调用
-`desc.execute()` 之前记录 `desc.sync_flag()`；此时 slot 还没有由
-`fill_descriptor()` 分配，日志会显示 `INVALID_SLOT`，而不是实际 flag 1。
+H2D/D2H/D2I 等不同 profile 可以放在同一个 testcase 中，但必须保证 endpoint
+配置、地址范围和对齐合法；有数据依赖的 descriptor 必须显式等待前序完成。
+Host/DMEM/VMEM 路径通常要求 32-byte 地址和长度对齐，涉及 IMEM 的路径要求
+256-byte 对齐。`D2V/V2D` 当前上层 testcase 返回 `UNIMPLEMENTED`。
 
 ## 4. Open hardware checks
 

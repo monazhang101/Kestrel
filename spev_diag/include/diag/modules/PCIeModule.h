@@ -20,6 +20,7 @@ private:
     TestStatus sequential_aperture_mapping(TestInfo& ti);
     TestStatus dma_data_transfer(TestInfo& ti);
     TestStatus dma_concurrent_transfer(TestInfo& ti);
+    TestStatus dma_threaded_stress(TestInfo& ti);
     TestStatus cp_queue_data_transfer(TestInfo& ti);
 
 public:

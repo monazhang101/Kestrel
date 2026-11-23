@@ -16,6 +16,8 @@ extern "C" {
 #include <cstring>
 #include <limits>
 #include <string>
+#include <thread>
+#include <vector>
 
 namespace {
 constexpr uint64_t DMA_WORD_BYTES = 32;
@@ -116,6 +118,13 @@ bool map_region(MemoryRegion region, DmaMemory& memory,
     default: return false;
     }
 }
+}
+
+HqcDmaEngine& HalContext::dma_engine()
+{
+    std::lock_guard<std::mutex> lock(dma_engine_mutex_);
+    if (!dma_engine_) dma_engine_ = std::make_shared<HqcDmaEngine>(*this);
+    return *dma_engine_;
 }
 
 TestStatus DmaDescriptor::bind(DmaEndpoint& endpoint, DmaMemory memory,
@@ -295,6 +304,10 @@ TestStatus DmaDescriptor::submit()
 {
     return engine_.submit(*this);
 }
+TestStatus DmaDescriptor::try_submit(bool& triggered)
+{
+    return engine_.try_submit(*this, triggered);
+}
 TestStatus DmaDescriptor::fill_descriptor() { return engine_.fill_descriptor(*this); }
 TestStatus DmaDescriptor::poll_completion() { return engine_.poll_completion(*this); }
 TestStatus DmaDescriptor::wait(uint64_t timeout) { return engine_.wait_completion(*this, timeout); }
@@ -314,6 +327,7 @@ TestStatus DmaDescriptor::execute(uint64_t timeout)
 
 HqcDmaEngine::~HqcDmaEngine()
 {
+    std::lock_guard<std::mutex> lock(state_mutex_);
     bool hardware_may_own_descriptor = faulted_;
     for (const auto state : slot_states_) {
         hardware_may_own_descriptor |=
@@ -326,6 +340,7 @@ HqcDmaEngine::~HqcDmaEngine()
 
 TestStatus HqcDmaEngine::ensure_descriptor_pool()
 {
+    // Caller holds state_mutex_.
     if (descriptor_pool_.valid()) return PHAL_STATUS_OK;
     if (faulted_) return PHAL_STATUS_ERROR;
     descriptor_pool_ = hal_.device_mem_alloc(
@@ -343,6 +358,7 @@ TestStatus HqcDmaEngine::ensure_descriptor_pool()
 
 void HqcDmaEngine::release_slot(DmaDescriptor& desc)
 {
+    // Caller holds state_mutex_.
     if (desc.slot_id_ >= DESCRIPTOR_SLOT_COUNT) return;
     slots_in_use_.reset(desc.slot_id_);
     slot_states_[desc.slot_id_] = SlotState::Free;
@@ -351,6 +367,7 @@ void HqcDmaEngine::release_slot(DmaDescriptor& desc)
 
 void HqcDmaEngine::abandon_descriptor(DmaDescriptor& desc)
 {
+    std::lock_guard<std::mutex> lock(state_mutex_);
     if (desc.slot_id_ >= DESCRIPTOR_SLOT_COUNT) return;
     if (desc.state_ == DmaJobState::Prepared) {
         release_slot(desc);
@@ -366,6 +383,7 @@ void HqcDmaEngine::abandon_descriptor(DmaDescriptor& desc)
 
 TestStatus HqcDmaEngine::init_desc_ctrl()
 {
+    std::lock_guard<std::mutex> lock(init_mutex_);
     if (initialized_) return PHAL_STATUS_OK;
     log_flow(hal_, "DMA configuration: HQC descriptor control");
     const auto status = hal_.with_pcie_context([&](phal_ctx_t* ctx) {
@@ -422,6 +440,7 @@ TestStatus HqcDmaEngine::init_desc_ctrl()
 
 TestStatus HqcDmaEngine::init_ddp_ctrl()
 {
+    std::lock_guard<std::mutex> lock(init_mutex_);
     if (ddp_initialized_) return PHAL_STATUS_OK;
     // DDP is a top-level sibling of PCIe. Apply its offsets from the chip root.
     auto* ctx = hal_.phal_context();
@@ -453,35 +472,39 @@ TestStatus HqcDmaEngine::init_ddp_ctrl()
 
 TestStatus HqcDmaEngine::fill_descriptor(DmaDescriptor& desc)
 {
-    if (faulted_ || (desc.state_ != DmaJobState::Draft &&
-                     desc.state_ != DmaJobState::Completed)) {
+    if (desc.state_ != DmaJobState::Draft &&
+        desc.state_ != DmaJobState::Completed) {
         return PHAL_STATUS_INVALID;
     }
-    auto status = ensure_descriptor_pool();
-    if (status != PHAL_STATUS_OK) return status;
-    status = desc.finalize();
+    auto status = desc.finalize();
     if (status != PHAL_STATUS_OK) return status;
 
     uint32_t slot = DESCRIPTOR_SLOT_COUNT;
-    for (uint32_t i = DESCRIPTOR_FIRST_SLOT;
-         i < DESCRIPTOR_SLOT_COUNT; ++i) {
-        if (!slots_in_use_.test(i)) { slot = i; break; }
-    }
-    if (slot == DESCRIPTOR_SLOT_COUNT) {
-        log_error(hal_, "DMA descriptor pool is full; poll completions before retrying fill_descriptor");
-        return PHAL_STATUS_ERROR;
-    }
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (faulted_) return PHAL_STATUS_ERROR;
+        status = ensure_descriptor_pool();
+        if (status != PHAL_STATUS_OK) return status;
+        for (uint32_t i = DESCRIPTOR_FIRST_SLOT;
+             i < DESCRIPTOR_SLOT_COUNT; ++i) {
+            if (!slots_in_use_.test(i)) { slot = i; break; }
+        }
+        if (slot == DESCRIPTOR_SLOT_COUNT) {
+            log_error(hal_, "DMA descriptor pool is full; poll completions before retrying fill_descriptor");
+            return PHAL_STATUS_ERROR;
+        }
 
-    slots_in_use_.set(slot);
-    slot_states_[slot] = SlotState::Prepared;
-    desc.slot_id_ = slot;
-    desc.sync_flag_ = slot;
-    desc.execution_thread_ = next_thread_++ & 3u;
-    desc.set_field(25, 1, 1);
-    desc.set_field(26, 1, 1);
-    desc.set_field(27, 2, desc.execution_thread_);
-    desc.set_field(80, 14, desc.sync_flag_);
-    desc.set_field(94, 2, 1);
+        slots_in_use_.set(slot);
+        slot_states_[slot] = SlotState::Prepared;
+        desc.slot_id_ = slot;
+        desc.sync_flag_ = slot;
+        desc.execution_thread_ = next_thread_++ % 3u;
+        desc.set_field(25, 1, 1);
+        desc.set_field(26, 1, 1);
+        desc.set_field(27, 2, desc.execution_thread_);
+        desc.set_field(80, 14, desc.sync_flag_);
+        desc.set_field(94, 2, 1);
+    }
 
     status = clear_sync_flag_done(desc.sync_flag_);
     std::vector<uint8_t> bytes(DmaDescriptor::BYTE_SIZE);
@@ -490,6 +513,7 @@ TestStatus HqcDmaEngine::fill_descriptor(DmaDescriptor& desc)
     if (status == PHAL_STATUS_OK)
         status = mem_write(descriptor_pool_, slot_offset, bytes);
     if (status != PHAL_STATUS_OK) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         release_slot(desc);
         desc.sync_flag_ = DmaDescriptor::INVALID_SLOT;
         desc.state_ = DmaJobState::Draft;
@@ -509,49 +533,69 @@ TestStatus HqcDmaEngine::submit(DmaDescriptor& desc)
     if (faulted_ || desc.state_ != DmaJobState::Prepared ||
         desc.slot_id_ < DESCRIPTOR_FIRST_SLOT ||
         desc.slot_id_ >= DESCRIPTOR_SLOT_COUNT) return PHAL_STATUS_INVALID;
+    bool triggered = false;
     bool trigger_attempted = false;
-    const auto status = send_descriptor(desc, next_core_, trigger_attempted);
-    if (status == PHAL_STATUS_OK) {
-        desc.state_ = DmaJobState::Submitted;
-        slot_states_[desc.slot_id_] = SlotState::Submitted;
-    } else if (trigger_attempted) {
-        faulted_ = true;
-        desc.state_ = DmaJobState::Faulted;
-        slot_states_[desc.slot_id_] = SlotState::Faulted;
+    TestStatus status = PHAL_STATUS_ERROR;
+    {
+        std::lock_guard<std::mutex> submit_lock(submission_mutex_);
+        status = send_descriptor(
+            desc, next_core_, true, triggered, trigger_attempted);
+    }
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (status == PHAL_STATUS_OK && triggered) {
+            desc.state_ = DmaJobState::Submitted;
+            slot_states_[desc.slot_id_] = SlotState::Submitted;
+        } else if (trigger_attempted) {
+            faulted_ = true;
+            desc.state_ = DmaJobState::Faulted;
+            slot_states_[desc.slot_id_] = SlotState::Faulted;
+        }
     }
     return status;
 }
 
-TestStatus HqcDmaEngine::submit(
-    const std::vector<DmaDescriptor*>& descriptors)
+TestStatus HqcDmaEngine::try_submit(DmaDescriptor& desc, bool& triggered)
 {
-    for (const auto* desc : descriptors) {
-        if (desc == nullptr || desc->state_ != DmaJobState::Prepared)
-            return PHAL_STATUS_INVALID;
+    triggered = false;
+    if (faulted_ || desc.state_ != DmaJobState::Prepared ||
+        desc.slot_id_ < DESCRIPTOR_FIRST_SLOT ||
+        desc.slot_id_ >= DESCRIPTOR_SLOT_COUNT) return PHAL_STATUS_INVALID;
+    bool trigger_attempted = false;
+    TestStatus status = PHAL_STATUS_ERROR;
+    {
+        std::lock_guard<std::mutex> submit_lock(submission_mutex_);
+        status = send_descriptor(
+            desc, next_core_, false, triggered, trigger_attempted);
     }
-    for (auto* desc : descriptors) {
-        const auto status = submit(*desc);
-        if (status != PHAL_STATUS_OK) return status;
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        if (status == PHAL_STATUS_OK && triggered) {
+            desc.state_ = DmaJobState::Submitted;
+            slot_states_[desc.slot_id_] = SlotState::Submitted;
+        } else if (trigger_attempted) {
+            faulted_ = true;
+            desc.state_ = DmaJobState::Faulted;
+            slot_states_[desc.slot_id_] = SlotState::Faulted;
+        }
     }
-    return PHAL_STATUS_OK;
-}
-
-TestStatus HqcDmaEngine::copy_descriptor(DmaDescriptor& desc)
-{
-    auto status = fill_descriptor(desc);
-    return status == PHAL_STATUS_OK ? submit(desc) : status;
+    return status;
 }
 
 TestStatus HqcDmaEngine::send_descriptor(
-    DmaDescriptor& desc, uint32_t preferred_core, bool& trigger_attempted)
+    DmaDescriptor& desc, uint32_t preferred_core, bool wait_for_idle,
+    bool& triggered, bool& trigger_attempted)
 {
+    triggered = false;
     trigger_attempted = false;
     if (preferred_core > 1 || desc.slot_id_ < DESCRIPTOR_FIRST_SLOT ||
         desc.slot_id_ >= DESCRIPTOR_SLOT_COUNT)
         return PHAL_STATUS_INVALID;
-    log_flow(hal_, "HQC descriptor submission started: preferred_core=" +
-                       std::to_string(preferred_core) +
-                       " slot=" + std::to_string(desc.slot_id_));
+    if (wait_for_idle) {
+        log_flow(hal_, "HQC descriptor submission started: preferred_core=" +
+                           std::to_string(preferred_core) +
+                           " slot=" + std::to_string(desc.slot_id_));
+    }
     return hal_.with_pcie_context([&](phal_ctx_t* ctx) {
         phal_block_ctx_enter(ctx, PCIE_U_HQC_0_OFFSET);
         phal_block_ctx_enter(ctx, HQC_U_PCIE_HQC_REG_0_OFFSET);
@@ -590,7 +634,8 @@ TestStatus HqcDmaEngine::send_descriptor(
         auto next_sample = poll_start + POLL_LOG_INTERVAL;
         {
             ScopedPhalRegIoSuppression suppress_regio(ctx);
-            for (uint32_t i = 0; i < CTRL_TIMEOUT; ++i) {
+            const uint32_t attempts_limit = wait_for_idle ? CTRL_TIMEOUT : 1;
+            for (uint32_t i = 0; i < attempts_limit; ++i) {
                 attempts = static_cast<uint64_t>(i) + 1;
                 for (uint32_t pass = 0; pass < 2; ++pass) {
                     const uint32_t core = (preferred_core + pass) & 1u;
@@ -602,7 +647,7 @@ TestStatus HqcDmaEngine::send_descriptor(
                     }
                 }
                 const auto now = std::chrono::steady_clock::now();
-                if (attempts == 1 || now >= next_sample) {
+                if (wait_for_idle && (attempts == 1 || now >= next_sample)) {
                     log_poll_sample(hal_, "HQC idle", ctx,
                                     regs[preferred_core].idle,
                                     attempts, poll_start, idle[preferred_core]);
@@ -610,8 +655,9 @@ TestStatus HqcDmaEngine::send_descriptor(
                 }
                 if (status != PHAL_STATUS_OK) break;
                 if (selected_core < 2) break;
-                phal_delay_us(ctx, POLL_US);
-                if (i + 1 == CTRL_TIMEOUT) status = PHAL_STATUS_TIMEOUT;
+                if (wait_for_idle) phal_delay_us(ctx, POLL_US);
+                if (wait_for_idle && i + 1 == attempts_limit)
+                    status = PHAL_STATUS_TIMEOUT;
             }
         }
         if (selected_core < 2) {
@@ -619,13 +665,16 @@ TestStatus HqcDmaEngine::send_descriptor(
                                std::to_string(selected_core) +
                                " attempts=" + std::to_string(attempts) +
                                " elapsed_ms=" + std::to_string(elapsed_ms(poll_start)));
+        } else if (!wait_for_idle && status == PHAL_STATUS_OK) {
+            log_flow(hal_, "HQC descriptor controllers busy: slot=" +
+                               std::to_string(desc.slot_id_));
         } else if (status == PHAL_STATUS_TIMEOUT) {
             log_error(hal_, "HQC idle polling timed out: attempts=" +
                                 std::to_string(attempts) +
                                 " elapsed_ms=" + std::to_string(elapsed_ms(poll_start)) +
                                 " core0=" + common::format::hex(idle[0], 8) +
                                 " core1=" + common::format::hex(idle[1], 8));
-        } else {
+        } else if (wait_for_idle || status != PHAL_STATUS_OK) {
             log_error(hal_, "HQC idle polling failed: attempts=" +
                                 std::to_string(attempts) +
                                 " status=" + std::to_string(static_cast<int>(status)));
@@ -655,6 +704,7 @@ TestStatus HqcDmaEngine::send_descriptor(
                 }
                 if (status == PHAL_STATUS_OK) {
                     next_core_ = (selected_core + 1) & 1u;
+                    triggered = true;
                     log_flow(hal_, "HQC descriptor triggered: core=" +
                                        std::to_string(selected_core) +
                                        " slot=" + std::to_string(desc.slot_id_) +
@@ -715,13 +765,17 @@ TestStatus HqcDmaEngine::poll_completion(DmaDescriptor& desc)
     if (status != PHAL_STATUS_OK) return status;
     const auto clear = clear_sync_flag_done(desc.sync_flag_);
     if (clear != PHAL_STATUS_OK) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         faulted_ = true;
         desc.state_ = DmaJobState::Faulted;
         slot_states_[desc.slot_id_] = SlotState::Faulted;
         return clear;
     }
-    desc.state_ = DmaJobState::Completed;
-    release_slot(desc);
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        desc.state_ = DmaJobState::Completed;
+        release_slot(desc);
+    }
     return PHAL_STATUS_OK;
 }
 
@@ -739,6 +793,7 @@ TestStatus HqcDmaEngine::wait_completion(
     const auto status = wait_sync_flag(desc.sync_flag_, timeout_ms);
     if (status != PHAL_STATUS_OK) {
         // A software timeout does not prove that hardware discarded the job.
+        std::lock_guard<std::mutex> lock(state_mutex_);
         faulted_ = true;
         desc.state_ = DmaJobState::Faulted;
         slot_states_[desc.slot_id_] = SlotState::Faulted;
@@ -746,13 +801,17 @@ TestStatus HqcDmaEngine::wait_completion(
     }
     const auto clear = clear_sync_flag_done(desc.sync_flag_);
     if (clear != PHAL_STATUS_OK) {
+        std::lock_guard<std::mutex> lock(state_mutex_);
         faulted_ = true;
         desc.state_ = DmaJobState::Faulted;
         slot_states_[desc.slot_id_] = SlotState::Faulted;
         return clear;
     }
-    desc.state_ = DmaJobState::Completed;
-    release_slot(desc);
+    {
+        std::lock_guard<std::mutex> lock(state_mutex_);
+        desc.state_ = DmaJobState::Completed;
+        release_slot(desc);
+    }
     return PHAL_STATUS_OK;
 }
 
@@ -765,34 +824,24 @@ TestStatus HqcDmaEngine::wait_sync_flag(uint32_t flag, uint64_t timeout_ms) cons
     const auto start = std::chrono::steady_clock::now();
     const auto deadline = start + std::chrono::milliseconds(timeout_ms);
     uint64_t attempts = 0;
-    uint32_t value = 0;
-    const auto status = hal_.with_pcie_context([&](phal_ctx_t* ctx) {
-        phal_block_ctx_enter(ctx, PCIE_U_HQC_0_OFFSET);
-        phal_status_t poll_status = PHAL_STATUS_OK;
-        auto next_sample = start + POLL_LOG_INTERVAL;
-        {
-            ScopedPhalRegIoSuppression suppress_regio(ctx);
-            while (std::chrono::steady_clock::now() < deadline) {
-                poll_status = phal_read(
-                    ctx, SOC_HQC_SYNCFLAG_CSR_DONE_OFFSET(flag), &value);
-                ++attempts;
-                const auto now = std::chrono::steady_clock::now();
-                if (attempts == 1 || now >= next_sample) {
-                    log_poll_sample(hal_, "Syncflag", ctx,
-                                    SOC_HQC_SYNCFLAG_CSR_DONE_OFFSET(flag),
-                                    attempts, start, value);
-                    if (now >= next_sample) next_sample = now + POLL_LOG_INTERVAL;
-                }
-                if (poll_status != PHAL_STATUS_OK || (value & 0x1u)) break;
-                phal_delay_us(ctx, POLL_US);
-            }
+    auto next_sample = start + POLL_LOG_INTERVAL;
+    TestStatus status = PHAL_STATUS_INVALID;
+    while (std::chrono::steady_clock::now() < deadline) {
+        status = check_sync_flag_done(flag);
+        ++attempts;
+        if (status == PHAL_STATUS_OK) break;
+        if (status != PHAL_STATUS_INVALID) break;
+        const auto now = std::chrono::steady_clock::now();
+        if (attempts == 1 || now >= next_sample) {
+            log_flow(hal_, "Syncflag polling progress: flag=" +
+                               std::to_string(flag) +
+                               " attempts=" + std::to_string(attempts) +
+                               " elapsed_ms=" + std::to_string(elapsed_ms(start)));
+            if (now >= next_sample) next_sample = now + POLL_LOG_INTERVAL;
         }
-        if (poll_status == PHAL_STATUS_OK && !(value & 0x1u)) {
-            poll_status = PHAL_STATUS_TIMEOUT;
-        }
-        phal_block_ctx_exit(ctx, PCIE_U_HQC_0_OFFSET);
-        return poll_status;
-    });
+        std::this_thread::sleep_for(std::chrono::microseconds(POLL_US));
+    }
+    if (status == PHAL_STATUS_INVALID) status = PHAL_STATUS_TIMEOUT;
     if (status == PHAL_STATUS_OK) {
         log_flow(hal_, "Syncflag polling complete: flag=" + std::to_string(flag) +
                            " attempts=" + std::to_string(attempts) +
@@ -801,11 +850,17 @@ TestStatus HqcDmaEngine::wait_sync_flag(uint32_t flag, uint64_t timeout_ms) cons
         log_error(hal_, "Syncflag polling timed out: flag=" + std::to_string(flag) +
                             " attempts=" + std::to_string(attempts) +
                             " elapsed_ms=" + std::to_string(elapsed_ms(start)) +
-                            " last_value=" + common::format::hex(value, 8));
+                            " last_state=not_done");
     } else {
         log_error(hal_, "Syncflag polling failed: flag=" + std::to_string(flag) +
                             " attempts=" + std::to_string(attempts) +
                             " status=" + std::to_string(static_cast<int>(status)));
     }
     return status;
+}
+
+size_t HqcDmaEngine::available_slots() const
+{
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    return DESCRIPTOR_USABLE_SLOT_COUNT - slots_in_use_.count();
 }

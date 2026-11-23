@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 
 project(SpevDiag LANGUAGES C CXX)
 
+find_package(Threads REQUIRED)
+
 # The production runtime depends on Linux PCI sysfs, mmap/ioctl, and the
 # spev_diag kernel UAPI. Unsupported hosts should fail at configure time
 # instead of compiling a HAL implementation that can only fail at runtime.
@@ -27,8 +29,8 @@ if(SPEV_BUILD_UART AND NOT SPEV_BUILD_DIAG)
 endif()
 
 set(SPEV_DIAG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/spev_diag)
-set(SPEV_LIB_DIR ${CMAKE_CURRENT_SOURCE_DIR}/spev_lib)
-set(SPEV_IMPLEMENTER_DIR ${SPEV_LIB_DIR}/implementer)
+set(SPEV_ADAPTER_DIR ${CMAKE_CURRENT_SOURCE_DIR}/spev_adapter)
+set(SPEV_IMPLEMENTER_DIR ${SPEV_ADAPTER_DIR}/implementer)
 include(${CMAKE_CURRENT_SOURCE_DIR}/Uart.cmake)
 set(SPEV_POLICY_SOURCE_DIR ${SPEV_DIAG_DIR}/policies)
 set(SPEV_POLICY_BINARY_DIR ${CMAKE_BINARY_DIR}/policies)
@@ -188,18 +190,18 @@ endif()
 
 
 if(SPEV_BUILD_DIAG)
-add_library(spev_lib
-    spev_lib/implementer/src/implementer.cpp
-    spev_lib/implementer/src/generic/generic_impl.cpp
-    spev_lib/implementer/src/atlas/memory_regions.cpp
-    spev_lib/implementer/src/atlas/resource.cpp
-    spev_lib/implementer/src/atlas/pcie/hqc_dma.cpp
-    spev_lib/implementer/src/atlas/pcie/hqc_cp_queue.cpp
-    spev_lib/implementer/src/atlas/pcie/pcie_impl.cpp
-    spev_lib/implementer/src/atlas_m/pcie/pcie_impl.cpp
+add_library(spev_adapter
+    spev_adapter/implementer/src/implementer.cpp
+    spev_adapter/implementer/src/generic/generic_impl.cpp
+    spev_adapter/implementer/src/atlas/memory_regions.cpp
+    spev_adapter/implementer/src/atlas/resource.cpp
+    spev_adapter/implementer/src/atlas/pcie/hqc_dma.cpp
+    spev_adapter/implementer/src/atlas/pcie/hqc_cp_queue.cpp
+    spev_adapter/implementer/src/atlas/pcie/pcie_impl.cpp
+    spev_adapter/implementer/src/atlas_m/pcie/pcie_impl.cpp
 )
 
-target_include_directories(spev_lib
+target_include_directories(spev_adapter
     PUBLIC
         ${SPEV_IMPLEMENTER_DIR}/include
         ${SPEV_DIAG_DIR}/include
@@ -208,12 +210,12 @@ target_include_directories(spev_lib
 )
 
 # AtlasResource.h is a public header that includes generated CSR headers, so
-# the CSR include paths must propagate to spev_lib's dependents.
+# the CSR include paths must propagate to spev_adapter's dependents.
 if(NOT SPEV_USING_MOCK_PHAL)
-    target_include_directories(spev_lib PUBLIC ${PHAL_CSR_INCLUDE_DIRS})
+    target_include_directories(spev_adapter PUBLIC ${PHAL_CSR_INCLUDE_DIRS})
 endif()
 
-target_link_libraries(spev_lib PUBLIC phal)
+target_link_libraries(spev_adapter PUBLIC phal)
 
 add_library(spev_diag
     spev_diag/src/core/TestTargetPcie.cpp
@@ -243,7 +245,7 @@ if(NOT SPEV_USING_MOCK_PHAL)
     target_include_directories(spev_diag PRIVATE ${PHAL_CSR_INCLUDE_DIRS})
 endif()
 
-target_link_libraries(spev_diag PUBLIC spev_lib spev_test_core spev_uart_runtime)
+target_link_libraries(spev_diag PUBLIC spev_adapter spev_test_core spev_uart_runtime Threads::Threads)
 
 
 set_target_properties(spev_diag PROPERTIES OUTPUT_NAME spev_diag)

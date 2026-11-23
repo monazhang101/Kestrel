@@ -20,7 +20,7 @@ add_custom_target(io_test_policies ALL
 file(GLOB_RECURSE IO_TEST_SOURCES CONFIGURE_DEPENDS
     ${REPO}/spev_diag/src/*.cpp
     ${REPO}/spev_diag/testcases/*.cpp
-    ${REPO}/spev_lib/implementer/src/*.cpp)
+    ${REPO}/spev_adapter/implementer/src/*.cpp)
 list(REMOVE_ITEM IO_TEST_SOURCES ${REPO}/spev_diag/src/core/HalContext.cpp)
 list(REMOVE_ITEM IO_TEST_SOURCES ${REPO}/spev_diag/src/core/HalContextDma.cpp)
 list(REMOVE_ITEM IO_TEST_SOURCES
@@ -36,10 +36,10 @@ add_library(io_test_code STATIC ${IO_TEST_SOURCES}
 target_compile_features(io_test_code PUBLIC cxx_std_17)
 target_include_directories(io_test_code PUBLIC
     ${REPO}/spev_diag/include
-    ${REPO}/spev_lib/implementer/include
+    ${REPO}/spev_adapter/implementer/include
     ${REPO}/spev_ipc/external/ProtonHal/include
     ${REPO}/spev_ipc/external
-    PRIVATE ${REPO}/spev_lib/implementer/src)
+    PRIVATE ${REPO}/spev_adapter/implementer/src)
 target_compile_definitions(io_test_code PUBLIC HAL_DV_MODE=1 PHAL_TARGET_ENV_DV=1)
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(io_test_code PRIVATE -Wall -Wextra)

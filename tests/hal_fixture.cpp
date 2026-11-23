@@ -24,6 +24,7 @@ std::unordered_map<const HalContext*, bool> test_pmu_unlocked;
 HalContext::HalContext() = default;
 void HalContext::clear_mappings()
 {
+    dma_engine_.reset();
     phal_context_ = {};
     aperture_phal_context_ = {};
     for (auto& ctx : ipc_contexts_) ctx = {};
@@ -40,6 +41,7 @@ void HalContext::clear()
 }
 void HalContext::bind_device(const DeviceContext& ctx, Logger* logger)
 {
+    dma_engine_.reset();
     phal_context_ = {};
     aperture_phal_context_ = {};
     for (auto& ctx : ipc_contexts_) ctx = {};
@@ -143,6 +145,7 @@ HalContext::TestcaseScope HalContext::begin_testcase(
 HalContext::TestcaseScope::~TestcaseScope()
 {
     if (owner_ != nullptr) {
+        owner_->dma_engine_.reset();
         owner_->phal_context_ = {};
         owner_->aperture_phal_context_ = {};
         for (auto& ctx : owner_->ipc_contexts_) ctx = {};
@@ -159,6 +162,7 @@ HalContext::TestcaseScope& HalContext::TestcaseScope::operator=(TestcaseScope&& 
 {
     if (this != &other) {
         if (owner_ != nullptr) {
+            owner_->dma_engine_.reset();
             owner_->phal_context_ = {};
             owner_->aperture_phal_context_ = {};
             for (auto& ctx : owner_->ipc_contexts_) ctx = {};

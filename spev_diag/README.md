@@ -47,6 +47,35 @@ Use `ti.args` (`common::args::get_u64/get_string`) for arguments and `ti.logger`
   `mem_read/write(buffer, offset, ...)`.
 - Host DMA memory: allocate with `ti.hal->host_mem_alloc(size)`.
 
+### DMA descriptor API
+
+Direct-DD DMA uses one shared engine per testcase scope:
+
+```cpp
+auto& engine = ti.hal->dma_engine();
+DmaDescriptor desc(engine, DmaProfile::H2D);
+desc.set_src(host, host_offset);
+desc.set_dst(device, device_offset);
+desc.set_size(size_bytes);
+desc.fill_descriptor();
+```
+
+Choose the completion mode for the workflow:
+
+- Synchronous one-shot: `desc.submit(); desc.wait(timeout_ms);`, or use
+  `desc.execute(timeout_ms)` as the combined shortcut.
+- Single-thread asynchronous pump: call `desc.try_submit(triggered)`, retry when
+  `triggered == false`, and call `desc.poll_completion()` for submitted jobs.
+- Multi-thread composite testcase: every worker creates and owns its own
+  `DmaDescriptor`, while all workers use the same `ti.hal->dma_engine()`. H2D,
+  D2H, D2I and other supported profiles may be mixed; completion and slot
+  ownership are per descriptor.
+
+`submit(vector)` is not part of the current API. Multiple descriptors are
+submitted one at a time and the sequence is not a hardware-atomic batch. A
+descriptor dependency must be enforced with `wait()` or `poll_completion()`;
+submission order alone is not a data dependency barrier.
+
 PCIe testcase setup configures the default Atlas DMEM aperture: BAR4/aperture 0,
 identity 0, target `0x10000000`, size `0x8000000000`. DMEM IO does not
 reconfigure it. To change the mapping:
@@ -71,7 +100,9 @@ Case owners ensure resource compatibility and adapt addresses using
 ```bash
 ./build-fpga/spev_diag discover
 ./build-fpga/spev_diag ddp_example --target TPU0 --log-level regio
-./build-fpga/spev_diag pcie_dma_h2d_example --target TPU0
+./build-fpga/spev_diag pcie_dma_data_transfer --target TPU0 --direction h2d
+./build-fpga/spev_diag pcie_dma_concurrent_transfer --target TPU0 --job-count 32
+./build-fpga/spev_diag pcie_dma_threaded_stress --target TPU0 --iterations 100
 ./build-fpga/spev_diag pcie_bar_read32 --target TPU0 --offset 0x36100000
 ```
 

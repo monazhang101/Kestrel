@@ -3,6 +3,7 @@
 #include "diag/core/IpcBridge.h"
 
 #include <iostream>
+#include <mutex>
 #include <initializer_list>
 #include <optional>
 #include <string>
@@ -107,6 +108,12 @@ class Logger {
 private:
     LogLevel level_ = LogLevel::Info;
 
+    static std::mutex& output_mutex()
+    {
+        static std::mutex mutex;
+        return mutex;
+    }
+
     bool should_log(LogLevel message_level) const
     {
         return static_cast<int>(message_level) <= static_cast<int>(level_);
@@ -116,6 +123,7 @@ private:
                const std::string& level_name,
                const std::string& message) const
     {
+        std::lock_guard<std::mutex> lock(output_mutex());
         if (!should_log(message_level)) {
             return;
         }
@@ -124,8 +132,16 @@ private:
     }
 
 public:
-    void set_level(LogLevel level) { level_ = level; }
-    LogLevel get_level() const { return level_; }
+    void set_level(LogLevel level)
+    {
+        std::lock_guard<std::mutex> lock(output_mutex());
+        level_ = level;
+    }
+    LogLevel get_level() const
+    {
+        std::lock_guard<std::mutex> lock(output_mutex());
+        return level_;
+    }
 
     void error(const std::string& message) const { write(LogLevel::Error, "ERROR", message); }
     void info(const std::string& message) const { write(LogLevel::Info, "INFO", message); }

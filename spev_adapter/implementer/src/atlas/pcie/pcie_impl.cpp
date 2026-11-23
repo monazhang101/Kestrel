@@ -111,7 +111,7 @@ public:
             (req.host_buffer == nullptr || !req.host_buffer->valid()))
             return fail(ti, PHAL_STATUS_INVALID, "host DMA requires a valid host DMA buffer");
 
-        HqcDmaEngine engine(*ti.hal);
+        auto& engine = ti.hal->dma_engine();
         DmaDescriptor desc(engine, profile_for(req.type));
         TestStatus status = PHAL_STATUS_OK;
         if (host_source) {

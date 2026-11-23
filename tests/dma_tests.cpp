@@ -1,10 +1,13 @@
 #include "diag/implementer/HqcDma.h"
 
 #include <array>
+#include <condition_variable>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
 extern "C" {
@@ -36,6 +39,7 @@ struct Model {
     static Model* active;
     std::map<std::pair<uintptr_t, uintptr_t>, uint32_t> registers;
     std::array<uint32_t, 256> done{};
+    std::array<uint32_t, 2> idle{{1, 1}};
     std::vector<uint32_t> fetch_addresses;
     std::vector<uint32_t> selected_cores;
     std::vector<uintptr_t> ddp_access_bases;
@@ -62,7 +66,9 @@ struct Model {
         if (env->base == HQC_CSR &&
             (offset == PCIE_HQC_REG_CORE0_DESC_CTRL_IDLE_OFFSET ||
              offset == PCIE_HQC_REG_CORE1_DESC_CTRL_IDLE_OFFSET)) {
-            *value = 1;
+            const auto core = offset == PCIE_HQC_REG_CORE0_DESC_CTRL_IDLE_OFFSET
+                ? 0u : 1u;
+            *value = model.idle[core];
             return PHAL_STATUS_OK;
         }
         if (env->base == HQC_SYNC_CSR && offset >= SOC_HQC_SYNCFLAG_CSR_DONE_OFFSET(0) &&
@@ -230,7 +236,6 @@ void async_slot_protocol()
     HqcDmaEngine engine(hal);
 
     std::vector<std::unique_ptr<DmaDescriptor>> jobs;
-    std::vector<DmaDescriptor*> batch;
     for (uint32_t i = 0; i < 4; ++i) {
         auto job = std::make_unique<DmaDescriptor>(engine, DmaProfile::H2D);
         CHECK(job->set_src(host, i * 32) == PHAL_STATUS_OK);
@@ -239,18 +244,18 @@ void async_slot_protocol()
         CHECK(job->fill_descriptor() == PHAL_STATUS_OK);
         CHECK(job->state() == DmaJobState::Prepared);
         CHECK(job->slot_id() == i + 1 && job->sync_flag() == i + 1);
-        CHECK(job->execution_thread() == i);
+        const uint32_t expected_thread = i % 3u;
+        CHECK(job->execution_thread() == expected_thread);
         CHECK(((job->words()[0] >> 25) & 1u) == 1u);
-        CHECK(((job->words()[0] >> 27) & 3u) == i);
+        CHECK(((job->words()[0] >> 27) & 3u) == expected_thread);
         CHECK(((job->words()[2] >> 16) & 0x3fffu) == i + 1);
-        batch.push_back(job.get());
         jobs.push_back(std::move(job));
     }
     CHECK(engine.available_slots() == 251);
     CHECK(model.ddp_access_bases == expected_ddp_accesses());
     CHECK(jobs.front()->set_size(64) == PHAL_STATUS_INVALID);
     CHECK(!hal.device_mem_alloc(HQC_SRAM_1, 4, 0).valid());
-    CHECK(engine.submit(batch) == PHAL_STATUS_OK);
+    for (auto& job : jobs) CHECK(job->submit() == PHAL_STATUS_OK);
     CHECK(model.fetch_addresses == std::vector<uint32_t>({
         0x30080200u, 0x30080400u, 0x30080600u, 0x30080800u}));
     CHECK(model.selected_cores == std::vector<uint32_t>({0, 1, 0, 1}));
@@ -291,6 +296,111 @@ void synchronous_execute_protocol()
     CHECK(model.fetch_addresses == std::vector<uint32_t>({0x30080200u}));
     CHECK(model.selected_cores == std::vector<uint32_t>({0}));
     CHECK(model.ddp_access_bases == expected_ddp_accesses());
+}
+
+void nonblocking_submit_protocol()
+{
+    HalContext hal;
+    bind(hal);
+    auto scope = hal.begin_testcase();
+    CHECK(scope);
+    Model model;
+    install(hal);
+    auto host = hal.host_mem_alloc(32);
+    CHECK(host.valid());
+    HqcDmaEngine engine(hal);
+
+    DmaDescriptor job(engine, DmaProfile::H2D);
+    CHECK(job.set_src(host) == PHAL_STATUS_OK);
+    CHECK(job.set_dst(DmaMemory::Dmem, 1, 0, 0) == PHAL_STATUS_OK);
+    CHECK(job.set_size(32) == PHAL_STATUS_OK);
+    CHECK(job.fill_descriptor() == PHAL_STATUS_OK);
+
+    model.idle = {{0, 0}};
+    bool triggered = true;
+    CHECK(job.try_submit(triggered) == PHAL_STATUS_OK);
+    CHECK(!triggered);
+    CHECK(job.state() == DmaJobState::Prepared);
+    CHECK(model.fetch_addresses.empty());
+
+    model.idle[1] = 1;
+    CHECK(job.try_submit(triggered) == PHAL_STATUS_OK);
+    CHECK(triggered);
+    CHECK(job.state() == DmaJobState::Submitted);
+    CHECK(model.selected_cores == std::vector<uint32_t>({1}));
+    CHECK(job.poll_completion() == PHAL_STATUS_OK);
+}
+
+void concurrent_producer_protocol()
+{
+    HalContext hal;
+    bind(hal);
+    auto scope = hal.begin_testcase();
+    CHECK(scope);
+    Model model;
+    install(hal);
+    auto host = hal.host_mem_alloc(64);
+    CHECK(host.valid());
+
+    auto& engine = hal.dma_engine();
+    CHECK(&engine == &hal.dma_engine());
+    std::mutex start_mutex;
+    std::condition_variable start_cv;
+    unsigned ready = 0;
+    bool start = false;
+    unsigned prepared = 0;
+    bool submit_start = false;
+    std::array<TestStatus, 2> results{{PHAL_STATUS_ERROR, PHAL_STATUS_ERROR}};
+    std::array<uint32_t, 2> slots{};
+
+    const auto producer = [&](size_t index, DmaProfile profile) {
+        {
+            std::unique_lock<std::mutex> lock(start_mutex);
+            ++ready;
+            start_cv.notify_all();
+            start_cv.wait(lock, [&] { return start; });
+        }
+        DmaDescriptor job(engine, profile);
+        auto status = job.set_src(host, index * 32);
+        if (status == PHAL_STATUS_OK)
+            status = job.set_dst(DmaMemory::Dmem, 1, 0, index * 32);
+        if (status == PHAL_STATUS_OK) status = job.set_size(32);
+        if (status == PHAL_STATUS_OK) status = job.fill_descriptor();
+        slots[index] = job.slot_id();
+        {
+            std::unique_lock<std::mutex> lock(start_mutex);
+            ++prepared;
+            start_cv.notify_all();
+            start_cv.wait(lock, [&] { return submit_start; });
+        }
+        if (status == PHAL_STATUS_OK) status = job.submit();
+        if (status == PHAL_STATUS_OK) status = job.poll_completion();
+        results[index] = status;
+    };
+
+    std::thread first(producer, 0, DmaProfile::H2D);
+    std::thread second(producer, 1, DmaProfile::H2D);
+    {
+        std::unique_lock<std::mutex> lock(start_mutex);
+        start_cv.wait(lock, [&] { return ready == 2; });
+        start = true;
+    }
+    start_cv.notify_all();
+    {
+        std::unique_lock<std::mutex> lock(start_mutex);
+        start_cv.wait(lock, [&] { return prepared == 2; });
+        submit_start = true;
+    }
+    start_cv.notify_all();
+    first.join();
+    second.join();
+
+    CHECK(results[0] == PHAL_STATUS_OK && results[1] == PHAL_STATUS_OK);
+    CHECK(slots[0] >= HqcDmaEngine::DESCRIPTOR_FIRST_SLOT);
+    CHECK(slots[1] >= HqcDmaEngine::DESCRIPTOR_FIRST_SLOT);
+    CHECK(slots[0] != slots[1]);
+    CHECK(model.fetch_addresses.size() == 2);
+    CHECK(engine.available_slots() == HqcDmaEngine::DESCRIPTOR_USABLE_SLOT_COUNT);
 }
 
 void slot_pressure_contract()
@@ -345,6 +455,8 @@ int main()
     try {
         alignment_contracts();
         synchronous_execute_protocol();
+        nonblocking_submit_protocol();
+        concurrent_producer_protocol();
         async_slot_protocol();
         slot_pressure_contract();
         release_test_host_storage();

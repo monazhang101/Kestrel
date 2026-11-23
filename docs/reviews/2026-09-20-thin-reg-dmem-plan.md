@@ -22,7 +22,7 @@
 
 | 优先级 | 发现与代码位置 | 对此次目标的影响 |
 |---|---|---|
-| P1 | `spev_lib/implementer/src/atlas/pmu/pmu_impl.cpp` 的 reg_read/write/check，以及 ISI/DDP/DMC 的多项实现，只打印固定内容并返回 OK；AtlasM 也有类似情况 | PMU 写入没有写硬件，检查甚至把 expected 当 actual 输出。尚未落地的功能应返回 UNIMPLEMENTED 或移出默认注册 |
+| P1 | `spev_adapter/implementer/src/atlas/pmu/pmu_impl.cpp` 的 reg_read/write/check，以及 ISI/DDP/DMC 的多项实现，只打印固定内容并返回 OK；AtlasM 也有类似情况 | PMU 写入没有写硬件，检查甚至把 expected 当 actual 输出。尚未落地的功能应返回 UNIMPLEMENTED 或移出默认注册 |
 | P1 | `spev_diag/src/core/HalContext.cpp:443` 可退回只读 mmap，但 `BarMapping` 未记录写权限，`common::bar::write` 只检查 mapped | 三参数 write 可能触发进程异常，不能可靠返回 status。增加 writable 标志并在写入前拒绝 |
 | P1 | `PhalBridge.cpp:198` 的 mutex 只保护缓存取得/创建；`TestTarget.cpp` 只锁当前 target；`DevMem.cpp` 的 set/get/payload 没有共同锁 | 同一 TPU 的不同 module 并发时，可能改变同一 PHAL base 或 aperture，使 IO 落到错误地址 |
 | P1 | `testcases/isi/link_cases.cpp:28` 固定写入 DMEM 0x10000000，没有保存恢复原值；前置 linkup 实现又是固定成功 | 这个 case 不能证明真实 ISI linkup，还会改变内存；拆成明确的 dmem smoke case，使用确认的 scratch 区域并恢复 |

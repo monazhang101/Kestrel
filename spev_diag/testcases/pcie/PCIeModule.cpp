@@ -49,6 +49,12 @@ PCIeModule::PCIeModule(const std::string& name,
                {"pattern", "incremental", "string"},
                {"timeout_ms", "30000", "ms"}},
               [this](TestInfo& ti) { return dma_concurrent_transfer(ti); });
+    _add_test("dma_threaded_stress",
+              {{"drv", "spev_drv", "string"},
+               {"iterations", "100", "u32"},
+               {"size_bytes", "4096", "bytes"},
+               {"timeout_ms", "30000", "ms"}},
+              [this](TestInfo& ti) { return dma_threaded_stress(ti); });
     _add_test("cp_queue_data_transfer",
               {{"direction", "h2sram", "string"},
                {"queue", "mem3", "string"},

@@ -8,6 +8,7 @@
 #include <array>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -24,6 +25,7 @@ enum class HostDmaMode {
 };
 
 class HalContext;
+class HqcDmaEngine;
 
 class DmaBuffer {
 private:
@@ -91,6 +93,11 @@ private:
         std::make_shared<DeviceMemoryState>();
     bool device_bound_ = false;
     std::vector<std::pair<void*, uint64_t>> mapped_bar_mappings_;
+    // One DMA engine is shared by every worker in the active testcase scope.
+    // It is created lazily by the Atlas implementer and released before the
+    // testcase PHAL contexts are destroyed.
+    std::mutex dma_engine_mutex_;
+    std::shared_ptr<HqcDmaEngine> dma_engine_;
 
     void clear_mappings();
 
@@ -133,6 +140,10 @@ public:
     // Select the host-memory provider for a testcase. Driver and IOMMU checks
     // are performed lazily if that testcase actually requests host memory.
     TestStatus configure_host_dma(const std::string& driver);
+
+    // All DMA entrypoints in one testcase use this shared engine. The engine
+    // owns descriptor slots, sync flags, and descriptor-controller arbitration.
+    HqcDmaEngine& dma_engine();
 
     // The ordinary testcase context is exposed only to framework-created
     // TestInfo instances. PCIe callers use with_pcie_context().

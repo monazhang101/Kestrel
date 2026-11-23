@@ -39,6 +39,9 @@ static void print_usage(const char* program)
               << "     [--job-count <total jobs>] [--size-bytes <multiple of 32>]\n"
               << "     Uses a sliding window of at most 255 in-flight jobs.\n"
               << "     [--pattern zero|incremental|random] [--timeout-ms <whole batch ms>]\n"
+              << "DMA threaded stress: pcie_dma_threaded_stress [--drv spev_drv|none]\n"
+              << "     [--iterations <count>] [--size-bytes <multiple of 32>] [--timeout-ms <per transfer ms>]\n"
+              << "     Runs concurrent H2D, D2H, and DMEM MMIO workers with one shared DMA engine.\n"
               << "CP:  pcie_cp_queue_data_transfer [--direction h2sram|sram2h|d2sram|sram2d]\n"
               << "     [--queue mem0|mem1|mem2|mem3|comp0|comp1|comp2|comp3]\n"
               << "     [--size-bytes <multiple of 128>] [--sram-bank 0|1|2|3]\n"
@@ -51,6 +54,7 @@ static void print_usage(const char* program)
               << "  " << program << " pcie_dma_data_transfer\n"
               << "  " << program << " pcie_dma_data_transfer --target TPU0 --drv none --direction h2d --size-bytes 0x10000 --pattern incremental --timeout-ms 30000\n"
               << "  " << program << " pcie_dma_concurrent_transfer --target TPU0 --job-count 32 --size-bytes 4096 --timeout-ms 30000\n"
+              << "  " << program << " pcie_dma_threaded_stress --target TPU0 --iterations 100 --size-bytes 4096 --timeout-ms 30000\n"
               << "  " << program << " pcie_sequential_aperture_mapping --target TPU0 --log-level regio\n";
 }
 

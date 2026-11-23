@@ -47,7 +47,7 @@ TestStatus PCIeModule::dma_h2d_example(TestInfo& ti)
     }
     std::memcpy(host.cpu_base(), payload.data(), payload.size());
 
-    HqcDmaEngine engine(*ti.hal);
+    auto& engine = ti.hal->dma_engine();
     DmaDescriptor descriptor(engine, DmaProfile::H2D);
     auto status = descriptor.set_src(host);
     if (status == PHAL_STATUS_OK) status = descriptor.set_dst(device);
