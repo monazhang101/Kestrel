@@ -48,6 +48,8 @@ private:
     Logger logger_;
 
     void clear_discovered_devices();
+    DeviceTree discover_locked();
+    std::string resolve_host_tpu_bdf(const std::string& target_name) const;
     void register_device_tree(TestTarget* target);
     void add_child_to_tree(const TestTarget& child,
                            const TestTarget& parent);
@@ -71,6 +73,12 @@ public:
     ~DeviceManager();
 
     DeviceTree discover();
+    TestStatus prepare_before_reset(const std::string& target_name,
+                                    const std::string& output_path,
+                                    std::string* error = nullptr);
+    TestStatus recover_after_reset(const std::string& input_path,
+                                   uint32_t timeout_ms = 60000,
+                                   std::string* error = nullptr);
     TestTarget* get_target(const std::string& target_name);
     std::vector<std::string> get_target_names() const;
     void set_log_level(LogLevel level);

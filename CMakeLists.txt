@@ -224,6 +224,7 @@ add_library(spev_diag
     spev_diag/src/core/IpcBridge.cpp
     spev_diag/src/core/HalContext.cpp
     spev_diag/src/core/HalContextDma.cpp
+    spev_diag/src/core/PciHostRecovery.cpp
     spev_diag/src/device/DeviceManager.cpp
     spev_diag/src/device/TPUDevice.cpp
 )

@@ -1,6 +1,7 @@
 #include "diag/device/DeviceManager.h"
 
 #include "diag/core/Format.h"
+#include "diag/core/PciHostRecovery.h"
 
 #include <algorithm>
 #include <chrono>
@@ -13,6 +14,26 @@
 #include <thread>
 #include <unordered_map>
 #include <utility>
+
+namespace {
+
+const PolicyEntry* matching_policy(const std::vector<PolicyEntry>& policy,
+                                   const DeviceContext& device)
+{
+    for (const auto& entry : policy) {
+        if ((entry.match_vendor_id == device.vendor_id &&
+             entry.match_device_id == device.device_id) ||
+            (entry.match_vendor_id == 0x16c3 &&
+             entry.match_device_id == 0xabcd &&
+             device.vendor_id == 0x213e &&
+             device.device_id == 0x0000)) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+} // namespace
 
 DeviceManager::DeviceManager(const std::string& policy_dir)
     : testcase_policies_(load_testcase_policies(
@@ -33,6 +54,34 @@ void DeviceManager::clear_discovered_devices()
     devices_.clear();
     hal_.clear();
     device_tree_ = {};
+}
+
+std::string DeviceManager::resolve_host_tpu_bdf(
+    const std::string& target_name) const
+{
+    constexpr const char* PREFIX = "TPU";
+    if (target_name.rfind(PREFIX, 0) != 0 || target_name.size() == 3) {
+        throw PciHostRecoveryError("invalid TPU target name: " + target_name);
+    }
+
+    size_t consumed = 0;
+    uint64_t requested_index = 0;
+    try {
+        requested_index = std::stoull(target_name.substr(3), &consumed, 10);
+    } catch (const std::exception&) {
+        throw PciHostRecoveryError("invalid TPU target name: " + target_name);
+    }
+    if (consumed != target_name.size() - 3) {
+        throw PciHostRecoveryError("invalid TPU target name: " + target_name);
+    }
+
+    uint64_t matched_index = 0;
+    for (const auto& pci_device : hal_.scan_pci_devices()) {
+        if (matching_policy(policy_, pci_device) == nullptr) continue;
+        if (matched_index == requested_index) return pci_device.bdf;
+        ++matched_index;
+    }
+    throw PciHostRecoveryError("unknown TPU target: " + target_name);
 }
 
 void DeviceManager::register_device_tree(TestTarget* target)
@@ -268,6 +317,11 @@ TestStatus DeviceManager::read_atlas_resource_info(AtlasResourceInfo& info)
 DeviceTree DeviceManager::discover()
 {
     std::lock_guard<std::mutex> lock(execution_mutex_);
+    return discover_locked();
+}
+
+DeviceTree DeviceManager::discover_locked()
+{
     // Start a fresh discovery result and release previous transient mappings.
     clear_discovered_devices();
 
@@ -278,18 +332,7 @@ DeviceTree DeviceManager::discover()
         // FPGA bring-up intentionally matches chips by VID/DID only because
         // the platform and BDF assignment are not stable yet. Silicon-system
         // discovery will additionally bind VID/DID/BDF to a stable TPU index.
-        const PolicyEntry* policy_entry = nullptr;
-        for (const auto& entry : policy_) {
-            if ((entry.match_vendor_id == pci_device.vendor_id &&
-                 entry.match_device_id == pci_device.device_id) ||
-                (entry.match_vendor_id == 0x16c3 &&
-                 entry.match_device_id == 0xabcd &&
-                 pci_device.vendor_id == 0x213e &&
-                 pci_device.device_id == 0x0000)) {
-                policy_entry = &entry;
-                break;
-            }
-        }
+        const auto* policy_entry = matching_policy(policy_, pci_device);
         if (policy_entry == nullptr) {
             continue;
         }
@@ -388,6 +431,91 @@ DeviceTree DeviceManager::discover()
     }
 
     return device_tree_;
+}
+
+TestStatus DeviceManager::prepare_before_reset(const std::string& target_name,
+                                               const std::string& output_path,
+                                               std::string* error)
+{
+    std::lock_guard<std::mutex> lock(execution_mutex_);
+    if (error != nullptr) error->clear();
+    try {
+        logger_.info("Chip-reset prepare: resolving " + target_name +
+                     " using Host PCI scan (no BAR/PMU access)");
+        clear_discovered_devices();
+        const auto bdf = resolve_host_tpu_bdf(target_name);
+        PciHostRecovery recovery;
+        auto device_lock = recovery.lock_device(bdf);
+        logger_.info("Chip-reset prepare: capturing PCI config and Host environment: " +
+                     bdf);
+        auto snapshot = recovery.capture(target_name, bdf);
+
+        // The durable artifact must exist before unbind or any config write.
+        recovery.save_new(output_path, snapshot);
+        logger_.info("Chip-reset prepare: snapshot saved: " + output_path);
+        clear_discovered_devices();
+        logger_.info("Chip-reset prepare: unbinding driver: " +
+                     (snapshot.driver_was_bound ? snapshot.driver : "none"));
+        recovery.unbind_driver(snapshot);
+        logger_.info("Chip-reset prepare: establishing safe unbound config state");
+        recovery.make_unbound_device_safe(snapshot);
+        logger_.info("Chip-reset prepare complete: target=" + target_name +
+                     " bdf=" + bdf + " snapshot=" + output_path);
+        return PHAL_STATUS_OK;
+    } catch (const std::exception& exception) {
+        clear_discovered_devices();
+        if (error != nullptr) *error = exception.what();
+        logger_.error("chip-reset prepare failed: " +
+                      std::string(exception.what()));
+        return PHAL_STATUS_ERROR;
+    }
+}
+
+TestStatus DeviceManager::recover_after_reset(const std::string& input_path,
+                                              uint32_t timeout_ms,
+                                              std::string* error)
+{
+    std::lock_guard<std::mutex> lock(execution_mutex_);
+    if (error != nullptr) error->clear();
+    try {
+        PciHostRecovery recovery;
+        const auto snapshot = recovery.load(input_path);
+        auto device_lock = recovery.lock_device(snapshot.bdf);
+
+        clear_discovered_devices();
+        recovery.restore(
+            snapshot, std::chrono::milliseconds(timeout_ms),
+            [this](const std::string& diagnostic) {
+                logger_.info("Chip-reset recovery: " + diagnostic);
+            });
+        recovery.bind_driver(snapshot);
+        const auto tree = discover_locked();
+
+        const auto found = std::find_if(
+            tree.devices.begin(), tree.devices.end(),
+            [&snapshot](const DeviceDiscoveryInfo& device) {
+                return device.name == snapshot.target &&
+                       device.type == "tpu" && device.bdf == snapshot.bdf;
+            });
+        if (found == tree.devices.end()) {
+            throw PciHostRecoveryError(
+                "framework rediscovery did not restore target " +
+                snapshot.target + " at " + snapshot.bdf);
+        }
+        if (!snapshot.driver_was_bound) {
+            // Discovery needs MMIO but an unbound device must remain DMA-safe.
+            recovery.enforce_mmio_only_command(snapshot.bdf);
+        }
+        logger_.info("Chip-reset recovery complete: target=" + snapshot.target +
+                     " bdf=" + snapshot.bdf);
+        return PHAL_STATUS_OK;
+    } catch (const std::exception& exception) {
+        clear_discovered_devices();
+        if (error != nullptr) *error = exception.what();
+        logger_.error("chip-reset recovery failed: " +
+                      std::string(exception.what()));
+        return PHAL_STATUS_ERROR;
+    }
 }
 
 TestTarget* DeviceManager::get_target(const std::string& target_name)

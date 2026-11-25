@@ -1,7 +1,10 @@
 #include "diag/device/DeviceManager.h"
 
+#include <algorithm>
+#include <cstdint>
 #include <filesystem>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -23,6 +26,8 @@ static void print_usage(const char* program)
 {
     std::cout << "Usage:\n"
               << "  " << program << " discover [--policy-dir <path>] [--log-level <level>]\n"
+              << "  " << program << " chip-reset-prepare --target TPU0 --output <snapshot.json>\n"
+              << "  " << program << " chip-reset-recover --input <snapshot.json> [--timeout-ms 60000]\n"
               << "  " << program << " <module_test_name> [--target TPU0] [--<argument> <value>]...\n"
               << "  " << program << " <module_test_name> [--target TPU0] -all\n"
               << "\n"
@@ -50,6 +55,8 @@ static void print_usage(const char* program)
               << "\n"
               << "Examples:\n"
               << "  " << program << " discover\n"
+              << "  sudo " << program << " chip-reset-prepare --target TPU0 --output before-reset.json\n"
+              << "  sudo " << program << " chip-reset-recover --input before-reset.json\n"
               << "  " << program << " pcie_bar_read32 --target TPU0 --bar-index 0 --offset 0x20f80\n"
               << "  " << program << " pcie_dma_data_transfer\n"
               << "  " << program << " pcie_dma_data_transfer --target TPU0 --drv none --direction h2d --size-bytes 0x10000 --pattern incremental --timeout-ms 30000\n"
@@ -140,6 +147,52 @@ static bool validate_discover_args(int argc, char** argv, std::string& error)
     return true;
 }
 
+static bool validate_lifecycle_args(int argc,
+                                    char** argv,
+                                    const std::string& command,
+                                    std::string& error)
+{
+    const std::vector<std::string> allowed = command == "chip-reset-prepare"
+        ? std::vector<std::string>{"--target", "--output", "--policy-dir", "--log-level"}
+        : std::vector<std::string>{"--input", "--timeout-ms", "--policy-dir", "--log-level"};
+    for (int i = 2; i < argc; ++i) {
+        const std::string option = argv[i];
+        if (std::find(allowed.begin(), allowed.end(), option) == allowed.end()) {
+            error = "invalid " + command + " option: " + option;
+            return false;
+        }
+        if (i + 1 >= argc) {
+            error = option + " requires a value";
+            return false;
+        }
+        ++i;
+    }
+    const auto required = command == "chip-reset-prepare" ? "--output" : "--input";
+    if (get_option(argc, argv, required, "").empty()) {
+        error = std::string(required) + " is required";
+        return false;
+    }
+    return true;
+}
+
+static bool parse_timeout_ms(const std::string& value,
+                             uint32_t& timeout_ms,
+                             std::string& error)
+{
+    try {
+        size_t consumed = 0;
+        const auto parsed = std::stoull(value, &consumed, 10);
+        if (consumed != value.size() || parsed > 3600000) {
+            throw std::out_of_range("timeout");
+        }
+        timeout_ms = static_cast<uint32_t>(parsed);
+        return true;
+    } catch (const std::exception&) {
+        error = "--timeout-ms must be an integer between 0 and 3600000";
+        return false;
+    }
+}
+
 static bool parse_test_args(int argc,
                             char** argv,
                             TestArgs& args,
@@ -215,9 +268,17 @@ int main(int argc, char** argv)
     }
 
     const std::string command = argv[1];
+    const bool lifecycle_command =
+        command == "chip-reset-prepare" || command == "chip-reset-recover";
     if (command == "discover") {
         std::string error;
         if (!validate_discover_args(argc, argv, error)) {
+            std::cerr << error << std::endl;
+            return 1;
+        }
+    } else if (lifecycle_command) {
+        std::string error;
+        if (!validate_lifecycle_args(argc, argv, command, error)) {
             std::cerr << error << std::endl;
             return 1;
         }
@@ -229,6 +290,39 @@ int main(int argc, char** argv)
 
     device_manager.set_log_level(
         parse_log_level(get_option(argc, argv, "--log-level", "info")));
+
+    if (command == "chip-reset-prepare") {
+        const auto target = get_option(argc, argv, "--target", "TPU0");
+        const auto output = get_option(argc, argv, "--output", "");
+        std::string error;
+        const auto status = device_manager.prepare_before_reset(target, output, &error);
+        if (status != PHAL_STATUS_OK) {
+            std::cerr << error << std::endl;
+            return static_cast<int>(status);
+        }
+        std::cout << "Prepared " << target << " for manual chip reset.\n"
+                  << "Recovery snapshot: " << output << std::endl;
+        return 0;
+    }
+    if (command == "chip-reset-recover") {
+        uint32_t timeout_ms = 60000;
+        std::string error;
+        if (!parse_timeout_ms(get_option(argc, argv, "--timeout-ms", "60000"),
+                              timeout_ms, error)) {
+            std::cerr << error << std::endl;
+            return 1;
+        }
+        const auto input = get_option(argc, argv, "--input", "");
+        const auto status = device_manager.recover_after_reset(
+            input, timeout_ms, &error);
+        if (status != PHAL_STATUS_OK) {
+            std::cerr << error << std::endl;
+            return static_cast<int>(status);
+        }
+        std::cout << "Recovered device and rebuilt framework mappings from "
+                  << input << std::endl;
+        return 0;
+    }
 
     // Discovery scans PCI devices, applies VID/DID policy, maps BAR space,
     // creates TPU targets, and registers their child modules.

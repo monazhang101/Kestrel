@@ -114,6 +114,24 @@ For ordered parameter runs, add entries under the local testcase name in
 `spev_diag/policies/testcases/<module>.yaml`, then run
 `spev_diag <module_test_name> -all`. CMake copies policies beside the binaries.
 
+## Recover after a manual chip reset
+
+Stop device workloads and DMA first. The snapshot path must not already exist.
+
+```bash
+sudo ./build-fpga/spev_diag chip-reset-prepare \
+  --target TPU0 --output before-reset.json
+
+# Perform the PMU chip reset manually
+
+sudo ./build-fpga/spev_diag chip-reset-recover \
+  --input before-reset.json --timeout-ms 60000
+```
+
+Prepare saves PCI config and unbinds the driver. Recover restores config,
+rebinds the original driver, and remaps the BARs. Linux PCI remove/rescan is
+not performed; recovery requires the original device and Host resources.
+
 ## Run daily regression profiles
 
 Daily regression profiles are independent of the per-module `-all` policies.
