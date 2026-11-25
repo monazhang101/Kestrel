@@ -186,13 +186,15 @@ AtlasResourceInfo decode_atlas_presilicon_resource(uint32_t raw)
     }
 
     info.has_cxl_subsystem = info.subsys_cfg == 1 || info.subsys_cfg == 5;
-    const bool has_isi_subsystem = info.subsys_cfg == 2 || info.subsys_cfg == 4;
+    const bool has_isi_subsystem = info.subsys_cfg == 2 ||
+                                   info.subsys_cfg == 4 ||
+                                   info.subsys_cfg == 6;
     info.has_aic_extension = info.subsys_cfg == 3 ||
                              info.subsys_cfg == 4 ||
                              info.subsys_cfg == 5;
 
     const bool known_header = raw != 0u && raw != 0xffffffffu &&
-        info.platform != AtlasPlatform::Unknown && info.subsys_cfg <= 5 &&
+        info.platform != AtlasPlatform::Unknown && info.subsys_cfg <= 6 &&
         info.jtag_mux != AtlasJtagMux::Unknown &&
         info.fake_dmem_size_bytes != 0;
     const bool known_details =

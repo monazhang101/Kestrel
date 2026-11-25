@@ -358,6 +358,15 @@ void atlas_resource_info_is_decoded()
     CHECK(cxl4.aic.profile == AtlasAicProfile::Cut3);
     CHECK(cxl4.aic.vpe_lanes == 8);
 
+    const auto cxl5 = decode_atlas_presilicon_resource(0x00400111u);
+    CHECK(cxl5.valid);
+    CHECK(cxl5.profile_matched);
+    CHECK(cxl5.profile_name == "cxl5");
+    CHECK(cxl5.dmc_mask == ATLAS_ALL_DMC_MASK);
+    CHECK(cxl5.cxl_mask == 0x001u);
+    CHECK(cxl5.fake_dmem_size_bytes ==
+          64ull * 1024ull * 1024ull * 1024ull);
+
     const auto emu_64g = decode_atlas_presilicon_resource(0x00400001u);
     CHECK(emu_64g.valid);
     CHECK(emu_64g.platform == AtlasPlatform::Emu);
@@ -486,6 +495,17 @@ void atlas_resource_info_is_decoded()
     CHECK(!fallback_isi.profile_matched);
     CHECK(fallback_isi.isi_mask == 0x33u);
     CHECK(fallback_isi.isi_indices() ==
+          std::vector<uint32_t>({0, 1, 4, 5}));
+
+    const auto no_bs_profiler_isi =
+        decode_atlas_presilicon_resource(0x00001061u);
+    CHECK(no_bs_profiler_isi.valid);
+    CHECK(!no_bs_profiler_isi.profile_matched);
+    CHECK(no_bs_profiler_isi.subsys_cfg == 6);
+    CHECK(!no_bs_profiler_isi.has_cxl_subsystem);
+    CHECK(!no_bs_profiler_isi.has_aic_extension);
+    CHECK(no_bs_profiler_isi.isi_mask == 0x33u);
+    CHECK(no_bs_profiler_isi.isi_indices() ==
           std::vector<uint32_t>({0, 1, 4, 5}));
 
     const auto fallback_aic =

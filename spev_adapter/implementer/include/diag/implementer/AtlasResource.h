@@ -101,7 +101,7 @@ struct AtlasPresiliconResourceProfile {
 
 // Known exact DB values used to present the presilicon inventory tree. The
 // decoder still exposes fields from structurally valid unmatched DB values.
-inline constexpr std::array<AtlasPresiliconResourceProfile, 14>
+inline constexpr std::array<AtlasPresiliconResourceProfile, 15>
     ATLAS_EMU_RESOURCE_PROFILES{{
         {0x000001u, "base1", ATLAS_ALL_DMC_MASK},
         {0x400001u, "base2", ATLAS_ALL_DMC_MASK},
@@ -117,6 +117,7 @@ inline constexpr std::array<AtlasPresiliconResourceProfile, 14>
         {0x000211u, "cxl2", ATLAS_ALL_DMC_MASK},
         {0x000311u, "cxl3", ATLAS_ALL_DMC_MASK},
         {0x030151u, "cxl4", ATLAS_ALL_DMC_MASK},
+        {0x400111u, "cxl5", ATLAS_ALL_DMC_MASK},
     }};
 
 inline constexpr std::array<AtlasPresiliconResourceProfile, 10>
